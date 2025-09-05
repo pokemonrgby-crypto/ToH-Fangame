@@ -1,45 +1,38 @@
-import { App } from '../api/store.js';
-import { el } from '../ui/components.js';
+// /public/js/tabs/home.js  (목록 렌더 부분만 교체)
+// myChars 를 세로 카드로 렌더하고, 클릭 시 #/char/:id 로 이동.
 
-function charCard(c){
-  const open = () => location.hash = `#/char/${c.char_id || c.id}`;
-  const thumb = c.image_url
-    ? el('img',{ className:'char-thumb', src:c.image_url, alt:c.name })
-    : el('div',{ className:'char-thumb blank' }, '이미지 없음');
+import { App, fetchMyChars } from '../api/store.js';
+import { auth } from '../api/firebase.js';
 
-  return el('div',{ className:'card char', onclick:open, style:'cursor:pointer' },
-    thumb,
-    el('div',{},
-      el('div',{ className:'title' }, c.name),
-      el('div',{ className:'muted' }, `세계관: ${c.world_id || '-'}`),
-      el('div',{ className:'meta' },
-        el('span',{ className:'pill' }, `주간 ${c.likes_weekly||0}`),
-        el('span',{ className:'pill' }, `누적 ${c.likes_total||0}`),
-        el('span',{ className:'pill' }, `Elo ${c.elo||0}`)
-      )
-    )
-  );
+export async function showHome(){
+  const root = document.getElementById('view');
+  const u = auth.currentUser;
+  if(!u){ root.innerHTML = `<section class="container narrow"><p>로그인하면 캐릭터를 볼 수 있어.</p></section>`; return; }
+
+  const list = await fetchMyChars(u.uid);
+  root.innerHTML = `
+    <section class="container narrow">
+      ${list.map(c=>`
+        <div class="card row clickable" data-id="${c.id}">
+          <div class="thumb sq"></div>
+          <div class="col">
+            <div class="title">${c.name}</div>
+            <div class="chips"><span class="chip">${c.world_id}</span></div>
+            <div class="row gap8 mt6">
+              <span class="pill">주간 ${c.likes_weekly||0}</span>
+              <span class="pill">누적 ${c.likes_total||0}</span>
+              <span class="pill">Elo ${c.elo||1000}</span>
+            </div>
+          </div>
+        </div>
+      `).join('')}
+      <div class="card center mt16">
+        <button id="btnNew" class="btn primary">새 캐릭터 만들기</button>
+      </div>
+    </section>
+  `;
+  root.querySelectorAll('.clickable').forEach(el=>{
+    el.onclick = ()=> location.hash = `#/char/${el.dataset.id}`;
+  });
+  root.querySelector('#btnNew').onclick = ()=> location.hash = '#/create';
 }
-
-function createCard(){
-  const go = ()=> location.hash = '#/adventure';
-  return el('div',{ className:'card', onclick:go, style:'cursor:pointer;text-align:center' },
-    el('div',{ className:'title' }, '새 캐릭터 만들기'),
-    el('div',{ className:'muted' }, '세계관과 장소를 선택해 시작할 수 있어.')
-  );
-}
-
-function render(){
-  const v = document.getElementById('view');
-  const list = (App.state.chars||[]).map(charCard);
-  // 생성 카드를 "맨 아래" 배치
-  v.replaceChildren(
-    el('div',{ className:'stack' },
-      ...list,
-      createCard()
-    )
-  );
-}
-
-window.addEventListener('route', e => { if (e.detail.path === 'home') render(); });
-render();

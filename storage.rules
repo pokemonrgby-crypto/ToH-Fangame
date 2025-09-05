@@ -1,9 +1,11 @@
+rules_version = '2';
 service firebase.storage {
-match /b/{bucket}/o {
-function isSignedIn() { return request.auth != null; }
-match /uploads/{uid}/{allPaths=**} {
-allow read: if true; // 썸네일/이미지 공개 가정
-allow write: if isSignedIn() && request.auth.uid == uid && request.resource.size < 10 * 1024 * 1024; // 10MB 제한
-}
-}
+  match /b/{bucket}/o {
+    match /char_avatars/{uid}/{charId}/{fileName=**} {
+      allow read: if true;
+      allow write: if request.auth != null && request.auth.uid == uid
+                   && request.resource.size < 2 * 1024 * 1024
+                   && request.resource.contentType.matches('image/.*');
+    }
+  }
 }

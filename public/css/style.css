@@ -75,3 +75,42 @@ body{margin:0;background:var(--bg);color:var(--text);font:14px/1.5 system-ui, -a
 .site-list { display:flex; flex-direction:column; gap:8px; }
 .site-item { border:1px solid #223; border-radius:12px; padding:10px; cursor:pointer; }
 .site-item.sel { outline:2px solid #2f6df6; }
+/* === ToH additions === */
+.container.narrow { max-width: 720px; margin: 0 auto; padding: 16px; }
+.card { background:#1b1e23; border:1px solid #2a2f36; border-radius:14px; }
+.p0{padding:0} .p12{padding:12px} .p16{padding:16px}
+.mt6{margin-top:6px} .mt8{margin-top:8px} .mt12{margin-top:12px} .mt16{margin-top:16px}
+.row{display:flex;gap:12px;align-items:center}
+.col{display:flex;flex-direction:column}
+.center{display:flex;justify-content:center;align-items:center}
+.title{font-weight:600}
+.text-dim{opacity:.7}
+.btn{padding:10px 14px;border-radius:10px;border:1px solid #39414b;background:#2a3140}
+.btn.primary{background:#4062ff;border-color:#4062ff} .btn.large{padding:12px 18px;font-weight:600}
+.btn.ghost{background:transparent;border-color:#39414b}
+.icon-btn{border:1px solid #39414b;background:#2a3140;padding:6px 10px;border-radius:10px}
+.icon-btn.heart{border-radius:50%}
+.input,.textarea{width:100%;border-radius:10px;border:1px solid #39414b;background:#0f1216;color:#ddd;padding:10px}
+.chips{display:flex;gap:8px;flex-wrap:wrap}
+.chip{padding:6px 10px;border-radius:999px;border:1px solid #39414b;background:#151922}
+.chip.active{background:#4062ff;border-color:#4062ff}
+.thumb.sq{width:64px;height:64px;border-radius:12px;background:#101318}
+.avatar-wrap{position:relative;width:144px;height:144px;border-radius:16px;overflow:hidden}
+.avatar-wrap img{width:100%;height:100%;object-fit:cover}
+.avatar-wrap img.noimg{background:#0f1216}
+.stats4{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:12px}
+.pill{display:inline-flex;gap:6px;align-items:center;padding:6px 10px;border-radius:10px;background:#141922;border:1px solid #2b313a}
+.pill.white .v{color:#fff}
+.pill.pink .v{color:#ff69b4}
+.pill.gold .v{color:#ffd166}
+.pill.red .v{color:#ff6b6b}
+.actions .btn{min-width:140px}
+.tabbar{display:flex;gap:8px;border-bottom:1px solid #2a2f36;padding:8px}
+.tab{padding:8px 12px;border:0;background:transparent;border-bottom:2px solid transparent}
+.tab.active{border-color:#4062ff}
+.subtabs{display:flex;gap:8px;border-bottom:1px dashed #2a2f36;padding:8px 16px}
+.sub{padding:6px 10px;border:0;background:transparent;border-bottom:2px solid transparent}
+.sub.active{border-color:#4062ff}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.grid3{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.skill input{margin-right:8px}

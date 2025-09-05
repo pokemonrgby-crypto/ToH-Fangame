@@ -1,26 +1,31 @@
+rules_version = '2';
 service cloud.firestore {
-match /databases/{database}/documents {
-function isSignedIn() { return request.auth != null; }
-function isOwner(uid) { return isSignedIn() && request.auth.uid == uid; }
+  match /databases/{database}/documents {
 
+    match /chars/{charId} {
+      allow read: if true;
+      allow create: if request.auth != null
+        && request.resource.data.owner_uid == request.auth.uid;
+      allow update, delete: if request.auth != null
+        && request.auth.uid == resource.data.owner_uid;
+    }
 
-match /chars/{charId} {
-allow read: if true; // 공개 프로필(필요 시 제한)
-allow create: if isSignedIn() && request.resource.data.owner_uid == request.auth.uid;
-allow update, delete: if isOwner(resource.data.owner_uid);
-}
+    match /char_items/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null;
+    }
 
+    match /items/{itemId} {
+      allow read: if true;
+      allow write: if false; // 전역 마스터는 수동 관리
+    }
 
-match /encounters/{encId} {
-allow read: if true;
-allow create: if isSignedIn(); // 서버 타임스탬프 검증 권장
-allow update, delete: if isOwner(resource.data.created_by);
-}
+    match /encounters/{encId} {
+      allow read, write: if request.auth != null;
+    }
 
-
-match /profiles/{uid} {
-allow read: if true;
-allow write: if isOwner(uid);
-}
-}
+    match /relations/{docId} {
+      allow read, write: if request.auth != null;
+    }
+  }
 }
