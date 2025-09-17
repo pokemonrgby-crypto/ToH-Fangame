@@ -150,20 +150,44 @@ async function loadPrompt(db, id='adventure_narrative_system'){
   const data = doc.data()||{};
   return String(data[id]||'');
 }
+// ANCHOR: functions/explore_v2.js -> callGemini 함수
+
 async function callGemini({ apiKey, systemText, userText }){
-  // v1beta text endpoint
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const body = {
-    contents: [{ role: 'user', parts: [{ text: `${systemText}\n\n${userText}` }]}],
-    generationConfig: { temperature: 0.9, maxOutputTokens: 1024 },
+    // 💥 [수정] 시스템 프롬프트를 별도 instruction으로 분리
+    systemInstruction: {
+      role: 'system',
+      parts: [{ text: String(systemText || '') }]
+    },
+    contents: [{
+      role: 'user',
+      parts: [{ text: String(userText || '') }]
+    }],
+    generationConfig: {
+      temperature: 0.9,
+      maxOutputTokens: 2048, // 조금 더 넉넉하게
+      // 💥 [수정] AI가 반드시 JSON 형식으로 응답하도록 강제
+      responseMimeType: "application/json"
+    }
   };
   const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  if(!res.ok) throw new Error(`Gemini ${res.status}`);
+  if(!res.ok) {
+    const errorText = await res.text();
+    logger.error("Gemini API Error", { status: res.status, text: errorText });
+    throw new Error(`Gemini API Error: ${res.status}`);
+  }
   const j = await res.json();
   const text = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  // JSON fence 제거 시도
-  const clean = String(text).trim().replace(/^```(?:json)?\s*/,'').replace(/```$/,'').trim();
-  try { return JSON.parse(clean); } catch { return {}; }
+  
+  // 💥 [수정] responseMimeType을 사용하므로 JSON 펜스(```json) 제거 로직이 더 이상 불필요
+  try {
+    // 이제 text 자체가 유효한 JSON 문자열이므로 바로 파싱
+    return JSON.parse(text);
+  } catch (e) {
+    logger.error("Gemini JSON parse failed", { rawText: text, error: e.message });
+    return {}; // 파싱 실패 시 빈 객체 반환 (기존 동작 유지)
+  }
 }
 
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
