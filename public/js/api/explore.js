@@ -45,18 +45,6 @@ export async function serverStartBattle(runId){
 
 export const call = (name) => httpsCallable(func, name);
 
-export async function serverStartRun({ char, world, site, staminaStart }){
-  const { data } = await call('startExploreV2')({
-    charId: char.id,
-    worldId: world.id, worldName: world.name,
-    siteId: site.id,   siteName: site.name,
-    difficulty: site.difficulty || 'normal',
-    staminaStart
-  });
-  if(!data?.ok) throw new Error('startExploreV2 실패');
-  return data.runId;
-}
-
 
 export async function serverStartBattle(runId){
   const { data } = await call('advStartBattleV2')({ runId });
