@@ -45,6 +45,21 @@ export async function serverEndRun(runId, reason='ended'){
   return data.state;
 }
 
+// 진행 중인 내 탐험 1개 찾기
+export async function findMyActiveRun(){
+  const u = auth.currentUser; if(!u) return null;
+  const q = fx.query(
+    fx.collection(db,'explore_runs'),
+    fx.where('owner_uid','==', u.uid),
+    fx.where('status','==','ongoing'),
+    fx.orderBy('startedAt','desc'),
+    fx.limit(1)
+  );
+  const s = await fx.getDocs(q);
+  return s.empty ? null : { id: s.docs[0].id, ...s.docs[0].data() };
+}
+
+
 // ✅ createRun: 서버 시작 래퍼
 const STAMINA_BASE = 10;
 export async function createRun({ world, site, char }){
