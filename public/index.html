@@ -28,7 +28,13 @@
         <!-- 어드민 전용 뱃지: JS에서 어드민이면 표시 -->
         <span id="adminChip" class="chip" style="display:none;background:#222;color:#fff">관리자</span>
       </div>
-      <div class="r"><button id="btnAuth">구글 로그인</button></div>
+      <div class="r" style="display:flex; align-items:center; gap:8px;">
+        <button id="btnMail" class="icon-btn" style="position:relative; display:none;">
+          📬
+          <span id="mail-dot" style="position:absolute; top:-4px; right:-4px; width:10px; height:10px; border-radius:50%; background:red; display:none;"></span>
+        </button>
+        <button id="btnAuth">구글 로그인</button>
+      </div>
     </header>
 
     <main id="view" class="view"></main>
