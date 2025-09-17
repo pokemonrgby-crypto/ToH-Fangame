@@ -37,4 +37,5 @@ jobs:
       - name: Deploy to Firebase Functions
         run: |
           firebase --version
-          firebase deploy --only functions --project tale-of-heros---fangame --non-interactive
+          firebase deploy --only functions --project tale-of-heros---fangame --non-interactive --force
+
