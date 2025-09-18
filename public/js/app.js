@@ -73,7 +73,7 @@ async function boot() {
     if (adminChip) {
       adminChip.style.display = isAdmin ? 'inline-block' : 'none';
     }
-    ['nav-logs','nav-mail','nav-manage'].forEach(id => {
+    ['nav-logs','nav-manage'].forEach(id => {
         const el = document.getElementById(id);
         if (el) el.style.display = isAdmin ? '' : 'none';
     });
