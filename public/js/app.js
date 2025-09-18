@@ -11,6 +11,54 @@ import { ensureAdmin } from './api/admin.js';
 // firebase-auth 모듈을 미리 import 합니다.
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, GoogleAuthProvider, getRedirectResult } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js';
 
+// --- Mailbox Modal Logic ---
+let mailUnsubscribe = null;
+
+function setupMailbox(user) {
+  const btnMail = document.getElementById('btnMail');
+  const mailDot = document.getElementById('mail-dot');
+  if (!btnMail || !mailDot) return;
+
+  btnMail.style.display = 'block';
+
+  // 안 읽은 메일 실시간 감지
+  if (mailUnsubscribe) mailUnsubscribe(); // 이전 구독 해제
+  const mailQuery = fx.query(
+    fx.collection(db, 'mail', user.uid, 'msgs'),
+    fx.where('read', '==', false),
+    fx.limit(1)
+  );
+  mailUnsubscribe = fx.onSnapshot(mailQuery, (snapshot) => {
+    mailDot.style.display = snapshot.empty ? 'none' : 'block';
+  });
+
+  // 메일함 모달 열기
+  btnMail.onclick = () => {
+      const modalBack = document.createElement('div');
+      modalBack.className = 'modal-back';
+      modalBack.style.zIndex = '10000';
+      modalBack.innerHTML = `<div class="modal-card" id="mail-modal-content"></div>`;
+      document.body.appendChild(modalBack);
+
+      const content = modalBack.querySelector('#mail-modal-content');
+      showMailbox(content, true); // isModal = true
+
+      modalBack.onclick = (e) => {
+          if (e.target === modalBack) {
+              modalBack.remove();
+          }
+      };
+  };
+}
+
+function teardownMailbox() {
+    if (mailUnsubscribe) mailUnsubscribe();
+    mailUnsubscribe = null;
+    const btnMail = document.getElementById('btnMail');
+    if(btnMail) btnMail.style.display = 'none';
+}
+
+
 async function boot() {
   // 1. 월드 데이터를 먼저 로드합니다.
   await fetchWorlds();
