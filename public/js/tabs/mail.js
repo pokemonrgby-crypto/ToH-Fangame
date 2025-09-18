@@ -127,6 +127,8 @@ function cardHtml(doc) {
         </div>` : '' }
     </div>
   `) : '';
+  // 뽑기권(ticket) 첨부 여부
+const needPrompt = !!(doc.attachments && doc.attachments.ticket);
 
   const canClaim = (kind===KIND.GENERAL) && hasAttach && !expired && !claimed;
 
@@ -147,7 +149,8 @@ function cardHtml(doc) {
     <div style="margin-top:10px;white-space:pre-wrap;line-height:1.7;color:${theme.text}">${esc(doc.body || '')}</div>
     ${attachHtml}
     <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:10px">
-      ${canClaim ? `<button data-act="claim" data-id="${esc(doc.__id)}" class="btn">보상 받기</button>` : ''}
+      ${canClaim ? `<button data-act="claim" data-id="${esc(doc.__id)}" data-needprompt="${needPrompt?'1':'0'}" class="btn">보상 받기</button>` : ''}
+
       ${read ? '' : `<button data-act="read" data-id="${esc(doc.__id)}" class="btn">읽음 처리</button>`}
       ${(!canClaim && claimed) ? `<span style="font-size:12px;color:#10B981">수령 완료</span>` : ''}
       ${(!canClaim && expired && hasAttach && !claimed) ? `<span style="font-size:12px;color:#B91C1C">만료됨</span>` : ''}
