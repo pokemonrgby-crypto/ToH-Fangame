@@ -13,7 +13,7 @@ import { showExploreBattle } from './tabs/explore_battle.js';
 import { showBattleLog } from './tabs/battlelog.js';
 import { showLogs } from './tabs/logs.js';
 import { showMailbox } from './tabs/mail.js';
-
+import { showManage } from './tabs/manage.js'; // 추가
 
 
 export const routes = {
@@ -39,6 +39,7 @@ export const routes = {
   '#/guild': () => import('./tabs/guild.js').then(m => (m.default ?? m.showGuild)?.()),
   '#/logs': showLogs,
   '#/mail': showMailbox,
+    '#/manage': showManage, 
 
 
   
