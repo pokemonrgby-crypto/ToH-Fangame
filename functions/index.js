@@ -687,3 +687,8 @@ const battleFns = require('./battle'); // functions/battle/index.js
 Object.assign(exports, battleFns);
 // === END PATCH ===
 
+
+// === BEGIN PATCH: mail module export ===
+const mailFns = require('./mail')(admin, { onCall, HttpsError, logger });
+Object.assign(exports, mailFns);
+// === END PATCH ===
