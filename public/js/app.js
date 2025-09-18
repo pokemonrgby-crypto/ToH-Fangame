@@ -11,7 +11,9 @@ import { ensureAdmin } from './api/admin.js';
 // firebase-auth 모듈을 미리 import 합니다.
 import { onAuthStateChanged, signInWithPopup, signInWithRedirect, signOut, GoogleAuthProvider, getRedirectResult } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js';
 
-// --- Mailbox Modal Logic ---
+// /public/js/app.js
+
+// --- Mailbox Logic ---
 let mailUnsubscribe = null;
 
 function setupMailbox(user) {
@@ -32,23 +34,7 @@ function setupMailbox(user) {
     mailDot.style.display = snapshot.empty ? 'none' : 'block';
   });
 
-  // 메일함 모달 열기
-  btnMail.onclick = () => {
-      const modalBack = document.createElement('div');
-      modalBack.className = 'modal-back';
-      modalBack.style.zIndex = '10000';
-      modalBack.innerHTML = `<div class="modal-card" id="mail-modal-content"></div>`;
-      document.body.appendChild(modalBack);
-
-      const content = modalBack.querySelector('#mail-modal-content');
-      showMailbox(content, true); // isModal = true
-
-      modalBack.onclick = (e) => {
-          if (e.target === modalBack) {
-              modalBack.remove();
-          }
-      };
-  };
+  // 이제 버튼이 a 태그이므로 onclick 핸들러는 필요 없습니다.
 }
 
 function teardownMailbox() {
