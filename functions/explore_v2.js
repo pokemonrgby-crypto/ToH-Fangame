@@ -375,6 +375,9 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     }
 
     const delta = Number(chosenDice?.deltaStamina || 0);
+// /functions/explore_v2.js
+
+// ... (advApplyChoiceV2 함수 내부) ...
     const staminaNow = Math.max(0, (run.stamina||0) + delta);
     const updates = {
       stamina: staminaNow,
@@ -387,9 +390,11 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
       }),
       summary3: (pend.summary3_update || run.summary3 || ''),
       pending_choices: null,
+      prerolls: pend.nextPrerolls || run.prerolls, // ◀◀◀ 이 줄을 추가하세요
       updatedAt: Timestamp.now()
     };
     await ref.update(updates);
+// ... (이하 생략) ...
 
     // 체력 소진 시 종료
     if (staminaNow <= 0){
