@@ -231,6 +231,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   });
 
   const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
+  // /functions/explore_v2.js
+
+// ... (파일 상단의 다른 함수들은 그대로 유지) ...
+
+  const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
     const { runId } = req.data||{};
@@ -250,11 +255,30 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const charId = String(run.charRef||'').replace(/^chars\//,'');
     const charDoc = await db.collection('chars').doc(charId).get().catch(()=>null);
     const character = charDoc?.exists ? charDoc.data() : {};
-    const equippedItems = (character?.items_equipped||[]).map(it=>it?.name||it?.id||'').filter(Boolean).join(', ');
+    
+    // --- ▼▼▼ [수정된 부분 시작] ▼▼▼ ---
+
+    // [수정 1] 장착 스킬 정보를 정확히 가져오도록 수정
+    const equippedAbilities = (character.abilities_equipped || [])
+      .map(index => (character.abilities_all || [])[index])
+      .filter(Boolean); // null, undefined 등 제거
+    const skillsAsText = equippedAbilities.length > 0
+      ? equippedAbilities.map(s => `${s.name || '스킬'}: ${s.desc_soft || ''}`).join('\n')
+      : '없음';
+
+    // [수정 2] 장착 아이템 이름을 가져오도록 수정 (단, 현재 구조에서는 ID만 있으므로 이름은 가져올 수 없음. battle.js처럼 별도 조회가 필요하나 여기선 간소화)
+    const equippedItems = (character?.items_equipped||[]).map(it=>it?.name||it?.id||'').filter(Boolean).join(', ') || '없음';
+    
+    // [수정 3] 캐릭터의 최신 서사와 이전 서사 요약을 프롬프트에 추가
+    const narratives = Array.isArray(character.narratives) ? character.narratives : [];
+    narratives.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+    const latestNarrative = narratives[0] || {};
+    const previousNarrativeSummary = narratives.slice(1).map(n => n.short).join('; ') || '(없음)';
+
     const prevTurnLog = (run.events||[]).slice(-1)[0]?.note || '(없음)';
 
     const systemText = await loadPrompt(db,'adventure_narrative_system'); // 동일 ID
-    // dicePrompts 포맷 동일
+    
     const dicePrompts = choices.map((d,i)=>{
       let result = `종류=${d.eventKind}, 스태미나변화=${d.deltaStamina}`;
       if(d.item)   result += `, 아이템(등급:${d.item.rarity}, 소모성:${d.item.isConsumable}, 사용횟수:${d.item.uses})`;
@@ -262,11 +286,14 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       return `선택지 ${i+1} 예상 결과: ${result}`;
     }).join('\n');
 
+    // [수정 4] userText 프롬프트에 수정된 캐릭터 정보 변수를 반영
     const userText = [
       '## 플레이어 캐릭터 컨텍스트',
-      `- 출신 세계관: ${character?.origin_world_info || '알 수 없음'}`,
+      `- 출신 세계관: ${character?.world_id || '알 수 없음'}`,
       `- 캐릭터 이름: ${character?.name || '-'}`,
-      `- 보유 스킬: ${(character?.skills || []).map(s => `${s.name}(${s.desc || ''})`).join(', ') || '-'}`,
+      `- 캐릭터 핵심 서사: ${latestNarrative.long || character.summary || '(없음)'}`,
+      `- 캐릭터 과거 요약: ${previousNarrativeSummary}`,
+      `- 보유 스킬: ${skillsAsText}`,
       `- 장착 아이템: ${equippedItems}`,
       '',
       '## 스토리 컨텍스트',
@@ -277,6 +304,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       '## 다음 상황을 생성하라:',
       dicePrompts,
     ].join('\n');
+    
+    // --- ▲▲▲ [수정된 부분 끝] ▲▲▲ ---
 
     const parsed = await callGemini({ apiKey: process.env.GEMINI_API_KEY, systemText, userText }) || {};
     const narrative_text = String(parsed?.narrative_text || parsed?.narrative || '').slice(0, 2000);
@@ -302,6 +331,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
     return { ok:true, pending };
   });
+
+
 
 
 // ANCHOR: functions/explore_v2.js
