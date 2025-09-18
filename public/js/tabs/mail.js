@@ -4,6 +4,7 @@
 // - 탭 필터: 전체/공지/우편/경고/기타
 // - 페이지네이션: 30개씩 로드, 더 불러오기
 // - 전체 읽음(현재 필터에서 화면에 로드된 항목 대상으로)
+// - 보상 수령 시 "프롬프트 입력 모달" 표시(필수), 300자 제한
 // 비용 최적화: 실시간 onSnapshot 대신 필요할 때만 getDocs + 페이지네이션
 
 import { auth, db, fx, func } from '../api/firebase.js';
@@ -46,6 +47,7 @@ const TABS = [
 ];
 
 const PAGE_SIZE = 30;
+const PROMPT_MAX = 300;
 
 function tpl() {
   // 탭 버튼들
@@ -103,13 +105,15 @@ function cardHtml(doc) {
   const hasAttach =
     !!(doc.attachments &&
       (((doc.attachments.coins|0) > 0) ||
-       (Array.isArray(doc.attachments.items) && doc.attachments.items.length)));
+       (Array.isArray(doc.attachments.items) && doc.attachments.items.length) ||
+       !!doc.attachments.ticket));
 
   const attachHtml = hasAttach ? (`
     <div style="margin-top:10px;padding:10px;border-radius:10px;background:#F9FAFB;border:1px solid #E5E7EB;color:${theme.text}">
       <div style="font-weight:700;margin-bottom:6px">첨부</div>
-      ${ (doc.attachments.coins|0) > 0 ? `<div>코인: +${doc.attachments.coins|0}</div>` : '' }
-      ${ Array.isArray(doc.attachments.items) && doc.attachments.items.length ? `
+      ${ doc.attachments?.ticket ? `<div>뽑기권: 가중치 지정됨</div>` : '' }
+      ${ (doc.attachments?.coins|0) > 0 ? `<div>코인: +${doc.attachments.coins|0}</div>` : '' }
+      ${ Array.isArray(doc.attachments?.items) && doc.attachments.items.length ? `
         <div style="margin-top:4px">
           아이템:
           <ul style="margin:6px 0 0 16px">
@@ -151,8 +155,8 @@ function cardHtml(doc) {
   </article>`;
 }
 
-// 간단 버튼 스타일 (프로젝트 공용 버튼 없을 때 대비)
-const baseBtnCss = `
+// 간단 버튼/모달 스타일
+const baseCss = `
 .btn{
   height:32px; padding:0 12px; cursor:pointer; border:1px solid #D1D5DB;
   border-radius:8px; background:#FFFFFF; color:#111827;
@@ -163,7 +167,98 @@ const baseBtnCss = `
   border-radius:999px; background:#FFFFFF; color:#111827;
 }
 .tab.active{ background:#111827; color:#FFFFFF; border-color:#111827 }
+.mail-modal-backdrop{
+  position:fixed; inset:0; background:rgba(0,0,0,.35); display:flex; align-items:center; justify-content:center; z-index:9999;
+}
+.mail-modal{
+  width:min(560px, 92vw); background:#fff; border:1px solid #E5E7EB; border-radius:14px; padding:16px;
+  box-shadow:0 10px 30px rgba(0,0,0,.15);
+}
+.mail-modal textarea{
+  width:100%; min-height:120px; border:1px solid #D1D5DB; border-radius:8px; padding:8px; resize:vertical;
+}
+.mail-modal .row{ display:flex; gap:8px; justify-content:flex-end; align-items:center; flex-wrap:wrap; }
+.mail-modal .hint{ font-size:12px; color:#6B7280; }
+.mail-modal .count{ font-size:12px; color:#6B7280; margin-right:auto; }
+.mail-modal .danger{ color:#B91C1C; }
 `;
+
+function mountStyleOnce(){
+  if (document.getElementById('mail-style')) return;
+  const style = document.createElement('style');
+  style.id = 'mail-style';
+  style.textContent = baseCss;
+  document.head.appendChild(style);
+}
+
+// === 프롬프트 입력 모달 ===
+// 반환: Promise<string|null>  (확인 시 프롬프트 문자열, 뒤로가기/닫기 시 null)
+function promptModal({ title='보상 수령', maxLen=PROMPT_MAX }={}){
+  return new Promise((resolve)=>{
+    const $backdrop = document.createElement('div');
+    $backdrop.className = 'mail-modal-backdrop';
+
+    const $modal = document.createElement('div');
+    $modal.className = 'mail-modal';
+    $modal.innerHTML = `
+      <div style="font-weight:800; font-size:16px">${esc(title)}</div>
+      <div class="hint" style="margin-top:4px">수령 전에 프롬프트를 작성해줘. (최대 ${maxLen}자)</div>
+      <div style="margin-top:10px">
+        <textarea id="pm-text" maxlength="${maxLen}" placeholder="예) 고풍스러운 느낌의 장신구, 밤하늘/별/바람 키워드 센스 있게, 사용 시 빛나는 이펙트..."></textarea>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <div class="count"><span id="pm-count">0</span> / ${maxLen}</div>
+        <button id="pm-cancel" class="btn">뒤로가기</button>
+        <button id="pm-ok" class="btn">확인</button>
+      </div>
+      <div id="pm-warn" class="hint danger" style="display:none;margin-top:6px"></div>
+    `;
+
+    $backdrop.appendChild($modal);
+    document.body.appendChild($backdrop);
+
+    const $ta = $modal.querySelector('#pm-text');
+    const $ok = $modal.querySelector('#pm-ok');
+    const $cancel = $modal.querySelector('#pm-cancel');
+    const $count = $modal.querySelector('#pm-count');
+    const $warn = $modal.querySelector('#pm-warn');
+
+    function updateCount(){
+      const len = $ta.value.length;
+      $count.textContent = String(len);
+      const bad = (len === 0 || len > maxLen);
+      $ok.disabled = bad;
+      $warn.style.display = bad ? '' : 'none';
+      if (len === 0) $warn.textContent = '프롬프트를 입력해줘.';
+      else if (len > maxLen) $warn.textContent = `최대 ${maxLen}자까지 입력 가능해.`;
+    }
+
+    $ta.addEventListener('input', updateCount);
+    $ta.addEventListener('keydown', (e)=>{
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault(); $ok.click();
+      }
+      if (e.key === 'Escape') { e.preventDefault(); $cancel.click(); }
+    });
+
+    $cancel.addEventListener('click', ()=>{
+      cleanup(); resolve(null);
+    });
+
+    $ok.addEventListener('click', ()=>{
+      const v = ($ta.value || '').trim();
+      if (!v || v.length > maxLen) { updateCount(); return; }
+      cleanup(); resolve(v);
+    });
+
+    function cleanup(){
+      try { document.body.removeChild($backdrop); } catch {}
+    }
+
+    // 포커스
+    setTimeout(()=>{ $ta.focus(); updateCount(); }, 0);
+  });
+}
 
 // 상태 저장
 const State = {
@@ -184,14 +279,6 @@ async function fetchPage(uid, startDoc, pageSize) {
     : fx.query(col, ...base);
   const snap = await getDocs(q);
   return snap;
-}
-
-function mountStyleOnce(){
-  if (document.getElementById('mail-style')) return;
-  const style = document.createElement('style');
-  style.id = 'mail-style';
-  style.textContent = baseBtnCss;
-  document.head.appendChild(style);
 }
 
 export default async function mountMailTab(viewEl) {
@@ -268,9 +355,7 @@ export default async function mountMailTab(viewEl) {
         const filtered = rows.filter(currentFilter);
         collected.push(...filtered);
 
-        // 전체 탭이 아니고, 필터 때문에 부족하면 다음 페이지 계속 스캔
         if (snap.docs.length < PAGE_SIZE) {
-          // 더 이상 없음
           State.exhausted = true;
           break;
         }
@@ -307,7 +392,7 @@ export default async function mountMailTab(viewEl) {
   $btnR.addEventListener('click', reload);
   $btnM.addEventListener('click', ()=>loadMore(false));
 
-  // 전체 읽음(현재 화면에 로드된 목록만 대상으로 처리 — 비용 절약)
+  // 전체 읽음(현재 화면에 로드된 목록만 대상으로 처리 — 비용 절감)
   $btnAll.addEventListener('click', async ()=>{
     const uid = State.uid;
     if (!uid) return;
@@ -349,13 +434,18 @@ export default async function mountMailTab(viewEl) {
     if (!act || !id) return;
 
     if (act === 'claim') {
+      // 1) 프롬프트 모달 열기 (최대 300자, 비어 있으면 확인 비활성화)
+      const userPrompt = await promptModal({ title:'보상 수령', maxLen: PROMPT_MAX });
+      if (userPrompt == null) return; // 뒤로가기
+
+      // 2) 수령 호출
       t.disabled = true;
       try {
         const claimMail = httpsCallable(func, 'claimMail');
-        await claimMail({ mailId: id });
+        await claimMail({ mailId: id, prompt: userPrompt });
         alert('보상을 수령했어!');
         // 로컬 반영: claimed 표시만 즉시 갱신 (서버 컬럼은 다음 로드 때 정확히 동기화)
-        State.cache = State.cache.map(m => m.__id===id ? ({ ...m, claimed:true }) : m);
+        State.cache = State.cache.map(m => m.__id===id ? ({ ...m, claimed:true, read:true }) : m);
         renderList();
       } catch (e) {
         console.warn('[mail] claim failed', e);
