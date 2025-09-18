@@ -2,14 +2,19 @@
 import { auth, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
-import { isAdminCached } from '../api/admin.js';
+import { ensureAdmin, isAdminCached } from '../api/admin.js';
 
 export async function showManage() {
   const root = document.getElementById('view');
   if (!isAdminCached()) {
+  try { await ensureAdmin(); } catch (e) {}
+  }
+  if (!isAdminCached()) {
+    const root = document.getElementById('view');
     root.innerHTML = `<section class="container narrow"><div class="kv-card">관리자만 접근할 수 있습니다.</div></section>`;
     return;
   }
+
 
   root.innerHTML = `
     <section class="container narrow">
