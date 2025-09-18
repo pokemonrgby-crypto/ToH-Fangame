@@ -282,6 +282,20 @@ async function render(c){
   const root = document.getElementById('view');
   const tier = tierOf(c.elo||1000);
   const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
+  
+  // 1. 캐릭터 주인의 프로필에서 후원자 디자인 이름을 문자열로 가져옵니다.
+  let supporterTier = '';
+  if (c.owner_uid) {
+    try {
+      const ownerSnap = await fx.getDoc(fx.doc(db, 'users', c.owner_uid));
+      // 'supporter_tier' 필드가 존재하고 문자열이면 값을 사용합니다.
+      if (ownerSnap.exists() && typeof ownerSnap.data().supporter_tier === 'string') {
+        supporterTier = ownerSnap.data().supporter_tier;
+      }
+    } catch (e) {
+      console.warn("후원자 정보 조회 실패:", e);
+    }
+  }
   const expVal = Number.isFinite(c.exp) ? c.exp : 0;
   const expPct = Math.max(0, Math.min(100, (c.exp_progress ?? ((expVal)%100)) ));
   const _rawWorlds = await fetchWorlds().catch(()=>null);
@@ -301,7 +315,7 @@ async function render(c){
   <section class="container narrow">
     <div class="card p16 char-card">
       <div class="char-header">
-        <div class="avatar-wrap" style="border-color:${tier.color}">
+              <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
           <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt="" onerror="this.src=''; this.classList.add('noimg')"/>
           <div class="top-actions">
             <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
