@@ -429,71 +429,128 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   color: #0e1116; font-weight: 800;
 }
 
-/* ===== 후원자 전용 테두리 디자인 라이브러리 (수정) ===== */
+/* ===== 후원자 전용 테두리 디자인 라이브러리 (v2) ===== */
 
 /* 아바타 래퍼 기본 스타일 */
 .avatar-wrap {
   position: relative;
-  /* 덮어쓰기 문제가 발생했던 코드를 여기서 삭제합니다. */
 }
+
+/* 후원자 테두리가 적용될 때만 기존 랭크 테두리를 투명하게 만듭니다. */
+.supporter-flame,
+.supporter-galaxy,
+.supporter-forest {
+  border-color: transparent !important;
+}
+
+/* 이미지와 버튼이 효과보다 위에 오도록 z-index를 설정합니다. */
 .avatar-wrap img {
   position: relative;
+  z-index: 2;
+}
+.avatar-wrap .top-actions {
+  position: relative;
+  z-index: 3; /* 버튼이 가장 위에 오도록 설정 */
+}
+
+/* 파티클 효과를 위한 공통 가상 요소 스타일 */
+.supporter-flame::before, .supporter-flame::after,
+.supporter-galaxy::before, .supporter-galaxy::after,
+.supporter-forest::before, .supporter-forest::after {
+  content: '';
+  position: absolute;
+  inset: -5px; /* 효과 범위를 살짝 넓힙니다. */
+  border-radius: 20px; /* avatar-wrap의 radius보다 살짝 크게 */
   z-index: 1;
 }
 
-/* 회전 애니메이션 (공통) */
-@keyframes supporter-spin { to { --angle: 360deg; } }
 
-/* --- 불꽃(flame) 디자인 --- */
+/* --- 🔥 불꽃(flame) 디자인 --- */
 .supporter-flame {
-  border-color: transparent !important; /* 후원자일 때만 테두리를 투명하게 만듭니다. */
-  box-shadow: 0 0 12px 2px rgba(255, 149, 0, 0.7);
+  box-shadow: 0 0 20px 4px rgba(255, 120, 0, 0.7);
 }
 .supporter-flame::before {
-  content: '';
-  position: absolute;
-  inset: -3px; 
-  z-index: 0;
-  border-radius: 18px;
-  background: conic-gradient(
-    from var(--angle, 0deg),
-    #ff3b30, #ff9500, #ffcc00, #ff9500, #ff3b30
-  );
-  animation: supporter-spin 3s linear infinite;
+  background: conic-gradient(from 0deg, #ff6a00, #ffb400, #ff4d00, #ff8c00, #ff6a00);
+  animation: supporter-spin 2s linear infinite;
+}
+.supporter-flame::after {
+  /* 불꽃 파티클 효과 */
+  background-image:
+    radial-gradient(circle at 10% 20%, rgba(255,255,255,.5) 1px, transparent 4px),
+    radial-gradient(circle at 80% 30%, rgba(255,220,150,.6) 2px, transparent 5px),
+    radial-gradient(circle at 25% 90%, rgba(255,255,255,.5) 1px, transparent 4px),
+    radial-gradient(circle at 90% 85%, rgba(255,220,150,.6) 2px, transparent 5px);
+  background-size: 100px 100px;
+  animation: flame-particles 1s infinite linear;
+  opacity: 0;
+}
+@keyframes supporter-spin { to { transform: rotate(360deg); } }
+@keyframes flame-particles {
+  0% { transform: translateY(0); opacity: 1; }
+  100% { transform: translateY(-100px); opacity: 0; }
 }
 
-/* --- 은하수(galaxy) 디자인 --- */
+
+/* --- ✨ 은하수(galaxy) 디자인 --- */
 .supporter-galaxy {
-  border-color: transparent !important;
-  box-shadow: 0 0 12px 2px rgba(88, 86, 214, 0.6);
+  box-shadow: 0 0 20px 4px rgba(120, 80, 255, 0.6);
 }
 .supporter-galaxy::before {
-  content: '';
-  position: absolute;
-  inset: -3px; 
-  z-index: 0;
-  border-radius: 18px;
-  background: conic-gradient(
-    from var(--angle, 0deg),
-    #5856d6, #007aff, #5ac8fa, #af52de, #5856d6
-  );
-  animation: supporter-spin 5s linear infinite;
+  background:_lin_ear-gradient(160deg, #1D2B64, #4F46E5, #A78BFA);_
+  background: linear-gradient(160deg, #0f0c29, #302b63, #24243e);
+  animation: galaxy-fade 8s ease-in-out infinite alternate;
+}
+.supporter-galaxy::after {
+  /* 반짝이는 별 효과 */
+  background-image:
+    radial-gradient(circle at 20% 25%, white 1px, transparent 2px),
+    radial-gradient(circle at 80% 15%, white 1px, transparent 2px),
+    radial-gradient(circle at 50% 50%, white 1px, transparent 2px),
+    radial-gradient(circle at 15% 80%, white 1px, transparent 2px),
+    radial-gradient(circle at 85% 90%, white 1px, transparent 2px);
+  background-size: 150px 150px;
+  animation: twinkle 4s infinite linear;
+}
+@keyframes galaxy-fade {
+  from { opacity: 0.7; }
+  to { opacity: 1; }
+}
+@keyframes twinkle {
+  0%, 100% { opacity: 0.5; transform: scale(0.9); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
-/* --- 숲(forest) 디자인 --- */
+
+/* --- 🌳 숲(forest) 디자인 --- */
 .supporter-forest {
-  border-color: transparent !important;
-  box-shadow: 0 0 10px 2px rgba(52, 199, 89, 0.6);
+  box-shadow: 0 0 18px 3px rgba(52, 199, 89, 0.6);
 }
 .supporter-forest::before {
-  content: '';
-  position: absolute;
-  inset: -3px; 
-  z-index: 0;
-  border-radius: 18px;
-  background: conic-gradient(
-    from var(--angle, 0deg),
-    #34c759, #a2d4ab, #ffffff, #a2d4ab, #34c759
-  );
-  animation: supporter-spin 7s linear infinite;
+  background: linear-gradient(45deg, #228B22, #3CB371, #8FBC8F, #2E8B57);
+}
+.supporter-forest::after {
+  /* 흩날리는 나뭇잎 파티클 */
+  content: '🌿'; /* 이모지를 파티클로 사용 */
+  font-size: 14px;
+  color: #90ee90;
+  text-shadow: 0 0 5px white;
+  animation: leaves-fall 8s linear infinite;
+  opacity: 0;
+}
+@keyframes leaves-fall {
+  0% { transform: translateY(-20px) translateX(-10px) rotate(0deg); opacity: 0; }
+  10% { opacity: 1; }
+  90% { opacity: 1; }
+  100% { transform: translateY(180px) translateX(20px) rotate(360deg); opacity: 0; }
+}
+
+/* 애니메이션 지연을 줘서 여러 개가 흩날리는 것처럼 보이게 합니다. */
+.supporter-forest::after {
+    /* 실제로는 ::after 하나만 쓸 수 있으므로, box-shadow로 파티클을 복제합니다. */
+    text-shadow:
+        10px 50px 0 #90ee90,  /* particle 2 */
+        -30px 90px 0 #90ee90, /* particle 3 */
+        40px 120px 0 #90ee90, /* particle 4 */
+        -50px 20px 0 #90ee90; /* particle 5 */
+    animation-delay: 0s, 1.5s, 3s, 5s, 7s;
 }
