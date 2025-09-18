@@ -315,13 +315,19 @@ async function render(c){
   <section class="container narrow">
     <div class="card p16 char-card">
       <div class="char-header">
-              <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
+        
+        <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
           <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt="" onerror="this.src=''; this.classList.add('noimg')"/>
-        <div class="top-actions"> 
+          
+          {/* ✨ --- [수정] --- ✨
+              버튼을 포함한 div가 img 태그 바로 다음에 오도록 위치를 조정합니다.
+              CSS에서 이 버튼 그룹의 z-index를 가장 높게 설정할 것입니다. */}
+          <div class="top-actions"> 
             <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
             ${isOwner? `<button class="fab-circle" id="btnUpload" title="이미지 업로드">⤴</button>`:''}
           </div>
         </div>
+        
         <div class="char-name">${c.name||'(이름 없음)'}</div>
         <div class="chips-row">
           <span class="tier-chip" style="background:${tier.color}1a; color:#fff; border-color:${tier.color}80;">${tier.name || 'Tier'}</span>
