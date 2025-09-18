@@ -692,3 +692,76 @@ Object.assign(exports, battleFns);
 const mailFns = require('./mail')(admin, { onCall, HttpsError, logger });
 Object.assign(exports, mailFns);
 // === END PATCH ===
+
+// === BEGIN: admin tools (search) ===
+async function __isAdmin(uid) {
+  if (!uid) return false;
+  try {
+    const snap = await db.doc('configs/admins').get();
+    const data = snap.exists ? snap.data() : {};
+    const allow = Array.isArray(data.allow) ? data.allow : [];
+    const allowEmails = Array.isArray(data.allowEmails) ? data.allowEmails : [];
+    if (allow.includes(uid)) return true;
+    const user = await admin.auth().getUser(uid);
+    return !!(user?.email && allowEmails.includes(user.email));
+  } catch (_) { return false; }
+}
+
+exports.adminGetCharById = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await __isAdmin(uid)) throw new HttpsError('permission-denied', 'admin only');
+  const id = String(req.data?.id||'').replace(/^chars\//,'');
+  if (!id) throw new HttpsError('invalid-argument', 'id 필요');
+  const snap = await db.doc(`chars/${id}`).get();
+  if (!snap.exists) return { ok:true, found:false };
+  return { ok:true, found:true, id:snap.id, data:snap.data() };
+});
+
+exports.adminSearchCharsByName = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await __isAdmin(uid)) throw new HttpsError('permission-denied', 'admin only');
+  const name = String(req.data?.name||'').trim();
+  const limitN = Math.max(1, Math.min(50, Number(req.data?.limit||20)));
+  if (!name) throw new HttpsError('invalid-argument', 'name 필요');
+  const q = await db.collection('chars').where('name','==', name).limit(limitN).get();
+  const rows = q.docs.map(d => ({ id:d.id, ...d.data() }));
+  return { ok:true, rows };
+});
+
+exports.adminFindUser = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await __isAdmin(uid)) throw new HttpsError('permission-denied', 'admin only');
+  const q = String(req.data?.q||'').trim();
+  if (!q) throw new HttpsError('invalid-argument', 'q 필요');
+
+  const byId = await db.doc(`users/${q}`).get();
+  if (byId.exists) return { ok:true, users:[{ uid:byId.id, ...byId.data() }] };
+
+  if (q.includes('@')) {
+    try {
+      const u = await admin.auth().getUserByEmail(q);
+      const us = await db.doc(`users/${u.uid}`).get();
+      return { ok:true, users:[{ uid:u.uid, ...(us.exists?us.data():{}) }] };
+    } catch(_){}
+  }
+
+  const hit = await db.collection('users').where('nick','==', q).limit(10).get();
+  const rows = hit.docs.map(d => ({ uid:d.id, ...d.data() }));
+  return { ok:true, users: rows };
+});
+
+exports.adminListAssets = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await __isAdmin(uid)) throw new HttpsError('permission-denied', 'admin only');
+  const targetUid = String(req.data?.uid||'');
+  if (!targetUid) throw new HttpsError('invalid-argument', 'uid 필요');
+
+  const charsQ = await db.collection('chars').where('owner_uid','==', targetUid).limit(100).get();
+  const chars = charsQ.docs.map(d => ({ id:d.id, name:d.get('name'), elo:d.get('elo')||0, thumb_url:d.get('thumb_url')||d.get('image_url')||'' }));
+
+  const uSnap = await db.doc(`users/${targetUid}`).get();
+  const items = uSnap.exists ? (uSnap.get('items_all') || []) : [];
+
+  return { ok:true, chars, items };
+});
+// === END: admin tools (search) ===
