@@ -652,7 +652,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           '- 과도한 피해로 한 턴에 전투가 끝나지 않도록 데미지는 {min_damage}~{max_damage} 안에서 신중히 산정한다.',
           '- narrative는 플레이어 행동과 적의 반격을 모두 포함하여 2~3 문장으로 요약한다. 적의 스킬명을 1회 언급하되 수식은 절제한다.',
           '- [매우 중요] narrative 서술 시, 적의 HP가 0 이하로 떨어지는 경우가 아니라면 "쓰러뜨렸다", "파괴했다", "끝장냈다" 등 전투의 끝을 암시하는 단정적인 표현을 절대 사용해서는 안 된다. 대신 "큰 충격을 주었다", "공격이 명중했다", "비틀거린다" 와 같이 과정에 대한 묘사에 집중해야 한다.',
-        ].join('\\n');
+        ].join('\n');
 
         // [PATCH] 캐릭터 최신 서사(long) + 직전 장면을 함께 전달
         const narratives = Array.isArray(character.narratives) ? character.narratives.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)) : [];
@@ -677,7 +677,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           '',
           '## 플레이어 행동',
           JSON.stringify(actionDetail, null, 2)
-        ].join('\\n');
+        ].join('\n');
 
         
         const { primary, fallback } = pickModels();
