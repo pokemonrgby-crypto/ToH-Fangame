@@ -398,8 +398,8 @@ if (!prefersReduced && wrap) {
     const ey = 'clientY' in e ? e.clientY : (e.touches?.[0]?.clientY ?? 0);
     const rx = (ex - r.left)/r.width  - 0.5;
     const ry = (ey - r.top )/r.height - 0.5;
-    tx = clamp(-rx*10, -10, 10);   // 최대 ±10도
-    ty = clamp( ry*10, -10, 10);
+    tx = clamp(-rx*20, -20, 20);   // 최대 ±10도
+    ty = clamp( ry*20, -20, 20);
     if(!rafId) rafId = requestAnimationFrame(apply);
   };
 
