@@ -655,6 +655,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const latestNarr = narratives[0] || {};
         const lastScene  = (battle.log && battle.log.length > 0) ? battle.log[battle.log.length - 1] 
                           : ((run.events || []).slice(-1)[0]?.note || '(없음)');
+        const enemySkillsText = (battle.enemy.skills || []).map(s => `- ${s.name}: ${s.description}`).join('\\n');
 
         const userPrompt = [
           '## 전투 컨텍스트',
