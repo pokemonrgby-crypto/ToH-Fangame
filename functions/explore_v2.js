@@ -628,10 +628,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
         
         // 턴 수에 비례하여 적 공격력 증가 (턴당 10%)
-        const turnBonusDamage = Math.floor(run.turn * 0.1 * baseRange.max);
-        const finalMaxDamage = baseRange.max + turnBonusDamage;
+        const expBonusDamage = Math.floor(playerExp / 2500); // 예: 500 exp 마다 최대 대미지 +1
+        const finalMaxDamage = baseRange.max + turnBonusDamage + expBonusDamage;
         
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
+        const maxDamageClamped = finalMaxDamage + tierBump;
         const maxDamageClamped = finalMaxDamage + tierBump;
         const rarityMap = {easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic'};
       
