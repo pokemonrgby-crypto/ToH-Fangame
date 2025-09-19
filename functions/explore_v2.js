@@ -415,9 +415,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       };
 
       const baseHp = (hpTableByDiff[diff]?.[tier]) ?? 8;
-      // 고레벨 캐릭 보정은 너무 급해지지 않게 완만하게
-      const expBonusRatio = Math.floor((playerExp || 0) / 400) * 0.10;
-      const finalHp = Math.max(1, Math.round(baseHp * (1 + expBonusRatio)));
+      // 턴 수에 비례하여 체력 증가 (턴당 5%)
+      const turnBonusRatio = (run.turn || 0) * 0.05;
+      const finalHp = Math.max(1, Math.round(baseHp * (1 + turnBonusRatio)));
+
 
       const battleInfo = {
         enemy: {
@@ -625,8 +626,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const playerExp = character.exp_total || 0;
         const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8} };
         const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
-        const expBonusDamage = Math.floor(playerExp / 500);
-        const finalMaxDamage = baseRange.max + expBonusDamage;
+        
+        // 턴 수에 비례하여 적 공격력 증가 (턴당 10%)
+        const turnBonusDamage = Math.floor(run.turn * 0.1 * baseRange.max);
+        const finalMaxDamage = baseRange.max + turnBonusDamage;
+        
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
         const maxDamageClamped = finalMaxDamage + tierBump;
         const rarityMap = {easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic'};
@@ -687,6 +691,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
         // [PATCH] 플레이어 피해 동적 상한 (난이도/등급 + 시작HP 40% 캡)
         let playerHpChange = Math.round(Number(aiResult.playerHpChange) || 0);
+
+        // 회복량 너프: 최대 2로 제한
+        if (playerHpChange > 0) {
+            playerHpChange = Math.min(playerHpChange, 2);
+        }
 
         const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3 }[diff] ?? 1);
         const toPlayerTier = (tier === 'boss') ? 1 : 0;
@@ -857,5 +866,3 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
   return { startExploreV2, advPrepareNextV2, advApplyChoiceV2, endExploreV2, advBattleActionV2, advBattleFleeV2 };
 };
-
-
