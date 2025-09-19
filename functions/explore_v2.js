@@ -229,8 +229,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     await db.collection('chars').doc(charId).update({ last_explore_startedAt: Timestamp.now() }).catch(()=>{});
     return { ok:true, runId: ref.id };
   });
-
-  const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
   // /functions/explore_v2.js
 
 // ... (파일 상단의 다른 함수들은 그대로 유지) ...
@@ -342,6 +340,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 // ANCHOR: functions/explore_v2.js -> advApplyChoiceV2 함수
 
 // entire function to be replaced
+// ANCHOR: functions/explore_v2.js -> advApplyChoiceV2 함수
+
+// entire function to be replaced
 const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
@@ -362,7 +363,7 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const chosenDice = pend.diceResults[idx];
     const chosenOutcome = pend.choice_outcomes[idx] || { event_type:'narrative' };
 
-    // 💥 AI가 생성한 '결과' 텍스트를 가져와 로그에 포함
+    // AI가 생성한 '결과' 텍스트를 가져와 로그에 포함
     const resultText = String(chosenOutcome.result_text || '아무 일도 일어나지 않았다.').trim();
     const narrativeLog = `${pend.narrative_text}\n\n[선택: ${pend.choices[idx] || ''}]\n→ ${resultText}`.trim().slice(0, 2300);
 
@@ -406,9 +407,6 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     }
 
     const delta = Number(chosenDice?.deltaStamina || 0);
-// /functions/explore_v2.js
-
-// ... (advApplyChoiceV2 함수 내부) ...
     const staminaNow = Math.max(0, (run.stamina||0) + delta);
     const updates = {
       stamina: staminaNow,
@@ -421,11 +419,10 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
       }),
       summary3: (pend.summary3_update || run.summary3 || ''),
       pending_choices: null,
-      prerolls: pend.nextPrerolls || run.prerolls, // ◀◀◀ 이 줄을 추가하세요
+      prerolls: run.prerolls, // prerolls는 advPrepareNextV2에서 이미 갱신되었으므로 여기선 pending에서 가져오지 않음
       updatedAt: Timestamp.now()
     };
     await ref.update(updates);
-// ... (이하 생략) ...
 
     // 체력 소진 시 종료
     if (staminaNow <= 0){
@@ -444,7 +441,6 @@ const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const snap = await ref.get();
     return { ok:true, state: snap.data(), battle:false, done:false };
   });
-
 // ... (파일 끝까지) ...
   
 
