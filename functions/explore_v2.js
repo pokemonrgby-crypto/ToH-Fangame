@@ -464,8 +464,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
     const { runId, actionType, actionIndex } = req.data||{};
-
-      
+    
     if(!runId || !actionType) throw new HttpsError('invalid-argument','필수값 누락');
 
     const runRef = db.collection('explore_runs').doc(runId);
@@ -473,172 +472,156 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const userRef = db.collection('users').doc(uid);
 
     const result = await db.runTransaction(async (tx) => {
-      const runSnap = await tx.get(runRef);
-      if(!runSnap.exists) throw new HttpsError('not-found','런 없음');
-      const run = runSnap.data();
+        const runSnap = await tx.get(runRef);
+        if(!runSnap.exists) throw new HttpsError('not-found','런 없음');
+        const run = runSnap.data();
 
-      if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
-      const battle = run.pending_battle;
-      if(!battle) throw new HttpsError('failed-precondition','진행중인 전투 없음');
+        if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
+        const battle = run.pending_battle;
+        if(!battle) throw new HttpsError('failed-precondition','진행중인 전투 없음');
 
-      const charId = String(run.charRef||'').replace(/^chars\//,'');
-      const charRef = charCollectionRef.doc(charId);
-      const charSnap = await tx.get(charRef);
-      const character = charSnap.exists ? charSnap.data() : {};
-      
-      let actionDetail = { type: actionType, name: '상호작용' };
-      let itemToConsume = null;
-      let staminaCost = 0; // 스킬 사용 시 스태미나 소모
+        const charId = String(run.charRef||'').replace(/^chars\//,'');
+        const charRef = charCollectionRef.doc(charId);
+        const charSnap = await tx.get(charRef);
+        const character = charSnap.exists ? charSnap.data() : {};
+        
+        let actionDetail = { type: actionType, name: '상호작용' };
+        let itemToConsume = null;
+        let staminaCost = 0; // 스킬 사용 시 스태미나 소모
 
-      if (actionType === 'skill') {
-        const skillIndex = Number(actionIndex);
-        const equipped = character.abilities_equipped || [];
-        const all = character.abilities_all || [];
-        const skill = all[equipped[skillIndex]];
-        if (!skill) throw new HttpsError('invalid-argument', '선택한 스킬이 없습니다.');
-        actionDetail = { type: 'skill', name: skill.name, description: skill.desc_soft || '' };
-        staminaCost = skill.stamina_cost || 0; // 스킬에 stamina_cost 필드가 있다면 사용
-      } else if (actionType === 'item') {
-        const itemIndex = Number(actionIndex);
-        const userSnap = await tx.get(userRef);
-        const allItems = userSnap.data()?.items_all || [];
-        const equipped = character.items_equipped || [];
-        const itemId = equipped[itemIndex];
-        if (!itemId) throw new HttpsError('invalid-argument', '선택한 아이템이 없습니다.');
+        if (actionType === 'skill') {
+            const skillIndex = Number(actionIndex);
+            const equipped = character.abilities_equipped || [];
+            const all = character.abilities_all || [];
+            const skill = all[equipped[skillIndex]];
+            if (!skill) throw new HttpsError('invalid-argument', '선택한 스킬이 없습니다.');
+            actionDetail = { type: 'skill', name: skill.name, description: skill.desc_soft || '' };
+            staminaCost = skill.stamina_cost || 0;
+        } else if (actionType === 'item') {
+            const itemIndex = Number(actionIndex);
+            const userSnap = await tx.get(userRef);
+            const allItems = userSnap.data()?.items_all || [];
+            const equipped = character.items_equipped || [];
+            const itemId = equipped[itemIndex];
+            if (!itemId) throw new HttpsError('invalid-argument', '선택한 아이템이 없습니다.');
 
-        itemToConsume = allItems.find(it => it.id === itemId);
-        if (!itemToConsume) throw new HttpsError('not-found', '사용하려는 아이템을 찾을 수 없습니다.');
-        actionDetail = { type: 'item', name: itemToConsume.name, description: itemToConsume.description || '' };
-      }
-      // [추가] 보스 상호작용 금지
-      if (actionType === 'interact' && (run?.pending_battle?.enemy?.tier === 'boss')) {
-        throw new HttpsError('failed-precondition', '보스에게는 상호작용을 사용할 수 없어');
-      }
- 
+            itemToConsume = allItems.find(it => it.id === itemId);
+            if (!itemToConsume) throw new HttpsError('not-found', '사용하려는 아이템을 찾을 수 없습니다.');
+            actionDetail = { type: 'item', name: itemToConsume.name, description: itemToConsume.description || '' };
+        }
+        if (actionType === 'interact' && (run?.pending_battle?.enemy?.tier === 'boss')) {
+            throw new HttpsError('failed-precondition', '보스에게는 상호작용을 사용할 수 없어');
+        }
 
-      if (battle.playerHp < staminaCost) {
-        throw new HttpsError('failed-precondition', '스킬을 사용하기 위한 스태미나가 부족합니다.');
-      }
+        if (battle.playerHp < staminaCost) {
+            throw new HttpsError('failed-precondition', '스킬을 사용하기 위한 스태미나가 부족합니다.');
+        }
 
-      // [교체] 난이도/등급별 프롬프트 키 자동 선택
-      const tier = run?.pending_battle?.enemy?.tier || 'normal';     // trash|normal|elite|boss
-      const diff = run?.difficulty || 'normal';                       // easy|normal|hard|vhard|legend
-      const promptKey = `battle_turn_system_${diff}_${tier}`;         // 예: battle_turn_system_hard_elite
-      let systemPromptRaw = await loadPrompt(db, promptKey);
+        const tier = run?.pending_battle?.enemy?.tier || 'normal';
+        const diff = run?.difficulty || 'normal';
+        const promptKey = `battle_turn_system_${diff}_${tier}`;
+        let systemPromptRaw = await loadPrompt(db, promptKey);
 
-      // 없으면 기본 프롬프트 폴백
-      if (!systemPromptRaw) {
-        systemPromptRaw = await loadPrompt(db, 'battle_turn_system');
-      }
-      const playerExp = character.exp_total || 0;
-      const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8} };
-      const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
-      const expBonusDamage = Math.floor(playerExp / 500);
-      const finalMaxDamage = baseRange.max + expBonusDamage;
-      // [추가] 적 등급에 따른 보정치 (최대치 상향만, 최솟값은 그대로)
-      const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
-      const maxDamageClamped = finalMaxDamage + tierBump;
+        if (!systemPromptRaw) {
+            systemPromptRaw = await loadPrompt(db, 'battle_turn_system');
+        }
+        const playerExp = character.exp_total || 0;
+        const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8} };
+        const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
+        const expBonusDamage = Math.floor(playerExp / 500);
+        const finalMaxDamage = baseRange.max + expBonusDamage;
+        const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
+        const maxDamageClamped = finalMaxDamage + tierBump;
+        const rarityMap = {easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic'};
+        
+        const systemPrompt = systemPromptRaw
+            .replace(/{min_damage}/g, baseRange.min)
+            .replace(/{max_damage}/g, maxDamageClamped)
+            .replace(/{reward_rarity}/g, rarityMap[run.difficulty] || 'rare');
 
-      const rarityMap = {easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic'};
-      
-      const systemPrompt = systemPromptRaw
-        .replace(/{min_damage}/g, baseRange.min)
-        .replace(/{max_damage}/g, maxDamageClamped)
-        .replace(/{reward_rarity}/g, rarityMap[run.difficulty] || 'rare');
+        const userPrompt = `## 전투 컨텍스트\n- 장소 난이도: ${run.difficulty}\n- 플레이어: ${character.name} (현재 HP: ${battle.playerHp - staminaCost})\n- 적: ${battle.enemy.name} (등급: ${battle.enemy.tier}, 현재 HP: ${battle.enemy.hp})\n\n## 플레이어 행동\n${JSON.stringify(actionDetail, null, 2)}`;
+        
+        const aiResult = await callGemini({ apiKey: GEMINI_API_KEY.value(), systemText: systemPrompt, userText: userPrompt, logger }) || {};
 
-      const userPrompt = `## 전투 컨텍스트\n- 장소 난이도: ${run.difficulty}\n- 플레이어: ${character.name} (현재 HP: ${battle.playerHp - staminaCost})\n- 적: ${battle.enemy.name} (등급: ${battle.enemy.tier}, 현재 HP: ${battle.enemy.hp})\n\n## 플레이어 행동\n${JSON.stringify(actionDetail, null, 2)}`;
-      
-      const aiResult = await callGemini({ apiKey: GEMINI_API_KEY.value(), systemText: systemPrompt, userText: userPrompt }) || {};
+        const playerHpChange = Math.max(-1, Math.min(1, Math.round(Number(aiResult.playerHpChange) || 0)));
+        const rawEnemyDelta = Math.round(Number(aiResult.enemyHpChange) || 0);
+        const enemyHpChange = Math.max(-maxDamageClamped, Math.min(0, rawEnemyDelta));
+        const maxStamina = run.stamina_start || STAMINA_BASE || 10;
+        const newPlayerHp = Math.max(0, Math.min(maxStamina, battle.playerHp - staminaCost + playerHpChange));
+        const newEnemyHp = Math.max(0, battle.enemy.hp + enemyHpChange);
 
-      // 서버 필터링
-      // 스테미나 변화는 -1~+1로 제한(흡혈 회복 +1까지 허용)
-      const playerHpChange = Math.max(-1, Math.min(1, Math.round(Number(aiResult.playerHpChange) || 0)));
+          battle.playerHp = newPlayerHp;
+          battle.enemy.hp = newEnemyHp;
+          battle.log.push(aiResult.narrative || '아무 일도 일어나지 않았다.');
+          battle.turn += 1;
 
-      // 적 HP 감소는 0 ~ maxDamageClamped 사이만 허용(음수: 피해)
-      const rawEnemyDelta = Math.round(Number(aiResult.enemyHpChange) || 0); // 보통 음수
-      const enemyHpChange = Math.max(-maxDamageClamped, Math.min(0, rawEnemyDelta));
-
-      const maxStamina = run.stamina_start || STAMINA_BASE || 10;
-      const newPlayerHp = Math.max(0, Math.min(maxStamina, battle.playerHp - staminaCost + playerHpChange));
-
-      const newEnemyHp = Math.max(0, battle.enemy.hp + enemyHpChange);
-
-      battle.playerHp = newPlayerHp;
-      battle.enemy.hp = newEnemyHp;
-      battle.log.push(aiResult.narrative || '아무 일도 일어나지 않았다.');
-      battle.turn += 1;
-
-      // 아이템 소모 처리
-      if (itemToConsume && (itemToConsume.isConsumable || itemToConsume.consumable)) {
-          const userSnap = await tx.get(userRef);
-          let allItems = userSnap.data()?.items_all || [];
-          const itemIdx = allItems.findIndex(it => it.id === itemToConsume.id);
-          
-          if (itemIdx > -1) {
-              const currentUses = allItems[itemIdx].uses;
-              if (typeof currentUses === 'number' && currentUses > 1) {
-                  allItems[itemIdx].uses -= 1;
-                  tx.update(userRef, { items_all: allItems });
-              } else {
-                  const newAllItems = allItems.filter(it => it.id !== itemToConsume.id);
-                  const newEquippedItems = (character.items_equipped || []).filter(id => id !== itemToConsume.id);
-                  tx.update(userRef, { items_all: newAllItems });
-                  tx.update(charRef, { items_equipped: newEquippedItems });
+          if (itemToConsume && (itemToConsume.isConsumable || itemToConsume.consumable)) {
+              const userSnap = await tx.get(userRef);
+              let allItems = userSnap.data()?.items_all || [];
+              const itemIdx = allItems.findIndex(it => it.id === itemToConsume.id);
+              if (itemIdx > -1) {
+                  const currentUses = allItems[itemIdx].uses;
+                  if (typeof currentUses === 'number' && currentUses > 1) {
+                      allItems[itemIdx].uses -= 1;
+                      tx.update(userRef, { items_all: allItems });
+                  } else {
+                      const newAllItems = allItems.filter(it => it.id !== itemToConsume.id);
+                      const newEquippedItems = (character.items_equipped || []).filter(id => id !== itemToConsume.id);
+                      tx.update(userRef, { items_all: newAllItems });
+                      tx.update(charRef, { items_equipped: newEquippedItems });
+                 }
               }
           }
-      }
 
-      // 전투 종료 처리
-      let battleResult = { battle_over: false, outcome: 'ongoing', battle_state: battle };
-      if (newPlayerHp <= 0 || newEnemyHp <= 0 || aiResult.battle_over === true) {
-        battleResult.battle_over = true;
-        
-        if (newEnemyHp <= 0 && newPlayerHp > 0) { // 승리
-            battleResult.outcome = 'win';
-            const exp = { trash: 5, normal: 10, elite: 20, boss: 50 }[battle.enemy.tier] || 10;
-            tx.update(charRef, { exp_total: FieldValue.increment(exp) });
+          let battleResult = { battle_over: false, outcome: 'ongoing', battle_state: battle };
+          const isBattleOver = newPlayerHp <= 0 || newEnemyHp <= 0 || aiResult.battle_over === true;
 
-            if(aiResult.reward_item) {
-                  const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic' })[run.difficulty] || 'rare';
-                  const fallbackItem = {
-                        name: `${battle.enemy.name}의 파편`,
-                        rarity: baseRarity,
-                        description: `${battle.enemy.name}을 쓰러뜨려 얻은 파편. 장소의 기운이 스며 있다.`,
-                        isConsumable: false,
-                        uses: 1
+          if (isBattleOver) {
+              battleResult.battle_over = true;
+            
+              if (newEnemyHp <= 0 && newPlayerHp > 0) { //  승리
+                  battleResult.outcome = 'win';
+                  const exp = { trash: 5, normal: 10, elite: 20, boss: 50 }[battle.enemy.tier] || 10;
+                  tx.update(charRef, { exp_total: FieldValue.increment(exp) });
+
+                  if (aiResult.reward_item) {
+                      const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic' })[run.difficulty] || 'rare';
+                      const fallbackItem = {
+                          name: `${battle.enemy.name}의 파편`,
+                          rarity: baseRarity,
+                          description: `${battle.enemy.name}을 쓰러뜨려 얻은 파편. 장소의 기운이 스며 있다.`,
+                          isConsumable: false, uses: 1
                       };
-                      const reward = aiResult.reward_item && typeof aiResult.reward_item === 'object'
-                        ? aiResult.reward_item
-                        : fallbackItem;
-
+                      const reward = aiResult.reward_item && typeof aiResult.reward_item === 'object' ? aiResult.reward_item : fallbackItem;
                       const newItem = { ...reward, id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,9) };
                       tx.update(userRef, { items_all: FieldValue.arrayUnion(newItem) });
+                  }
 
-            tx.update(runRef, {
-                pending_battle: null,
-                stamina: newPlayerHp,
-                events: FieldValue.arrayUnion({ t: Date.now(), note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, kind:'combat-win', exp })
-            });
-        } else { // 패배 또는 무승부
-            battleResult.outcome = 'loss';
-            tx.update(runRef, {
-                status: 'ended',
-                reason: 'battle_lost',
-                endedAt: Timestamp.now(),
-                pending_battle: null,
-                stamina: 0,
-            });
-        }
-      } else {
-        tx.update(runRef, { pending_battle: battle, stamina: newPlayerHp });
-      }
+                  tx.update(runRef, {
+                      pending_battle: null,
+                      stamina: newPlayerHp,
+                      events: FieldValue.arrayUnion({ t: Date.now(), note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, kind:'combat-win', exp })
+                  });
 
-      return battleResult;
-    });
+               } else { // 패배 또는 무승부
+                  battleResult.outcome = 'loss';
+                  tx.update(runRef, {
+                      status: 'ended',
+                       reason: 'battle_lost',
+                      endedAt: Timestamp.now(),
+                      pending_battle: null,
+                      stamina: 0,
+                  });
+              }
+          } else { // 전투 계속
+              tx.update(runRef, { pending_battle: battle, stamina: newPlayerHp });
+          }
+  
+          return battleResult;
+      });
 
-    return { ok: true, ...result };
+      return { ok: true, ...result };
   });
-
   // [신규] 전투 후퇴(도망) 함수
   const advBattleFleeV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
