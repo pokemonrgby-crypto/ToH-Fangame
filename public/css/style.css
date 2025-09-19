@@ -430,13 +430,12 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   color: #0e1116; font-weight: 800;
 }
 
-/* ===== 후원자 전용 테두리 디자인 라이브러리 (v7 - 파티클 강화) ===== */
+/* ===== 후원자 전용 테두리 디자인 라이브러리 (v8 - 파티클 최종 수정) ===== */
 
-/* 아바타 래퍼 기본 스타일: overflow:hidden 제거가 핵심! */
+/* 아바타 래퍼 기본 스타일 */
 .avatar-wrap {
   position: relative;
   perspective: 1000px;
-  /* overflow: hidden; <- 이 속성을 제거하여 파티클이 보이도록 합니다. */
 }
 
 /* 후원자 테두리 기본 스타일 */
@@ -470,12 +469,11 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
 }
 
 
-/* --- 🔥 불꽃(flame) 디자인 - 타오르는 불꽃 embers --- */
+/* --- 🔥 불꽃(flame) 디자인 - 타오르는 불꽃 이모지 --- */
 .supporter-flame {
   box-shadow: 0 0 25px 3px rgba(255, 120, 0, 0.6),
               inset 0 0 15px 1px rgba(255, 80, 0, 0.6);
 }
-/* 배경 불꽃 (기존과 유사) */
 .supporter-flame::before {
   content: '';
   position: absolute;
@@ -487,38 +485,36 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   filter: blur(8px);
   pointer-events: none;
 }
-/* 흩날리는 불씨 파티클 (대폭 강화) */
+/* 흩날리는 불꽃 이모지 파티클 */
 .supporter-flame::after {
-  content: '';
+  content: '🔥';
   position: absolute;
-  top: 0; left: 0;
-  width: 100%; height: 100%;
-  border-radius: 22px;
-  --particle-size: 3px;
-  --particle-color: #ffc93c;
-  /* box-shadow로 10개의 불씨 생성 */
-  box-shadow:
-    -5% 80% var(--particle-size) var(--particle-color), 105% 60% var(--particle-size) var(--particle-color),
-    10% 110% var(--particle-size) var(--particle-color), 90% -10% var(--particle-size) var(--particle-color),
-    50% 120% var(--particle-size) var(--particle-color), 115% 20% var(--particle-size) var(--particle-color),
-    -15% 40% var(--particle-size) var(--particle-color), 80% -5% var(--particle-size) var(--particle-color),
-    40% 115% var(--particle-size) var(--particle-color), 60% -15% var(--particle-size) var(--particle-color);
-  animation: embers-rise 4s infinite linear;
+  top: 100%; /* 아래에서 시작 */
+  left: 0;
+  width: 100%;
+  height: 100%;
+  font-size: 18px;
+  color: #ffc93c;
+  text-shadow:
+    10% -10% 0px, 90% -20% 0px,
+    25% -40% 0px, 75% -50% 0px,
+    45% -70% 0px, 60% -85% 0px;
+  animation: embers-rise-emoji 4s infinite linear;
   pointer-events: none;
   z-index: 3;
 }
-@keyframes embers-rise {
-  0% { transform: translateY(0) rotate(0deg); opacity: 0; }
+@keyframes embers-rise-emoji {
+  0% { transform: translateY(0); opacity: 0; }
   20% { opacity: 1; }
-  100% { transform: translateY(-150%) rotate(360deg); opacity: 0; }
+  100% { transform: translateY(-150%); opacity: 0; }
 }
 
 
-/* --- ✨ 은하수(galaxy) 디자인 - 쏟아지는 유성 --- */
+/* --- ✨ 은하수(galaxy) 디자인 - 쏟아지는 유성과 반짝이는 별 --- */
 .supporter-galaxy {
   box-shadow: 0 0 25px 3px rgba(120, 80, 255, 0.6);
 }
-/* 배경 은하수 (기존과 유사) */
+/* 배경 은하수 (별도의 가상요소로 분리) */
 .supporter-galaxy::before {
   content: '';
   position: absolute;
@@ -528,39 +524,49 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   background: linear-gradient(160deg, #0f0c29, #302b63, #24243e);
   pointer-events: none;
 }
-/* 유성우 & 별 파티클 (대폭 강화) */
+/* 반짝이는 별 파티클 (별도 가상요소) */
+.supporter-galaxy .avatar-wrap::before {
+  content: '';
+  position: absolute;
+  inset: -20px;
+  --star-color: #e0e8ff;
+  background-image:
+    radial-gradient(1px 1px at 20% 30%, var(--star-color), transparent 100%),
+    radial-gradient(1px 1px at 80% 70%, var(--star-color), transparent 100%),
+    radial-gradient(2px 2px at 50% 50%, var(--star-color), transparent 100%);
+  background-repeat: no-repeat;
+  animation: twinkle-stars-subtle 4s infinite ease-in-out;
+  pointer-events: none;
+  z-index: 1;
+}
+/* 유성우 (메인 가상요소) */
 .supporter-galaxy::after {
   content: '';
   position: absolute;
-  inset: -50px; /* 파티클 영역 확장 */
+  inset: -100%; /* 유성이 길게 그려지도록 영역 대폭 확장 */
   --star-color: #e0e8ff;
-  --shooting-star: linear-gradient(to left, var(--star-color), transparent);
-  background-image:
-    /* 유성 1 */
-    var(--shooting-star),
-    /* 유성 2 */
-    var(--shooting-star),
-    /* 반짝이는 별들 (box-shadow) */
-    radial-gradient(1px 1px at 20% 30%, var(--star-color), transparent),
-    radial-gradient(1px 1px at 80% 70%, var(--star-color), transparent),
-    radial-gradient(2px 2px at 50% 50%, var(--star-color), transparent);
+  --shooting-star: linear-gradient(to right, var(--star-color), transparent); /* 방향 수정 */
+  background-image: var(--shooting-star), var(--shooting-star);
   background-repeat: no-repeat;
-  background-size: 100px 2px, 150px 1px, 1px 1px, 1px 1px, 2px 2px;
-  animation: shooting-stars 5s linear infinite;
+  background-size: 150px 1px, 100px 1px;
+  animation: shooting-stars-flow 5s linear infinite;
   pointer-events: none;
   z-index: 3;
 }
-@keyframes shooting-stars {
-  0% { background-position: 200% 20%, 200% 80%, 20% 30%, 80% 70%, 50% 50%; opacity: 1; }
-  100% { background-position: -100% 20%, -100% 80%, 20% 30%, 80% 70%, 50% 50%; opacity: 1; }
+@keyframes shooting-stars-flow {
+  0% { background-position: -200% 20%, -200% 80%; opacity: 1; }
+  100% { background-position: 200% 20%, 200% 80%; opacity: 1; }
+}
+@keyframes twinkle-stars-subtle {
+  0%, 100% { opacity: 0.3; }
+  50% { opacity: 1; }
 }
 
 
-/* --- 🌳 숲(forest) 디자인 - 빛나는 잎사귀 --- */
+/* --- 🌳 숲(forest) 디자인 - 흩날리는 나뭇잎 --- */
 .supporter-forest {
   box-shadow: 0 0 25px 3px rgba(52, 199, 89, 0.6);
 }
-/* 배경 숲과 빛줄기 (기존과 유사) */
 .supporter-forest::before {
   content: '';
   position: absolute;
@@ -573,21 +579,19 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   animation: forest-light-sweep 10s infinite ease-in-out;
   pointer-events: none;
 }
-/* 흩날리는 나뭇잎 파티클 (대폭 강화) */
 .supporter-forest::after {
-    content: '🌿'; /* 이모지를 파티클로 사용 */
+    content: '🌿';
     position: absolute;
-    top: -20px;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    font-size: 14px;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    font-size: 16px;
     color: #c3f7c3;
-    /* 6개의 나뭇잎을 각각 다른 위치와 애니메이션으로 설정 */
     text-shadow:
       5% 110% 0px, 95% 105% 0px,
       20% -10% 0px, 80% -15% 0px,
-      40% 120% 0px, 60% -5% 0px;
+      40% 120% 0px, 60% -5% 0px,
+      /* 추가된 나뭇잎 */
+      110% 40% 0px, -10% 70% 0px;
     animation: fall-leaves-dramatic 8s infinite linear;
     pointer-events: none;
     z-index: 3;
