@@ -628,7 +628,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
         
         // 턴 수에 비례하여 적 공격력 증가 (턴당 10%)
-        const turnBonusDamage = Math.floor(run.turn * 0.1 * baseRange.max);
+        const turnBonusDamage = Math.floor(run.turn * 0.2 * baseRange.max);
         const finalMaxDamage = baseRange.max + turnBonusDamage;
         
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
