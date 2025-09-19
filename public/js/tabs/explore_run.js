@@ -179,49 +179,42 @@ export async function showExploreRun() {
       choiceBox.innerHTML = pendingTurn.choices.map((label, index) =>
         `<button class="btn choice-btn" data-index="${index}">${esc(label)}</button>`
       ).join('');
-    } else {
-      const lastEvent = runState.events?.slice(-1)[0];
-      narrativeBox.innerHTML = rt(lastEvent?.note || `당신은 ${site.name} 에서의 탐험을 시작했습니다...`);
-      // [수정] 전투 대기 상태일 경우 '전투 시작' 버튼 표시
-      if (runState.battle_pending) {
-        choiceBox.innerHTML = `<div class="row" style="gap:8px;justify-content:flex-end;"><button class="btn" id="btnStartBattle">⚔️ 전투 시작</button></div>`;
-      } else if (runState.status === 'ended') {
-        choiceBox.innerHTML = `<div class="text-dim">탐험이 종료되었습니다.</div>`;
-      } else {
-        choiceBox.innerHTML = `<div class="row" style="gap:8px;justify-content:flex-end;"><button class="btn ghost" id="btnGiveUp">탐험 포기</button><button class="btn" id="btnMove">계속 탐험</button></div>`;
-      }
-    }
-    bindButtons(runState);
+    // ...
+} else {
+  const lastEvent = runState.events?.slice(-1)[0];
+  narrativeBox.innerHTML = rt(lastEvent?.note || `당신은 ${site.name} 에서의 탐험을 시작했습니다...`);
+
+  // [수정] battle_pending 확인 로직을 완전히 제거합니다.
+  if (runState.status === 'ended') {
+    choiceBox.innerHTML = `<div class="text-dim">탐험이 종료되었습니다.</div>`;
+  } else {
+    choiceBox.innerHTML = `<div class="row" style="gap:8px;justify-content:flex-end;"><button class="btn ghost" id="btnGiveUp">탐험 포기</button><button class="btn" id="btnMove">계속 탐험</button></div>`;
+  }
+}
+bindButtons(runState);
+// ...
+
   };
 
   const bindButtons = (runState) => {
-  if (runState.status !== 'ongoing') return;
-  
-  const btnStartBattle = root.querySelector('#btnStartBattle');
-  if (btnStartBattle) {
-    btnStartBattle.onclick = async () => {
-      showLoading(true, '전투 준비 중...');
-      await serverStartBattle(state.id);   // 서버에서 battle_pending → pending_battle 전환
-      location.hash = `#/explore-battle/${state.id}`;
-    };
-    return; // 전투 대기 중에는 다른 버튼(탐험 계속 등) 비활성화
-  }
+  const bindButtons = (runState) => {
+    if (runState.status !== 'ongoing') return;
 
-  if (runState.pending_choices) {
-    root.querySelectorAll('.choice-btn').forEach(btn => {
-      btn.onclick = () => handleChoice(parseInt(btn.dataset.index, 10));
-    });
-  } else {
-    const btnMove = root.querySelector('#btnMove');
-    if (btnMove) {
-      btnMove.disabled = runState.stamina <= STAMINA_MIN;
-      btnMove.onclick = prepareNextTurn;
+    // [수정] btnStartBattle 관련 로직을 전부 삭제합니다.
+    if (runState.pending_choices) {
+        root.querySelectorAll('.choice-btn').forEach(btn => {
+        btn.onclick = () => handleChoice(parseInt(btn.dataset.index, 10));
+        });
+    } else {
+        const btnMove = root.querySelector('#btnMove');
+        if (btnMove) {
+        btnMove.disabled = runState.stamina <= STAMINA_MIN;
+        btnMove.onclick = prepareNextTurn;
+        }
+        const btnGiveUp = root.querySelector('#btnGiveUp');
+        if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
     }
-    const btnGiveUp = root.querySelector('#btnGiveUp');
-    if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
-  }
 };
-
 
   const prepareNextTurn = async () => {
     showLoading(true, 'AI가 다음 상황을 생성 중...');
@@ -240,30 +233,32 @@ export async function showExploreRun() {
 
 // /public/js/tabs/explore_run.js의 handleChoice 함수를 교체하세요.
 
-  const handleChoice = async (index) => {
+const handleChoice = async (index) => {
     showLoading(true, '선택지 적용 중...');
     try {
-      const result = await serverApplyChoice(state.id, index); // ✅ 서버에서 이벤트 반영
-      state = { ...state, ...result.state }; // 💥 해결책: 기존 state와 새 state를 병합합니다.
+        const result = await serverApplyChoice(state.id, index); 
+        state = result.state || state; // 서버가 반환한 최신 state로 덮어씁니다.
 
-      if (result.battle) {
-        // 서버가 battle_pending 세팅함
-        location.hash = `#/explore-battle/${state.id}`;
-        return; // 전투 화면에서 로딩 해제
-      }
-      if (result.done) {
-        showToast('탐험이 종료되었어');
-      }
-      render(state);
+        // [수정] 서버가 battle:true 신호를 주면 즉시 전투 화면으로 이동합니다.
+        if (result.battle) {
+            location.hash = `#/explore-battle/${state.id}`;
+            return; 
+        }
+        if (result.done) {
+            showToast('탐험이 종료되었어');
+        }
+        render(state);
     } catch (e) {
-      console.error('[explore] handleChoice failed', e);
-      showToast('선택 적용 중 오류가 발생했어');
+        console.error('[explore] handleChoice failed', e);
+        showToast('선택 적용 중 오류가 발생했어');
     } finally {
-      // 전투 화면 이동 시엔 위에서 return 했으니 여기 도달 안 함
-      const stillHere = location.hash.startsWith('#/explore-run/');
-      if (stillHere) showLoading(false);
+        // 전투 화면으로 이동하지 않았을 경우에만 로딩창을 닫습니다.
+        if (location.hash.startsWith('#/explore-run/')) {
+            showLoading(false);
+        }
     }
-  };
+};
+
 
 
   const endRun = async (reason) => {
