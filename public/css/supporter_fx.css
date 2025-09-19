@@ -1,151 +1,60 @@
-// /public/js/ui/supporter_fx.js
-// 3D 포털 + 실시간 파티클 (성능 가드 포함)
-export function attachSupporterFX(root, theme = 'flame', opts = {}) {
-  if (!root || root.__fxAttached) return;
-  root.__fxAttached = true;
-
-  // 성능 가드: 해상도/개수 자동 조절
-  const dprCap = Math.min(2, window.devicePixelRatio || 1);
-  const area = Math.max(1, root.offsetWidth * root.offsetHeight);
-  const autoParticles = Math.max(140, Math.min(320, Math.floor(area / 2200)));
-
-  const conf = {
-    tilt: true,
-    particles: autoParticles,
-    theme,
-    ...opts,
-  };
-
-  // FX 루트
-  const fx = document.createElement('div');
-  fx.className = 'supporter-fx';
-  const ring = document.createElement('div'); ring.className = 'ring';
-  const veil = document.createElement('div'); veil.className = 'veil';
-  const canvas = document.createElement('canvas'); canvas.className = 'fx-canvas';
-  fx.append(ring, veil, canvas);
-  root.appendChild(fx);
-  root.classList.add(`supporter-${conf.theme}`);
-
-  const ctx = canvas.getContext('2d', { alpha: true });
-  let w=0, h=0, dpr = dprCap;
-
-  function resize() {
-    const r = root.getBoundingClientRect();
-    w = Math.max(2, Math.floor((r.width + 4) * dpr));
-    h = Math.max(2, Math.floor((r.height + 4) * dpr));
-    canvas.width = w; canvas.height = h;
-  }
-  resize(); new ResizeObserver(resize).observe(root);
-
-  // 테마
-  const TAU = Math.PI * 2, rnd=(a,b)=>a+Math.random()*(b-a);
-  const themes = {
-    flame:  { hue:[18,42],  sat:90,  light:[55,80], base:{ swirl: 0.006, rise: 0.35, jitter: 0.45, blur: 14 } },
-    aurora: { hue:[170,290], sat:85,  light:[60,85], base:{ swirl: 0.003, rise: 0.05, jitter: 0.25, blur: 16 } },
-    rune:   { hue:[190,260], sat:70,  light:[65,90], base:{ swirl: 0.004, rise: 0.10, jitter: 0.20, blur: 12 } },
-    galaxy: { hue:[220,280], sat:85,  light:[70,95], base:{ swirl: 0.002, rise: 0.06, jitter: 0.15, blur: 18 } },
-    forest: { hue:[120,165], sat:75,  light:[60,85], base:{ swirl: 0.003, rise: 0.12, jitter: 0.22, blur: 14 } },
-  };
-  const T = themes[conf.theme] || themes.flame;
-
-  // 파티클
-  const P = [];
-  function spawn(){
-    const c = { x:w/2, y:h/2 };
-    const r0 = Math.min(w,h)*0.38;
-    const a  = Math.random()*TAU;
-    const rad= r0 + rnd(-8, 8)*dpr;
-    const sp = (T.base.swirl + Math.random()*T.base.swirl) * (Math.random()<.5?-1:1);
-    const up = T.base.rise * dpr * (1 + Math.random()*0.5);
-    const j  = T.base.jitter;
-    const hue= rnd(T.hue[0], T.hue[1]);
-    const l  = rnd(T.light[0], T.light[1]);
-    return {
-      x: c.x + Math.cos(a)*rad,
-      y: c.y + Math.sin(a)*rad,
-      a, rad, sp, up, j,
-      size: rnd(1.2, 2.6)*dpr,
-      hue, sat: T.sat, light: l,
-      life: rnd(0.6, 1.2), age: 0
-    };
-  }
-  for (let i=0;i<conf.particles;i++) P.push(spawn());
-
-  // 가시성/탭 상태 가드
-  let running = true, last = performance.now(), slowStreak=0;
-  const io = new IntersectionObserver(([ent]) => { running = !!(ent && ent.isIntersecting); }, { threshold: 0.05 });
-  io.observe(root);
-  document.addEventListener('visibilitychange', ()=> { running = (document.visibilityState === 'visible'); });
-
-  function step(t){
-    if(!running){ requestAnimationFrame(step); return; }
-    const dt = Math.min(0.05, (t - last)/1000); last = t;
-
-    // 프레임이 많이 느리면 자동 저전력 모드
-    if (dt > 0.032) slowStreak++; else slowStreak = Math.max(0, slowStreak-1);
-    if (slowStreak > 12 && P.length > 150){ // ~30fps 밑으로 12프레임 지속
-      P.splice(0, Math.floor(P.length*0.25)); // 25% 줄이기
-      slowStreak = 0;
-    }
-
-    ctx.clearRect(0,0,w,h);
-    ctx.globalCompositeOperation = 'lighter';
-
-    for (let i=0;i<P.length;i++){
-      const p = P[i];
-      p.a += p.sp;
-      p.rad += Math.sin(t*0.001+i)*0.02*dpr;
-      const cx = w/2, cy = h/2;
-      p.x = cx + Math.cos(p.a)*p.rad + (Math.random()-0.5)*p.j*2*dpr;
-      p.y = cy + Math.sin(p.a)*p.rad - p.up*dt*60 + (Math.random()-0.5)*p.j*dpr;
-
-      p.age += dt; if (p.age > p.life) { P[i] = spawn(); continue; }
-
-      ctx.shadowBlur = T.base.blur;
-      ctx.shadowColor = `hsla(${p.hue} ${p.sat}% ${p.light}% / .9)`;
-      ctx.fillStyle   = `hsla(${p.hue} ${p.sat}% ${p.light}% / .7)`;
-      ctx.beginPath(); ctx.arc(p.x, p.y, p.size, 0, TAU); ctx.fill();
-
-      ctx.strokeStyle = `hsla(${p.hue} ${p.sat}% ${p.light}% / .35)`;
-      ctx.lineWidth = Math.max(1, p.size*0.6);
-      ctx.beginPath();
-      ctx.moveTo(p.x, p.y);
-      ctx.lineTo(p.x - Math.cos(p.a)*p.size*4, p.y - Math.sin(p.a)*p.size*4 - p.up*0.5);
-      ctx.stroke();
-    }
-
-    // 링 회전
-    fx.firstChild.style.transform = `translateZ(-15px) rotate(${(t*0.006)%360}deg)`;
-    requestAnimationFrame(step);
-  }
-  requestAnimationFrame(step);
-
-  // 3D 틸트
-  if (conf.tilt) {
-    root.dataset.tilt = '1';
-    const onMove = (e)=>{
-      const r = root.getBoundingClientRect();
-      const ex = ('touches' in e ? e.touches[0].clientX : e.clientX);
-      const ey = ('touches' in e ? e.touches[0].clientY : e.clientY);
-      const x = (ex - r.left)/r.width, y = (ey - r.top)/r.height;
-      const rx = (0.5 - y)*8, ry = (x - 0.5)*8;
-      root.classList.add('is-tilting');
-      root.style.transform = `rotateX(${rx}deg) rotateY(${ry}deg)`;
-    };
-    const onLeave = ()=>{ root.classList.remove('is-tilting'); root.style.transform = ''; };
-    root.addEventListener('pointermove', onMove, { passive: true });
-    root.addEventListener('pointerleave', onLeave);
-  }
-}
-                                /* === Reset legacy supporter-* particles to avoid double-render === */
-.avatar-wrap.supporter-flame::before,
-.avatar-wrap.supporter-flame::after,
-.avatar-wrap.supporter-galaxy::before,
-.avatar-wrap.supporter-galaxy::after,
-.avatar-wrap.supporter-forest::before,
-.avatar-wrap.supporter-forest::after {
-  content: none !important;
-  animation: none !important;
-  box-shadow: none !important;
+/* 이 파일의 모든 내용을 아래 코드로 교체해주세요 */
+.supporter-fx {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  transform-style: preserve-3d;
+  pointer-events: none;
 }
 
+.supporter-fx .ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 24px;
+  border: 2px solid;
+  opacity: 0.2;
+  transform: translateZ(-15px);
+  transition: transform 0.1s linear;
+}
+
+.supporter-fx .veil {
+  position: absolute;
+  inset: 0;
+  border-radius: 18px;
+  opacity: 0.1;
+}
+
+.supporter-fx .fx-canvas {
+  position: absolute;
+  top: -2px; left: -2px;
+  width: calc(100% + 4px);
+  height: calc(100% + 4px);
+  z-index: 2;
+  pointer-events: none;
+  filter: blur(1px);
+}
+
+/* 테마별 색상 */
+.supporter-flame .ring { border-color: #ff9800; }
+.supporter-flame .veil { background: radial-gradient(circle at center, #ff9800 0%, transparent 70%); }
+
+.supporter-aurora .ring { border-color: #00bcd4; }
+.supporter-aurora .veil { background: radial-gradient(circle at center, #00bcd4 0%, transparent 70%); }
+
+.supporter-rune .ring { border-color: #89cff0; }
+.supporter-rune .veil { background: radial-gradient(circle at center, #89cff0 0%, transparent 70%); }
+
+.supporter-galaxy .ring { border-color: #9370db; }
+.supporter-galaxy .veil { background: radial-gradient(circle at center, #9370db 0%, transparent 70%); }
+
+.supporter-forest .ring { border-color: #90ee90; }
+.supporter-forest .veil { background: radial-gradient(circle at center, #90ee90 0%, transparent 70%); }
+
+/* 3D 틸트 효과를 위한 스타일 */
+.avatar-wrap[data-tilt="1"] {
+  transition: transform 0.1s ease-out;
+  transform-style: preserve-3d;
+}
+.avatar-wrap[data-tilt="1"].is-tilting {
+  transition: none;
+}
