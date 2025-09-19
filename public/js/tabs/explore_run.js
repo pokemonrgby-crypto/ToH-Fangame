@@ -197,7 +197,6 @@ bindButtons(runState);
   };
 
   const bindButtons = (runState) => {
-  const bindButtons = (runState) => {
     if (runState.status !== 'ongoing') return;
 
     // [수정] btnStartBattle 관련 로직을 전부 삭제합니다.
