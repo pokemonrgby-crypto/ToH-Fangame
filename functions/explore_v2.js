@@ -661,6 +661,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           `- 장소 난이도: ${run.difficulty}`,
           `- 플레이어: ${character.name} (현재 HP: ${battle.playerHp - staminaCost})`,
           `- 적: ${battle.enemy.name} (등급: ${battle.enemy.tier}, 현재 HP: ${battle.enemy.hp})`,
+          `- 적 보유 스킬:\n${enemySkillsText || '(없음)'}`, // <-- 💥 이 라인을 추가하세요!
           '',
           '## 캐릭터 서사(최신)',
           String(latestNarr.long || character.summary || '(없음)'),
