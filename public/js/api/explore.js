@@ -36,12 +36,6 @@ export async function serverEndRun(runId, reason='ended'){
   return data.state;
 }
 
-export async function serverStartBattle(runId){
-  const { data } = await call('advStartBattleV2')({ runId });
-  if(!data?.ok) throw new Error('advStartBattleV2 실패');
-  return data.state;
-}
-
 // [신규] 전투 행동 서버 호출 함수
 export async function serverBattleAction(runId, actionType, actionIndex) {
   const { data } = await call('advBattleActionV2')({ runId, actionType, actionIndex });
