@@ -186,7 +186,7 @@ export async function showExploreRun() {
     try {
       const pendingTurn = await serverPrepareNext(state.id);
       state.pending_choices = pendingTurn;
-      render(state);
+      render(state); // ← 여기서 즉시 리렌더
     } catch (e) {
       console.error('[explore] prepareNextTurn failed', e);
       showToast('오류: 시나리오 생성에 실패했어');
@@ -194,6 +194,7 @@ export async function showExploreRun() {
       showLoading(false);
     }
   };
+
 
   const handleChoice = async (index) => {
     showLoading(true, '선택지 적용 중...');
@@ -205,10 +206,8 @@ export async function showExploreRun() {
             location.hash = `#/explore-battle/${state.id}`;
             return; 
         }
-        if (result.done) {
-            showToast('탐험이 종료되었어');
-        }
-        render(state);
+        if (result.done) showToast('탐험이 종료되었어');
+         render(state);
     } catch (e) {
         console.error('[explore] handleChoice failed', e);
         showToast('선택 적용 중 오류가 발생했어');
