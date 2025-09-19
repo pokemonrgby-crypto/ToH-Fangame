@@ -385,7 +385,7 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
 
 .fixed-actions { z-index: 1000; }  /* 모달 z-index 1001 */
 
-}
+
 
 /* [교체] 에테르 등급: 무지개 보더 + 은은한 글로우 + 다크 내부 */
 .item.rarity-aether, .kv-card.rarity-aether {
