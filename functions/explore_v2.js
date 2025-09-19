@@ -236,7 +236,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const { choices, nextPrerolls } = rollThreeChoices(run); // preroll 소모 후 남은 값(nextPrerolls)을 받음
 
     const charId = String(run.charRef||'').replace(/^chars\//,'');
-    const charId = String(run.charRef||'').replace(/^chars\//,'');
     const charDoc = await db.collection('chars').doc(charId).get().catch(()=>null);
     const character = charDoc?.exists ? charDoc.data() : {};
     
