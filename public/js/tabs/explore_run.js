@@ -3,7 +3,6 @@ import { db, auth, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { getActiveRun } from '../api/explore.js';
 import { serverPrepareNext, serverApplyChoice, serverEndRun } from '../api/explore.js';
-import { serverStartBattle } from '../api/explore.js'; // ← 파일 상단 import에 이 줄 추가해줘
 
 const STAMINA_MIN = 0;
 
