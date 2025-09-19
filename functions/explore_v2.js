@@ -605,7 +605,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
         const maxDamageClamped = finalMaxDamage + tierBump;
         const rarityMap = {easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic'};
-        
+      
+
+
         const systemPrompt = [
           systemPromptRaw
             .replace(/{min_damage}/g, baseRange.min)
@@ -614,9 +616,13 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           '',
           '## 추가 규칙(중요)',
           '- 이번 호출은 "한 턴"만 처리한다.',
+          '  - 1) 플레이어의 행동과 그 결과를 서술한다.',
+          '  - 2) 그 후, 적이 플레이어에게 반격하는 행동을 서술한다. (매우 중요)',
+          '- [상호작용 규칙] 플레이어 행동 유형이 "interact"일 경우, 상호작용의 성공 여부를 JSON 필드 `interaction_success` (true/false)로 반드시 반환해야 한다. 성공 시 `battle_over`를 true로 설정하고, 적의 반격은 생략한다.',
           '- 플레이어/적 HP가 0 이하가 되는 경우가 아니면 battle_over는 절대 true가 될 수 없다.',
           '- 과도한 피해로 한 턴에 전투가 끝나지 않도록 데미지는 {min_damage}~{max_damage} 안에서 신중히 산정한다.',
-          '- narrative는 1~2문장으로 짧고 팽팽하게. 적의 스킬명을 1회 언급하되 수식은 절제한다.',
+          '- narrative는 플레이어 행동과 적의 반격을 모두 포함하여 2~3 문장으로 요약한다. 적의 스킬명을 1회 언급하되 수식은 절제한다.',
+          '- [매우 중요] narrative 서술 시, 적의 HP가 0 이하로 떨어지는 경우가 아니라면 "쓰러뜨렸다", "파괴했다", "끝장냈다" 등 전투의 끝을 암시하는 단정적인 표현을 절대 사용해서는 안 된다. 대신 "큰 충격을 주었다", "공격이 명중했다", "비틀거린다" 와 같이 과정에 대한 묘사에 집중해야 한다.',
         ].join('\\n');
 
         // [PATCH] 캐릭터 최신 서사(long) + 직전 장면을 함께 전달
@@ -692,17 +698,22 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           }
 
           let battleResult = { battle_over: false, outcome: 'ongoing', battle_state: battle };
-          const isBattleOver = newPlayerHp <= 0 || newEnemyHp <= 0;
+          const isBattleOver = newPlayerHp <= 0 || newEnemyHp <= 0 || aiResult.interaction_success === true;
 
           if (isBattleOver) {
               battleResult.battle_over = true;
             
-              if (newEnemyHp <= 0 && newPlayerHp > 0) { //  승리
+              if (newEnemyHp <= 0 && newPlayerHp > 0 || aiResult.interaction_success === true) { //  승리 (상호작용 성공 포함)
                   battleResult.outcome = 'win';
-                  const exp = { trash: 5, normal: 10, elite: 20, boss: 50 }[battle.enemy.tier] || 10;
+                  
+                  // [수정] 난이도별 경험치 보상 테이블
+                  const baseExp = { trash: 10, normal: 20, elite: 40, boss: 100 }[battle.enemy.tier] || 20;
+                  const difficultyMultiplier = { easy: 0.8, normal: 1.0, hard: 1.5, vhard: 5.0, legend: 10.0 }[run.difficulty] || 1.0;
+                  const exp = Math.round(baseExp * difficultyMultiplier);
+
                   tx.update(charRef, { exp_total: FieldValue.increment(exp) });
 
-                  if (aiResult.reward_item) {
+                  if (aiResult.reward_item && aiResult.interaction_success !== true) {
                       const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic' })[run.difficulty] || 'rare';
                       const fallbackItem = {
                           name: `${battle.enemy.name}의 파편`,
