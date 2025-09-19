@@ -42,6 +42,19 @@ export async function serverStartBattle(runId){
   return data.state;
 }
 
+// [신규] 전투 행동 서버 호출 함수
+export async function serverBattleAction(runId, actionType, actionIndex) {
+  const { data } = await call('advBattleActionV2')({ runId, actionType, actionIndex });
+  if (!data?.ok) throw new Error('advBattleActionV2 실패');
+  return data;
+}
+
+// [신규] 전투 후퇴 서버 호출 함수
+export async function serverBattleFlee(runId) {
+  const { data } = await call('advBattleFleeV2')({ runId });
+  if (!data?.ok) throw new Error('advBattleFleeV2 실패');
+  return data;
+}
 
 export const call = (name) => httpsCallable(func, name);
 
