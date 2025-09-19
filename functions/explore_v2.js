@@ -152,22 +152,14 @@ async function loadPrompt(db, id='adventure_narrative_system'){
 }
 // ANCHOR: functions/explore_v2.js -> callGemini 함수
 
-async function callGemini({ apiKey, systemText, userText }){
+async function callGemini({ apiKey, systemText, userText, logger }){ // logger를 인자로 추가
   const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
   const body = {
-    // 💥 [수정] 시스템 프롬프트를 별도 instruction으로 분리
-    systemInstruction: {
-      role: 'system',
-      parts: [{ text: String(systemText || '') }]
-    },
-    contents: [{
-      role: 'user',
-      parts: [{ text: String(userText || '') }]
-    }],
+    systemInstruction: { role: 'system', parts: [{ text: String(systemText || '') }] },
+    contents: [{ role: 'user', parts: [{ text: String(userText || '') }] }],
     generationConfig: {
       temperature: 0.9,
-      maxOutputTokens: 2048, // 조금 더 넉넉하게
-      // 💥 [수정] AI가 반드시 JSON 형식으로 응답하도록 강제
+      maxOutputTokens: 2048,
       responseMimeType: "application/json"
     }
   };
@@ -179,14 +171,11 @@ async function callGemini({ apiKey, systemText, userText }){
   }
   const j = await res.json();
   const text = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  
-  // 💥 [수정] responseMimeType을 사용하므로 JSON 펜스(```json) 제거 로직이 더 이상 불필요
   try {
-    // 이제 text 자체가 유효한 JSON 문자열이므로 바로 파싱
     return JSON.parse(text);
   } catch (e) {
     logger.error("Gemini JSON parse failed", { rawText: text, error: e.message });
-    return {}; // 파싱 실패 시 빈 객체 반환 (기존 동작 유지)
+    return {};
   }
 }
 
@@ -194,43 +183,44 @@ async function callGemini({ apiKey, systemText, userText }){
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
 
-  // ... (startExploreV2, advPrepareNextV2 함수는 기존과 동일하게 유지) ...
   const startExploreV2 = onCall({ secrets: [GEMINI_API_KEY] }, async (req) => {
-    const uid = req.auth?.uid;
-    if(!uid) throw new HttpsError('unauthenticated', '로그인이 필요해');
-    const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart=10 } = req.data||{};
-    if(!charId || !worldId || !siteId) throw new HttpsError('invalid-argument','필수값 누락');
+      // ... 이 함수는 변경 없습니다 ...
+      const uid = req.auth?.uid;
+      if(!uid) throw new HttpsError('unauthenticated', '로그인이 필요해');
+      const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart=10 } = req.data||{};
+      if(!charId || !worldId || !siteId) throw new HttpsError('invalid-argument','필수값 누락');
 
-    const qs = await db.collection('explore_runs')
-      .where('owner_uid','==', uid)
-      .where('charRef','==', `chars/${charId}`)
-      .where('status','==','ongoing')
-      .limit(1).get();
-    if(!qs.empty) throw new HttpsError('failed-precondition','이미 진행 중인 탐험이 있어');
+      const qs = await db.collection('explore_runs')
+        .where('owner_uid','==', uid)
+        .where('charRef','==', `chars/${charId}`)
+        .where('status','==','ongoing')
+        .limit(1).get();
+      if(!qs.empty) throw new HttpsError('failed-precondition','이미 진행 중인 탐험이 있어');
 
-    const payload = {
-      charRef: `chars/${charId}`,
-      owner_uid: uid,
-      world_id: worldId, world_name: worldName||worldId,
-      site_id: siteId,   site_name: siteName||siteId,
-      difficulty,
-      startedAt: Timestamp.now(),
-      stamina_start: staminaStart,
-      stamina: staminaStart,
-      turn: 0,
-      status: 'ongoing',
-      summary3: '',
-      prerolls: makePrerolls(50, 1000),
-      events: [],
-      rewards: [],
-      updatedAt: Timestamp.now(),
-    };
-    const ref = await db.collection('explore_runs').add(payload);
-    await db.collection('chars').doc(charId).update({ last_explore_startedAt: Timestamp.now() }).catch(()=>{});
-    return { ok:true, runId: ref.id };
+      const payload = {
+        charRef: `chars/${charId}`,
+        owner_uid: uid,
+        world_id: worldId, world_name: worldName||worldId,
+        site_id: siteId,   site_name: siteName||siteId,
+        difficulty,
+        startedAt: Timestamp.now(),
+        stamina_start: staminaStart,
+        stamina: staminaStart,
+        turn: 0,
+        status: 'ongoing',
+        summary3: '',
+        prerolls: makePrerolls(50, 1000),
+        events: [],
+        rewards: [],
+        updatedAt: Timestamp.now(),
+      };
+      const ref = await db.collection('explore_runs').add(payload);
+      await db.collection('chars').doc(charId).update({ last_explore_startedAt: Timestamp.now() }).catch(()=>{});
+      return { ok:true, runId: ref.id };
   });
 
   const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
+    // ... (대부분 동일) ...
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
     const { runId } = req.data||{};
@@ -243,36 +233,28 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
     if(run.status !== 'ongoing') throw new HttpsError('failed-precondition','이미 종료된 런');
 
-    const { choices, nextPrerolls } = rollThreeChoices(run);
+    const { choices, nextPrerolls } = rollThreeChoices(run); // preroll 소모 후 남은 값(nextPrerolls)을 받음
 
+    const charId = String(run.charRef||'').replace(/^chars\//,'');
     const charId = String(run.charRef||'').replace(/^chars\//,'');
     const charDoc = await db.collection('chars').doc(charId).get().catch(()=>null);
     const character = charDoc?.exists ? charDoc.data() : {};
     
-    const equippedAbilities = (character.abilities_equipped || [])
-      .map(index => (character.abilities_all || [])[index])
-      .filter(Boolean);
-    const skillsAsText = equippedAbilities.length > 0
-      ? equippedAbilities.map(s => `${s.name || '스킬'}: ${s.desc_soft || ''}`).join('\n')
-      : '없음';
-
+    const equippedAbilities = (character.abilities_equipped || []).map(index => (character.abilities_all || [])[index]).filter(Boolean);
+    const skillsAsText = equippedAbilities.length > 0 ? equippedAbilities.map(s => `${s.name || '스킬'}: ${s.desc_soft || ''}`).join('\n') : '없음';
     const equippedItems = (character?.items_equipped||[]).map(it=>it?.name||it?.id||'').filter(Boolean).join(', ') || '없음';
-    
     const narratives = Array.isArray(character.narratives) ? character.narratives : [];
     narratives.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
     const latestNarrative = narratives[0] || {};
     const previousNarrativeSummary = narratives.slice(1).map(n => n.short).join('; ') || '(없음)';
     const prevTurnLog = (run.events||[]).slice(-1)[0]?.note || '(없음)';
-
     const systemText = await loadPrompt(db,'adventure_narrative_system');
-    
     const dicePrompts = choices.map((d,i)=>{
       let result = `종류=${d.eventKind}, 스태미나변화=${d.deltaStamina}`;
       if(d.item)   result += `, 아이템(등급:${d.item.rarity}, 소모성:${d.item.isConsumable}, 사용횟수:${d.item.uses})`;
       if(d.combat) result += `, 전투(적 등급:${d.combat.enemyTier})`;
       return `선택지 ${i+1} 예상 결과: ${result}`;
     }).join('\n');
-
     const userText = [
       '## 플레이어 캐릭터 컨텍스트',
       `- 출신 세계관: ${character?.world_id || '알 수 없음'}`,
@@ -281,14 +263,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       `- 캐릭터 과거 요약: ${previousNarrativeSummary}`,
       `- 보유 스킬: ${skillsAsText}`,
       `- 장착 아이템: ${equippedItems}`,
-      '',
-      '## 스토리 컨텍스트',
+      '','## 스토리 컨텍스트',
       `- 현재 탐험 세계관/장소: ${run.world_name || run.world_id}/${run.site_name || run.site_id}`,
       `- 이전 턴 요약: ${prevTurnLog}`,
       `- 현재까지의 3문장 요약: ${run.summary3 || '(없음)'}`,
-      '---',
-      '## 다음 상황을 생성하라:',
-      dicePrompts,
+      '---','## 다음 상황을 생성하라:', dicePrompts,
     ].join('\n');
     
     const parsed = await callGemini({ apiKey: process.env.GEMINI_API_KEY, systemText, userText }) || {};
@@ -303,12 +282,14 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       choice_outcomes: outcomes,
       diceResults: choices,
       summary3_update,
+      // [핵심 수정 1] 남은 preroll을 pending_choices에 저장합니다.
+      nextPrerolls: nextPrerolls, 
       at: Date.now()
     };
 
     await ref.update({
       pending_choices: pending,
-      prerolls: nextPrerolls,
+      // [참고] prerolls 필드는 여기서 업데이트하는 것이 아니라, 선택지를 고른 후에 업데이트합니다.
       updatedAt: Timestamp.now()
     });
     return { ok:true, pending };
@@ -377,6 +358,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           dice: chosenDice,
           deltaStamina: 0
         }),
+        prerolls: pend.nextPrerolls || run.prerolls, // [핵심 수정 2-1] 전투 진입 시에도 preroll 업데이트
+        
         updatedAt: Timestamp.now()
       });
       const fresh = await runRef.get();
@@ -412,6 +395,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       }),
       summary3: (pend.summary3_update || run.summary3 || ''),
       pending_choices: null,
+      prerolls: pend.nextPrerolls || run.prerolls,
       updatedAt: Timestamp.now()
     };
 
