@@ -718,6 +718,8 @@ exports.adminListAssets = onCall({ region: 'us-central1' }, async (req) => {
 // functions/index.js 파일 맨 아래 exports 부분에 추가
 
 // === [추가] 클라이언트용 쿨타임 조회 함수 ===
+// functions/index.js
+
 exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -726,21 +728,13 @@ exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
   const data = userSnap.data();
   const now = Date.now();
 
-  // [신규] 밀리초와 초 타임스탬프를 모두 처리하는 헬퍼 함수
-  function getRemainMs(value) {
-    if (!value) return 0;
-    // 13자리 이상이면 밀리초 타임스탬프로 간주 (e.g., 1726830005000)
-    if (value > 1000000000000) {
-      return Math.max(0, value - now);
-    }
-    // 그렇지 않으면 초로 간주하고 밀리초로 변환
-    return Math.max(0, (value * 1000) - now);
-  }
+  // Firestore에 초(second) 단위로 저장된 값을 밀리초로 변환하여 남은 시간 계산
+  const getRemainMsFromSec = (sec) => Math.max(0, (sec || 0) * 1000 - now);
 
   return {
     ok: true,
-    battle: getRemainMs(data.cooldown_battle_until),
-    encounter: getRemainMs(data.cooldown_encounter_until),
+    battle: getRemainMsFromSec(data.cooldown_battle_until),
+    encounter: getRemainMsFromSec(data.cooldown_encounter_until),
     // explore는 Firestore Timestamp 객체이므로 기존 방식 유지
     explore: Math.max(0, (data.cooldown_explore_until?.toMillis() || 0) - now),
   };
