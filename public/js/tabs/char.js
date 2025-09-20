@@ -503,6 +503,8 @@ function renderBio(c, view){
 
 // ... (다른 함수들은 그대로 유지) ...
 
+// public/js/tabs/char.js
+
 async function renderBioSub(which, c, sv){
   if(which==='summary'){
     sv.innerHTML = `
@@ -564,7 +566,13 @@ async function renderBioSub(which, c, sv){
       const rels = [];
       snapshot.forEach(doc => rels.push({ id: doc.id, ...doc.data() }));
 
-      const detailedRels = await Promise.all(rels.map(async (r) => {
+      const detailedRelPromises = rels.map(async (r) => {
+        // [수정] a_charRef 또는 b_charRef 필드가 없는 비정상 데이터를 건너뛰도록 방어 코드를 추가합니다.
+        if (!r.a_charRef || !r.b_charRef) {
+          console.warn('Skipping malformed relation document:', r);
+          return null;
+        }
+
         const otherCharId = r.a_charRef.endsWith(c.id) ? r.b_charRef.replace('chars/','') : r.a_charRef.replace('chars/','');
         
         const [otherCharSnap, noteSnap] = await Promise.all([
@@ -577,7 +585,15 @@ async function renderBioSub(which, c, sv){
           otherChar: otherCharSnap.exists() ? { id: otherCharId, ...otherCharSnap.data() } : { id: otherCharId, name: '(알수없음)', thumb_url: '' },
           note: noteSnap.exists() ? noteSnap.data().note : '메모 없음'
         };
-      }));
+      });
+      
+      // [수정] Promise.all 이후 null 값을 제거하여 안전하게 렌더링합니다.
+      const detailedRels = (await Promise.all(detailedRelPromises)).filter(Boolean);
+
+      if (detailedRels.length === 0) {
+        box.innerHTML = `<div class="kv-card text-dim">아직 관계를 맺은 캐릭터가 없습니다.</div>`;
+        return;
+      }
 
       box.innerHTML = detailedRels.map(r => {
         const isParty = auth.currentUser && (c.owner_uid === auth.currentUser.uid || r.otherChar.owner_uid === auth.currentUser.uid);
