@@ -55,14 +55,14 @@ module.exports = (admin, { HttpsError, logger }) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-        // [추가 시작] 조우 시작 전, 서버에서 다시 한번 쿨타임을 확인합니다.
+        // [수정] 조우 시작 전, 공용 쿨타임을 확인합니다.
         const userSnap = await db.collection('users').doc(uid).get();
         const userData = userSnap.data() || {};
         const nowSec = Math.floor(Date.now() / 1000);
-        const cooldownUntil = userData.cooldown_encounter_until || 0;
+        const cooldownUntil = userData.cooldown_all_until || 0; // cooldown_all_until 확인
         const left = cooldownUntil - nowSec;
         if (left > 0) {
-            throw new HttpsError('failed-precondition', `조우 쿨타임이 ${left}초 남았습니다.`);
+            throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
         }
 
         const { myCharId, opponentCharId, myChar_forAI, opponentChar_forAI, relation_note } = req.data;
@@ -164,6 +164,7 @@ module.exports = (admin, { HttpsError, logger }) => {
 
                 if (relResult && relResult.note) {
                     debugStep = "관계 정보 Firestore에 저장";
+                    const sortedPair = [myCharId, opponentCharId].sort();
                     const relId = sortedPair.join('__');
                     const baseRef = db.collection('relations').doc(relId);
                     const noteRef = baseRef.collection('meta').doc('note');
@@ -176,18 +177,12 @@ module.exports = (admin, { HttpsError, logger }) => {
                 logger.error('관계 생성/업데이트 실패:', { message: relError.message });
             }
 
-          // [추가] 조우가 성공했으니 서버에서 쿨타임을 바로 기록(초 단위)
+          // [수정] 조우 성공 시 공용 쿨타임을 300초(5분)로 설정합니다.
           const nowSecAfter = Math.floor(Date.now() / 1000);
           await db.collection('users').doc(uid).set(
-            { cooldown_encounter_until: nowSecAfter + 300 },
+            { cooldown_all_until: nowSecAfter + 300 }, // cooldown_all_until 사용
             { merge: true }
          );
-          // [공용 쿨타임 기록] 조우 성공 → cooldown_all_until 300초 연장
-          const _nowSec = Math.floor(Date.now()/1000);
-          await db.collection('users').doc(uid)
-            .set({ cooldown_all_until: _nowSec + 300 }, { merge: true });
-
-
 
             logger.log('조우 생성 완료');
             return { ok: true, logId: logRef.id };
