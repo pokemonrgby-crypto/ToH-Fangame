@@ -329,13 +329,14 @@ async function renderLoadoutForMatch(box, myChar){
                 const isAether = (String(item.rarity||'').toLowerCase()) === 'aether';
                 const inlineStyle = isAether ? '' : `border-left: 3px solid ${style.border}; background:${style.bg};`;
 
-                return `<div class="kv-card item-card ${isAether ? 'rarity-aether' : ''}" style="min-height:44px;display:flex; flex-direction:column; align-items:center;justify-content:center;padding:8px;font-size:13px;text-align:center; ${inlineStyle}">
-                          <div>
-                            <div style="font-weight:bold; color:${style.text};">${esc(item.name)}</div>
-                            <div style="font-size:12px; opacity:.8">${esc(item.desc_soft || item.desc || '-')}</div>
-                          </div>` : '(비어 있음)'}
-                        </div>`;
-            }).join('')}
+                      return `<div class="kv-card item-card ${isAether ? 'rarity-aether' : ''}" style="min-height:44px;display:flex; flex-direction:column; align-items:center;justify-content:center;padding:8px;font-size:13px;text-align:center; ${inlineStyle}">
+                              <div>
+                                <div style="font-weight:bold; color:${style.text};">${esc(item.name)}</div>
+                                <div style="font-size:12px; opacity:.8">${esc(item.desc_soft || item.desc || '-')}</div>
+                              </div>
+                            </div>`;
+                }).join('')}
+
           </div>
           <button class="btn mt8" id="btnManageItems">아이템 교체</button>
         </div>
