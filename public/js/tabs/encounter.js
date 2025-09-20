@@ -1,15 +1,15 @@
 // /public/js/tabs/encounter.js
-// ❗️ 이 코드 전체를 복사하여 기존 encounter.js 파일에 덮어쓰세요.
 import { auth, db, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
-// [수정] 이전 클라이언트 매칭 대신, 최신 서버 매칭 함수를 가져옵니다.
-import { requestMatch } from '../api/match.js'; 
+import { requestMatch } from '../api/match.js';
 import { getUserInventory } from '../api/user.js';
 import { showItemDetailModal, rarityStyle, ensureItemCss, esc } from './char.js';
+import { getRelationBetween } from '../api/store.js';
+import { fetchBattlePrompts, generateBattleSketches, chooseBestSketch, generateFinalBattleLog } from '../api/ai.js';
 
 
-// ---------- utils ----------
+// ---------- utils (기존과 동일) ----------
 function truncate(s, n){ s=String(s||''); return s.length>n ? s.slice(0,n-1)+'…' : s; }
 function ensureSpinCss(){
   if(document.getElementById('toh-spin-css')) return;
@@ -20,8 +20,6 @@ function ensureSpinCss(){
   `;
   document.head.appendChild(st);
 }
-
-// --- [추가] battle.js에서 가져온 필수 유틸리티 함수들 ---
 function _lockKey(mode, charId){ return `toh.match.lock.${mode}.${String(charId).replace(/^chars\//,'')}`; }
 function loadMatchLock(mode, charId){
   try{
@@ -61,24 +59,38 @@ function intentGuard(mode){
   return j;
 }
 
-// --- [추가] battle.js에서 가져온 진행 UI ---
+// --- [교체] battle.js의 Progress UI를 가져와 중앙 정렬 강화 ---
 function showProgressUI(myChar, opponentChar) {
   const overlay = document.createElement('div');
   overlay.id = 'encounter-progress-overlay';
   overlay.style.cssText = `position:fixed;inset:0;z-index:10000;display:flex;flex-direction:column;align-items:center;justify-content:center;background:rgba(10,15,25,.9);color:white;backdrop-filter:blur(8px);opacity:0;transition:opacity .5s ease;`;
   overlay.innerHTML = `
-    <div style="text-align:center;">
-        <div style="font-size:24px;font-weight:900;margin-bottom:12px;">${esc(myChar.name)}와(과) ${esc(opponentChar.name)}의 만남</div>
-        <div id="progress-text" style="font-size:18px;font-weight:700;margin-bottom:12px;">AI가 조우 시나리오를 생성하는 중...</div>
+    <div style="display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 24px; animation: fadeIn 1s ease both;">
+      <div style="font-size:24px;font-weight:900;">${esc(myChar.name)}와(과) ${esc(opponentChar.name)}의 만남</div>
+      
+      <div style="display: flex; align-items: center; justify-content: center; gap: 20px;">
+        <img src="${esc(myChar.thumb_url || myChar.image_url || '')}" onerror="this.src=''"
+             style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #3b82f6;">
+        <div style="font-size: 40px; font-weight: 700; color: #9aa5b2;">&</div>
+        <img src="${esc(opponentChar.thumb_url || opponentChar.image_url || '')}" onerror="this.src=''"
+             style="width: 120px; height: 120px; border-radius: 50%; object-fit: cover; border: 3px solid #ccc;">
+      </div>
+      
+      <div style="text-align: center;">
+        <div id="progress-text" style="font-size:16px;font-weight:700;margin-bottom:12px;">AI가 조우 시나리오를 생성하는 중...</div>
         <div style="width:300px;height:10px;background:#273247;border-radius:5px;overflow:hidden;">
             <div id="progress-bar-inner" style="width:10%;height:100%;background:linear-gradient(90deg, #34c759, #30d3a0);transition:width .5s ease-out;"></div>
         </div>
+      </div>
     </div>
+    <style>@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }</style>
   `;
   document.body.appendChild(overlay);
   setTimeout(() => { overlay.style.opacity = '1'; }, 10);
+  
   const textEl = overlay.querySelector('#progress-text');
   const barEl = overlay.querySelector('#progress-bar-inner');
+
   return {
     update: (text, percent) => { if (textEl) textEl.textContent = text; if (barEl) barEl.style.width = `${percent}%`; },
     remove: () => { overlay.style.opacity = '0'; setTimeout(() => overlay.remove(), 500); }
@@ -86,7 +98,66 @@ function showProgressUI(myChar, opponentChar) {
 }
 
 
-// ---------- entry ----------
+// --- [추가] battle.js에서 가져온 startBattleProcess 함수를 조우에 맞게 수정 ---
+async function startEncounterProcess(myChar, opponentChar) {
+    const progress = showProgressUI(myChar, opponentChar);
+    try {
+        progress.update('AI가 조우 서사를 구상하는 중...', 30);
+
+        // AI 입력을 위해 캐릭터 정보와 아이템 정보를 가공
+        const myInv = await getUserInventory(myChar.owner_uid);
+        const oppInv = await getUserInventory(opponentChar.owner_uid);
+        
+        const simplifyForAI = (char, inv) => {
+            const equippedItems = (char.items_equipped || []).map(id => inv.find(i => i.id === id)).filter(Boolean);
+            const itemsAsText = equippedItems.length > 0
+                ? equippedItems.map(i => `- ${i.name} (${i.rarity}): ${i.desc_soft || i.desc || i.description || ''}`).join('\n')
+                : '없음';
+
+            return {
+                name: char.name,
+                summary: char.summary,
+                narrative: (char.narratives?.[0]?.long || ''),
+                items_equipped: itemsAsText,
+            };
+        };
+
+        const myCharForAI = simplifyForAI(myChar, myInv);
+        const opponentCharForAI = simplifyForAI(opponentChar, oppInv);
+        
+        // 두 캐릭터의 관계 조회
+        const relation = await getRelationBetween(myChar.id, opponentChar.id);
+
+        progress.update('서버에 조우 생성을 요청하는 중...', 60);
+
+        const startEncounter = httpsCallable(func, 'startEncounter');
+        const result = await startEncounter({
+            myCharId: myChar.id,
+            opponentCharId: opponentChar.id,
+            // AI 입력을 위해 가공된 데이터를 함께 전송
+            myChar_forAI: myCharForAI,
+            opponentChar_forAI: opponentCharForAI,
+            relation_note: relation
+        });
+        
+        progress.update('완료! 로그 페이지로 이동합니다.', 100);
+        
+        setTimeout(() => {
+            progress.remove();
+            location.hash = `#/encounter-log/${result.data.logId}`;
+        }, 800);
+
+    } catch (e) {
+        console.error("Encounter process failed:", e);
+        showToast('조우 생성에 실패했습니다: ' + e.message);
+        progress.remove();
+        const btnStart = document.getElementById('btnStart');
+        if (btnStart) mountCooldownOnButton(btnStart, '조우 시작');
+    }
+}
+
+
+// ---------- entry (기존 showEncounter 함수) ----------
 export async function showEncounter(){
   ensureSpinCss();
   const intent = intentGuard('encounter');
@@ -97,7 +168,7 @@ export async function showEncounter(){
     return;
   }
 
-  // --- UI 레이아웃 ---
+  // --- UI 레이아웃 (기존과 동일) ---
   root.innerHTML = `
   <section class="container narrow">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -131,17 +202,14 @@ export async function showEncounter(){
     const meSnap = await fx.getDoc(fx.doc(db, 'chars', intent.charId));
     if (!meSnap.exists()) throw new Error('내 캐릭터 정보를 찾을 수 없습니다.');
     myCharData = { id: meSnap.id, ...meSnap.data() };
-    // [수정] 아이템 표시 문제를 해결하기 위해 battle.js와 동일한 로드아웃 렌더링 함수를 호출합니다.
     await renderLoadoutForMatch(document.getElementById('loadoutArea'), myCharData);
     ensureItemCss();
 
-    // [수정] autoMatch -> requestMatch (서버리스 함수 호출)
     let matchData = null;
     const persisted = loadMatchLock('encounter', intent.charId);
     if (persisted) {
       matchData = { ok:true, token: persisted.token||null, opponent: persisted.opponent };
     } else {
-      // 서버에 매칭 요청
       matchData = await requestMatch(intent.charId, 'encounter');
       if(!matchData?.ok || !matchData?.opponent) throw new Error('매칭 상대를 찾지 못했습니다.');
       saveMatchLock('encounter', intent.charId, { token: matchData.token, opponent: matchData.opponent });
@@ -163,27 +231,13 @@ export async function showEncounter(){
 
     const btnStart = document.getElementById('btnStart');
     mountCooldownOnButton(btnStart, '조우 시작');
+    
+    // --- [교체] 시작 버튼 클릭 시 startEncounterProcess 함수 호출 ---
     btnStart.onclick = async () => {
       if (getCooldownRemainMs() > 0) return;
       btnStart.disabled = true;
-      applyGlobalCooldown(60); // 클라이언트 쿨타임 즉시 적용
-      
-      try {
-        const progress = showProgressUI(myCharData, opponentCharData);
-        const startEncounter = httpsCallable(func, 'startEncounter');
-        const result = await startEncounter({ myCharId: myCharData.id, opponentCharId: opponentCharData.id });
-        
-        progress.update('완료!', 100);
-        setTimeout(() => {
-            progress.remove();
-            location.hash = `#/encounter-log/${result.data.logId}`;
-        }, 1000);
-
-      } catch (e) {
-        console.error('[encounter] start error', e);
-        showToast(`조우 시작 실패: ${e.message}`);
-        mountCooldownOnButton(btnStart, '조우 시작');
-      }
+      applyGlobalCooldown(60); 
+      await startEncounterProcess(myCharData, opponentCharData);
     };
 
   } catch(e) {
