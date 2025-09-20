@@ -739,3 +739,27 @@ exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
     explore: Math.max(0, (data.cooldown_explore_until?.toMillis() || 0) - now),
   };
 });
+
+// /functions/index.js
+
+// (기존 exports 객체 내부에 추가)
+exports.setAppVersion = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  // __isAdmin 함수는 이미 index.js에 있으므로 재사용합니다.
+  if (!await __isAdmin(uid)) {
+    throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+  }
+  const { version } = req.data;
+  if (!version || typeof version !== 'string') {
+    throw new HttpsError('invalid-argument', '문자열 타입의 version 값이 필요합니다.');
+  }
+
+  const appStatusRef = db.doc('configs/app_status');
+  await appStatusRef.set({
+    latest_version: version,
+    updatedAt: FieldValue.serverTimestamp()
+  }, { merge: true });
+
+  logger.info(`App version updated to: ${version} by admin: ${uid}`);
+  return { ok: true, version };
+});
