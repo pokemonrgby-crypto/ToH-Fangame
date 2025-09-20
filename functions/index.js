@@ -725,10 +725,23 @@ exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
   if (!userSnap.exists) return { ok: true, battle: 0, encounter: 0, explore: 0 };
   const data = userSnap.data();
   const now = Date.now();
+
+  // [신규] 밀리초와 초 타임스탬프를 모두 처리하는 헬퍼 함수
+  function getRemainMs(value) {
+    if (!value) return 0;
+    // 13자리 이상이면 밀리초 타임스탬프로 간주 (e.g., 1726830005000)
+    if (value > 1000000000000) {
+      return Math.max(0, value - now);
+    }
+    // 그렇지 않으면 초로 간주하고 밀리초로 변환
+    return Math.max(0, (value * 1000) - now);
+  }
+
   return {
     ok: true,
-    battle: Math.max(0, (data.cooldown_battle_until || 0) * 1000 - now),
-    encounter: Math.max(0, (data.cooldown_encounter_until || 0) * 1000 - now),
+    battle: getRemainMs(data.cooldown_battle_until),
+    encounter: getRemainMs(data.cooldown_encounter_until),
+    // explore는 Firestore Timestamp 객체이므로 기존 방식 유지
     explore: Math.max(0, (data.cooldown_explore_until?.toMillis() || 0) - now),
   };
 });
