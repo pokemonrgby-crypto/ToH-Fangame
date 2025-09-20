@@ -100,7 +100,6 @@ export const requestMatch = onCall({ region: 'us-central1' }, async (req) => {
     // 'encounter' 모드: 완전 랜덤 추첨
     pick = list[Math.floor(Math.random() * list.length)];
   }
-
   const oppRef = db.doc(pick.refPath);
   const matchesRef = db.collection('matches').doc();
   const expires = nowSec() + LOCK_SEC;
