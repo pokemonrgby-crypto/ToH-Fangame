@@ -76,10 +76,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             const myChar = { id: myCharSnap.id, ...myCharSnap.data() };
             const opponentChar = { id: oppCharSnap.id, ...oppCharSnap.data() };
 
-            // [추가] 캐릭터의 세계관 정보 로드
-            const worldId = myChar.world_id || 'gionkir'; // 기본값 설정
+            const worldId = myChar.world_id || 'gionkir';
             const worldSnap = await db.collection('worlds').doc(worldId).get();
-            const worldData = worldSnap.exists() ? worldSnap.data() : {};
+            // [수정] .exists() -> .exists 로 변경
+            const worldData = worldSnap.exists ? worldSnap.data() : {};
 
             let relationNote = '아직 관계 정보가 없습니다.';
             if (!relationSnap.empty) {
@@ -130,7 +130,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             
             const logRef = db.collection('encounter_logs').doc();
             await db.runTransaction(async (tx) => {
-                // (기존 트랜잭션 로직과 동일)
                 const charARef = db.collection('chars').doc(myChar.id);
                 const charBRef = db.collection('chars').doc(opponentChar.id);
                 const userARef = db.collection('users').doc(myChar.owner_uid);
@@ -148,7 +147,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                 if (coinsToMintB > 0) tx.set(userBRef, { coins: FieldValue.increment(coinsToMintB) }, { merge: true });
             });
             
-            // [추가] 조우 종료 후 관계 생성/업데이트
             try {
                 debugStep = "AI 호출 (관계 노트 생성)";
                 const relSystemPrompt = await loadPrompt(db, 'relation_create_system');
@@ -184,6 +182,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             logger.error('startEncounter 실패:', { step: debugStep, message: error.message, stack: error.stack });
             if (error instanceof HttpsError) throw error;
             throw new HttpsError('internal', `[서버 오류] 단계: ${debugStep}, 내용: ${error.message}`);
+
         }
     });
 
