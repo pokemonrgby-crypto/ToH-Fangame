@@ -739,7 +739,6 @@ exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
     explore: Math.max(0, (data.cooldown_explore_until?.toMillis() || 0) - now),
   };
 });
-
 // /functions/index.js
 
 // (기존 exports 객체 내부에 추가)
