@@ -36,29 +36,40 @@ function saveMatchLock(mode, charId, payload){
 }
 function getCooldownRemainMs(){ const v = +localStorage.getItem('toh.cooldown.allUntilMs') || 0; return Math.max(0, v - Date.now()); }
 function applyGlobalCooldown(seconds){ const until = Date.now() + (seconds*1000); localStorage.setItem('toh.cooldown.allUntilMs', String(until)); }
-function mountCooldownOnButton(btn, labelReady){
+async function mountCooldownOnButton(btn, mode, labelReady) {
   let intervalId = null;
-  const tick = ()=>{
-    const r = getCooldownRemainMs();
-    if(r>0){
-      const s = Math.ceil(r/1000);
+  let remainMs = 0;
+
+  const tick = () => {
+    remainMs = Math.max(0, remainMs - 500);
+    const s = Math.ceil(remainMs / 1000);
+    if (remainMs > 0) {
       btn.disabled = true;
       btn.textContent = `${labelReady} (${s}s)`;
-    }else{
+    } else {
       btn.disabled = false;
       btn.textContent = labelReady;
-      if (intervalId) { clearInterval(intervalId); intervalId = null; }
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
     }
   };
-  tick();
-  intervalId = setInterval(tick, 500);
-}
-function intentGuard(mode){
-  let j=null; try{ j=JSON.parse(sessionStorage.getItem('toh.match.intent')||'null'); }catch(_){}
-  if(!j || j.mode!==mode || (Date.now()-(+j.ts||0))>90_000) return null;
-  return j;
-}
 
+  try {
+    const { data } = await getCooldownStatus();
+    if (data.ok) {
+      remainMs = data[mode] || 0; // 'battle' 또는 'encounter'
+      tick();
+      if (remainMs > 0) {
+        intervalId = setInterval(tick, 500);
+      }
+    }
+  } catch (e) {
+    console.warn('쿨타임 정보를 가져오지 못했습니다.', e);
+    btn.textContent = '정보 조회 실패';
+  }
+}
 // --- [교체] battle.js의 Progress UI를 가져와 중앙 정렬 강화 ---
 function showProgressUI(myChar, opponentChar) {
   const overlay = document.createElement('div');
