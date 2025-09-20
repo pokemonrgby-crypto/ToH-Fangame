@@ -42,30 +42,46 @@ function saveMatchLock(mode, charId, payload){
 function getCooldownRemainMs(){ const v = +localStorage.getItem('toh.cooldown.allUntilMs') || 0; return Math.max(0, v - Date.now()); }
 function applyGlobalCooldown(seconds){ const until = Date.now() + (seconds*1000); localStorage.setItem('toh.cooldown.allUntilMs', String(until)); }
 
-function mountCooldownOnButton(btn, labelReady){
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
+import { func } from '../api/firebase.js';
+
+const getCooldownStatus = httpsCallable(func, 'getCooldownStatus');
+
+// 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
+async function mountCooldownOnButton(btn, mode, labelReady) {
   let intervalId = null;
-  const tick = ()=>{
-    const r = getCooldownRemainMs();
-    if(r>0){
-      const s = Math.ceil(r/1000);
+  let remainMs = 0;
+
+  const tick = () => {
+    remainMs = Math.max(0, remainMs - 500);
+    const s = Math.ceil(remainMs / 1000);
+    if (remainMs > 0) {
       btn.disabled = true;
       btn.textContent = `${labelReady} (${s}s)`;
-    }else{
+    } else {
       btn.disabled = false;
       btn.textContent = labelReady;
-      if (intervalId) { clearInterval(intervalId); intervalId = null; }
+      if (intervalId) {
+        clearInterval(intervalId);
+        intervalId = null;
+      }
     }
   };
-  tick();
-  intervalId = setInterval(tick, 500);
-}
 
-function intentGuard(mode){
-  let j=null; try{ j=JSON.parse(sessionStorage.getItem('toh.match.intent')||'null'); }catch(_){}
-  if(!j || j.mode!==mode || (Date.now()-(+j.ts||0))>90_000) return null;
-  return j;
+  try {
+    const { data } = await getCooldownStatus();
+    if (data.ok) {
+      remainMs = data[mode] || 0; // 'battle' 또는 'encounter'
+      tick();
+      if (remainMs > 0) {
+        intervalId = setInterval(tick, 500);
+      }
+    }
+  } catch (e) {
+    console.warn('쿨타임 정보를 가져오지 못했습니다.', e);
+    btn.textContent = '정보 조회 실패';
+  }
 }
-
 // ---------- Battle Progress & Logic ----------
 
 function showBattleProgressUI(myChar, opponentChar) {
