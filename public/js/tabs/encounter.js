@@ -233,12 +233,13 @@ export async function showEncounter(){
     mountCooldownOnButton(btnStart, '조우 시작');
     
     // --- [교체] 시작 버튼 클릭 시 startEncounterProcess 함수 호출 ---
-    btnStart.onclick = async () => {
-      if (getCooldownRemainMs() > 0) return;
-      btnStart.disabled = true;
-      applyGlobalCooldown(60); 
-      await startEncounterProcess(myCharData, opponentCharData);
-    };
+
+  btnStart.onclick = async () => {
+    if (getCooldownRemainMs() > 0) return;
+    btnStart.disabled = true;
+    applyGlobalCooldown(300); 
+    await startEncounterProcess(myCharData, opponentCharData);
+  };
 
   } catch(e) {
     console.error('[encounter] setup error', e);
