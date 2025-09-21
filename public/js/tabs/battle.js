@@ -219,46 +219,54 @@ async function startBattleProcess(myChar, opponentChar) {
 
         progress.update('배틀 결과 저장...', 95);
 
-        // 경험치 밸런스 조정 (서버리스 환경이므로 클라이언트에서 수행)
+      // ★ 모의전 여부 재확인
+         const intentNow = (()=>{
+           try { return JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}'); }
+          catch(_) { return {}; }
+        })();
+        const isSimNow = !!intentNow?.sim;
+
+        // 경험치 밸런스 조정 (모의전은 0 고정)
         const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
-        finalLog.exp_char0 = clamp(finalLog.exp_char0, 5, 50);
-        finalLog.exp_char1 = clamp(finalLog.exp_char1, 5, 50);
+        finalLog.exp_char0 = isSimNow ? 0 : clamp(finalLog.exp_char0, 5, 50);
+        finalLog.exp_char1 = isSimNow ? 0 : clamp(finalLog.exp_char1, 5, 50);
+
 
         const logData = {
-            attacker_uid: myChar.owner_uid, // <-- 이 줄을 추가하세요!
+            attacker_uid: myChar.owner_uid,
             attacker_char: `chars/${myChar.id}`,
             defender_char: `chars/${opponentChar.id}`,
             attacker_snapshot: { name: myChar.name, thumb_url: myChar.thumb_url || null },
             defender_snapshot: { name: opponentChar.name, thumb_url: opponentChar.thumb_url || null },
             relation_at_battle: relation || null,
-            ...finalLog, // title, content, winner, exp, items_used 등 포함
+            simulated: isSimNow ? true : undefined,   // ★ 모의전 플래그
+            ...finalLog,
             endedAt: fx.serverTimestamp()
         };
+
 
         const logRef = await fx.addDoc(fx.collection(db, 'battle_logs'), logData);
 
         // [수정] Cloudflare Worker를 호출하여 후처리 실행
-        try {
+        if (!isSimNow) {
+          try {
             progress.update('서버에 결과 반영 중...', 98);
-            
-            // 5단계에서 복사한 본인의 Worker URL을 여기에 붙여넣으세요.
-            const workerUrl = 'https://toh-battle-processor.pokemonrgby.workers.dev'; 
-
+            const workerUrl = 'https://toh-battle-processor.pokemonrgby.workers.dev';
             const res = await fetch(workerUrl, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ logId: logRef.id })
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ logId: logRef.id })
             });
-
             if (!res.ok) {
-                const errorData = await res.json();
-                throw new Error(errorData.error || 'Worker에서 오류가 발생했습니다.');
+              const errorData = await res.json();
+              throw new Error(errorData.error || 'Worker에서 오류가 발생했습니다.');
             }
-
-        } catch (e) {
+          } catch (e) {
             console.error('배틀 결과 반영 실패:', e);
             showToast(`결과를 반영하는 중 서버 오류가 발생했습니다: ${e.message}`);
+          }
         }
+
 
         progress.update('완료!', 100);
       try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown post-finish failed', e); }
@@ -274,7 +282,12 @@ try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); }
         showToast('배틀 생성에 실패했습니다: ' + e.message);
         progress.remove();
         const btnStart = document.getElementById('btnStart');
-        if (btnStart) mountCooldownOnButton(btnStart, 'battle', '배틀 시작');
+        const simCatch = (()=>{
+          try { return !!JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}')?.sim; }
+          catch(_) { return false; }
+        })();
+        if (btnStart) mountCooldownOnButton(btnStart, 'battle', simCatch ? '모의전투 시작' : '배틀 시작');
+
 
     }
 }
@@ -292,7 +305,11 @@ export async function showBattle(){
     root.innerHTML = `<section class="container narrow"><div class="kv-card">로그인이 필요해.</div></section>`;
     return;
   }
+  
+  const isSim = !!intent?.sim;
+  const labelReady = isSim ? '모의전투 시작' : '배틀 시작';
 
+  
   root.innerHTML = `
   <section class="container narrow">
     <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -310,7 +327,7 @@ export async function showBattle(){
     </div>
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn" id="btnStart" disabled>배틀 시작</button>
+        <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
     </div>
   </section>`;
@@ -330,33 +347,39 @@ export async function showBattle(){
     ensureItemCss();
 
 
-    let matchData = null;
-    const persisted = loadMatchLock('battle', intent.charId);
-    if (persisted) {
-      matchData = { ok:true, token: persisted.token||null, opponent: persisted.opponent };
-    } else {
-      matchData = await autoMatch({ db, fx, charId: intent.charId, mode: 'battle' });
-      if(!matchData?.ok || !matchData?.opponent) throw new Error('매칭 상대를 찾지 못했습니다.');
-      saveMatchLock('battle', intent.charId, { token: matchData.token, opponent: matchData.opponent });
-    }
+    if (intent.targetId) {
+  // ★ 모의전: targetId가 있으면 그 캐릭터를 상대 고정
+  const targetId = String(intent.targetId).replace(/^chars\//,'');
+  const oppDoc = await fx.getDoc(fx.doc(db,'chars', targetId));
+  if (!oppDoc.exists()) throw new Error('상대 캐릭터를 찾을 수 없습니다.');
+  opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
+  renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+} else {
+  // 일반전: 기존 자동매칭 유지
+  let matchData = null;
+  const persisted = loadMatchLock('battle', intent.charId);
+  if (persisted) {
+    matchData = { ok:true, token: persisted.token||null, opponent: persisted.opponent };
+  } else {
+    matchData = await autoMatch({ db, fx, charId: intent.charId, mode: 'battle' });
+    if(!matchData?.ok || !matchData?.opponent) throw new Error('매칭 상대를 찾지 못했습니다.');
+    saveMatchLock('battle', intent.charId, { token: matchData.token, opponent: matchData.opponent });
+  }
 
-    const oppId = String(matchData.opponent.id||matchData.opponent.charId||'').replace(/^chars\//,'');
-    const oppDoc = await fx.getDoc(fx.doc(db,'chars', oppId));
-    
-    if (!oppDoc.exists()) {
-      // 상대 캐릭터가 삭제되었거나 없는 경우, 매칭 정보를 초기화하고 재매칭
-      showToast('상대 정보가 없어 다시 매칭할게.');
-      sessionStorage.removeItem(_lockKey('battle', intent.charId));
-      setTimeout(() => showBattle(), 1000); // 1초 후 재시도
-      return; // 현재 로직 중단
-    }
-    
-    opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
-    
-    renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+  const oppId = String(matchData.opponent.id||matchData.opponent.charId||'').replace(/^chars\//,'');
+  const oppDoc = await fx.getDoc(fx.doc(db,'chars', oppId));
+  if (!oppDoc.exists()) {
+    showToast('상대 정보가 없어 다시 매칭할게.');
+    sessionStorage.removeItem(_lockKey('battle', intent.charId));
+    setTimeout(() => showBattle(), 1000);
+    return;
+  }
+  opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
+  renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+}
 
     const btnStart = document.getElementById('btnStart');
-    mountCooldownOnButton(btnStart, 'battle', '배틀 시작'); // <-- 'battle' 모드와 기본 라벨을 전달하도록 수정
+    mountCooldownOnButton(btnStart, 'battle', labelReady);  // <-- 'battle' 모드와 기본 라벨을 전달하도록 수정
     btnStart.onclick = async () => {
         const hasSkills = myCharData.abilities_all && myCharData.abilities_all.length > 0;
         if (hasSkills && myCharData.abilities_equipped?.length !== 2) {
@@ -379,7 +402,7 @@ try {
 } catch (e) {
   showToast(e?.message || '시작에 실패했어.');
 } finally {
-  await mountCooldownOnButton(btnStart, 'battle', '배틀 시작');
+  await mountCooldownOnButton(btnStart, 'battle', labelReady);
 }
 
     };
