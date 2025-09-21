@@ -279,6 +279,11 @@ export async function showCharDetail(){
 
 
 // ---------- render ----------
+// /public/js/tabs/char.js
+
+// (기존 코드와 동일)
+
+// ---------- render ----------
 async function render(c){
   const root = document.getElementById('view');
   const tier = tierOf(c.elo||1000);
@@ -358,19 +363,23 @@ async function render(c){
     </div>
   </section>`;
 
-  // [추가] 후원자 FX 부착 (3D 포털 + 실시간 파티클)
-const wrap = root.querySelector('.avatar-wrap');
-const prefersReduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
-const particleBudget = prefersReduced ? 0 : (window.devicePixelRatio > 1 ? 120 : 160);
-if (wrap && supporterTier && !wrap.dataset.fxAttached) {
-  wrap.dataset.fxAttached = '1';
-
-attachSupporterFX(wrap, 'orbits');  // 옵션은 supporter_fx.js 기본값이 책임짐
-
-
-}
-
-
+  // ANCHOR: [교체] 후원자 FX 부착 로직 수정
+  const wrap = root.querySelector('.avatar-wrap');
+  if (wrap && !wrap.dataset.fxAttached) {
+    wrap.dataset.fxAttached = '1';
+    
+    // 유효한 후원자 등급 목록 (이 목록에 없으면 기본값으로 처리)
+    const validTiers = ['nexus', 'flame', 'galaxy', 'forest'];
+    
+    // supporterTier 값이 유효한 목록에 포함되어 있으면 해당 값을, 그렇지 않으면 'orbits'를 기본값으로 사용
+    const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
+    
+    // 결정된 테마로 이펙트 함수 호출
+    attachSupporterFX(wrap, effectTheme);
+  }
+  // ANCHOR_END
+  
+  // (기존 코드와 동일)
 
   getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
     const img = document.getElementById('charAvatar');
@@ -454,6 +463,7 @@ if (btnLike) {
   });
   renderBio(c, bv);
 }
+// (이하 코드 동일)
 
 function mountFixedActions(c, isOwner){
   document.querySelector('.fixed-actions')?.remove();
