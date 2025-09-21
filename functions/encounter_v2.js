@@ -65,7 +65,7 @@ module.exports = (admin, { HttpsError, logger }) => {
             throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
         }
 
-        const { myCharId, opponentCharId, myChar_forAI, opponentChar_forAI, relation_note } = req.data;
+        const { myCharId, opponentCharId, myChar_forAI, opponentChar_forAI, relation_note, simulate } = req.data;
         if (!myCharId || !opponentCharId || !myChar_forAI || !opponentChar_forAI) {
             throw new HttpsError('invalid-argument', '캐릭터 정보가 필요합니다.');
         }
@@ -82,6 +82,10 @@ module.exports = (admin, { HttpsError, logger }) => {
             const worldSnap = await db.collection('worlds').doc(worldId).get();
             const worldData = worldSnap.exists ? worldSnap.data() : {};
             const relationNote = relation_note || '아직 관계 정보가 없습니다.';
+
+            const opponentCharSnapForSim = await db.collection('chars').doc(opponentCharId).get();
+            if (!opponentCharSnapForSim.exists) throw new HttpsError('not-found', '상대 캐릭터를 찾을 수 없습니다.');
+            const opponentCharForSim = opponentCharSnapForSim.data();
 
             debugStep = '프롬프트 생성';
             const systemPrompt = await loadPrompt(db, 'encounter_system_prompt');
@@ -112,7 +116,40 @@ module.exports = (admin, { HttpsError, logger }) => {
                 result = await callGemini({ apiKey: GEMINI_API_KEY.value(), systemText: systemPrompt, userText: userPrompt, logger, modelName: fallback });
             }
             if (!result.title || !result.content) throw new HttpsError('internal', `AI가 유효한 조우 서사를 생성하지 못했습니다. 응답: ${JSON.stringify(result)}`);
-            
+
+// ★ 모의 조우: 통계/보상/관계 갱신 없이 로그만 기록
+if (simulate) {
+  const logRef = db.collection('encounter_logs').doc();
+  await logRef.set({
+    a_char: `chars/${myCharId}`,
+    b_char: `chars/${opponentCharId}`,
+    a_snapshot: { name: myChar.name, thumb_url: myChar.thumb_url || null },
+    b_snapshot: { name: opponentCharForSim.name, thumb_url: opponentCharForSim.thumb_url || null },
+    title: result.title,
+    content: result.content,
+    exp_a: 0,
+    exp_b: 0,
+    simulated: true,                 // ★ 모의 로그 표시
+    createdAt: Timestamp.now(),
+    endedAt: Timestamp.now()
+  });
+
+  // ★ 공용 쿨타임 5분 설정(4모드 공유)
+  const nowSim = Math.floor(Date.now() / 1000);
+  await db.collection('users').doc(uid).set(
+    { cooldown_all_until: nowSim + 300 },
+    { merge: true }
+  );
+
+  logger.log('모의 조우 생성 완료(로그만 기록)');
+  return { ok: true, logId: logRef.id, simulated: true };
+}
+
+
+
+
+
+          
             debugStep = '데이터베이스 트랜잭션 시작';
             const expA = Math.max(5, Math.min(250, Number(result.exp_char_a) || 20));
             const expB = Math.max(5, Math.min(250, Number(result.exp_char_b) || 20));
