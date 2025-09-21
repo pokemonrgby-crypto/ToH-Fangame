@@ -468,24 +468,74 @@ if (btnLike) {
 
 function mountFixedActions(c, isOwner){
   document.querySelector('.fixed-actions')?.remove();
-  if (!auth.currentUser || !isOwner) return;
+
   const bar = document.createElement('div');
   bar.className = 'fixed-actions';
+
+  if (!auth.currentUser) {
+    // 로그인 안 되어 있으면 아무 것도 안 띄움
+    return;
+  }
+
+  if (isOwner) {
+    // 내 캐릭터일 때: 기존과 동일
+    bar.innerHTML = `
+      <button class="btn large" id="fabEncounter">조우 시작</button>
+      <button class="btn large primary" id="fabBattle">배틀 시작</button>
+    `;
+    document.body.appendChild(bar);
+
+    bar.querySelector('#fabBattle').onclick = ()=>{
+      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'battle', ts: Date.now() }));
+      location.hash = '#/battle';
+    };
+    bar.querySelector('#fabEncounter').onclick = ()=>{
+      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'encounter', ts: Date.now() }));
+      location.hash = '#/encounter';
+    };
+    return;
+  }
+
+  // ★ 다른 사람 캐릭터일 때: 모의 버튼 제공
   bar.innerHTML = `
-    <button class="btn large" id="fabEncounter">조우 시작</button>
-    <button class="btn large primary" id="fabBattle">배틀 시작</button>
+    <button class="btn large" id="fabMockEncounter">모의조우</button>
+    <button class="btn large primary" id="fabMockBattle">모의전투</button>
   `;
   document.body.appendChild(bar);
 
-  bar.querySelector('#fabBattle').onclick = ()=>{
-    sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'battle', ts: Date.now() }));
-    location.hash = '#/battle';
-  };
-  bar.querySelector('#fabEncounter').onclick = ()=>{
-    sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'encounter', ts: Date.now() }));
-    location.hash = '#/encounter';
-  };
+  // 내 대표 캐릭터 하나 고르기(최근 업데이트 순 1개)
+  async function getMyDefaultCharId(){
+    const q = fx.query(
+      fx.collection(db,'chars'),
+      fx.where('owner_uid','==', auth.currentUser.uid),
+      fx.orderBy('updatedAt','desc'),
+      fx.limit(1)
+    );
+    const s = await getDocsFromServer(q);
+    return s.docs[0]?.id || null;
+  }
+
+  async function goMock(mode){
+    const myCharId = await getMyDefaultCharId();
+    if(!myCharId){
+      showToast('내 캐릭터가 없어. 먼저 캐릭터를 만들어줘!');
+      return;
+    }
+    // targetId에 현재 보고 있는 상대 캐릭터를 고정
+    sessionStorage.setItem('toh.match.intent', JSON.stringify({
+      charId: myCharId,
+      mode,
+      sim: true,
+      targetId: c.id,
+      ts: Date.now()
+    }));
+    location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
+  }
+
+  bar.querySelector('#fabMockBattle').onclick = ()=> goMock('battle');
+  bar.querySelector('#fabMockEncounter').onclick = ()=> goMock('encounter');
 }
+
 
 
 // ---------- views ----------
