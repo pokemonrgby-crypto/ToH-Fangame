@@ -5,10 +5,12 @@ import { showToast } from '../ui/toast.js';
 import { requestMatch } from '../api/match.js';
 import { getUserInventory } from '../api/user.js';
 import { showItemDetailModal, rarityStyle, ensureItemCss, esc } from './char.js';
-import { getRelationBetween } from '../api/store.js';
+import { getRelationBetween, updateAbilitiesEquipped } from '../api/store.js';
 import { fetchBattlePrompts, generateBattleSketches, chooseBestSketch, generateFinalBattleLog } from '../api/ai.js';
 
 const getCooldownStatus = httpsCallable(func, 'getCooldownStatus');
+const setGlobalCooldown = httpsCallable(func, 'setGlobalCooldown');
+
 // ---------- utils (기존과 동일) ----------
 function intentGuard(mode){
   try {
@@ -161,14 +163,22 @@ async function startEncounterProcess(myChar, opponentChar) {
         progress.update('서버에 조우 생성을 요청하는 중...', 60);
 
         const startEncounter = httpsCallable(func, 'startEncounter');
-        const result = await startEncounter({
-            myCharId: myChar.id,
-            opponentCharId: opponentChar.id,
-            // AI 입력을 위해 가공된 데이터를 함께 전송
-            myChar_forAI: myCharForAI,
-            opponentChar_forAI: opponentCharForAI,
-            relation_note: relation
-        });
+        // ★ 세션에서 모의 여부 재확인
+        const intentNow = (()=>{
+          try { return JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}'); }
+          catch(_) { return {}; }
+        })();
+         const isSimNow = !!intentNow?.sim;
+
+         const result = await startEncounter({
+           myCharId: myChar.id,
+           opponentCharId: opponentChar.id,
+           myChar_forAI: myCharForAI,
+           opponentChar_forAI: opponentCharForAI,
+           relation_note: relation,
+           simulate: isSimNow          // ★ 모의 조우 플래그 전달
+         });
+
         
         progress.update('완료! 로그 페이지로 이동합니다.', 100);
         
@@ -182,7 +192,12 @@ async function startEncounterProcess(myChar, opponentChar) {
         showToast('조우 생성에 실패했습니다: ' + e.message);
         progress.remove();
         const btnStart = document.getElementById('btnStart');
-        mountCooldownOnButton(btnStart, 'encounter', '조우 시작');
+        const simCatch = (()=>{
+          try { return !!JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}')?.sim; }
+          catch(_){ return false; }
+        })();
+        mountCooldownOnButton(btnStart, 'encounter', simCatch ? '모의조우 시작' : '조우 시작');
+
     }
 }
 
@@ -197,6 +212,9 @@ export async function showEncounter(){
     root.innerHTML = `<section class="container narrow"><div class="kv-card">${!intent ? '잘못된 접근이야.' : '로그인이 필요해.'}</div></section>`;
     return;
   }
+  const isSim = !!intent?.sim;
+  const labelReady = isSim ? '모의조우 시작' : '조우 시작';
+
 
   // --- UI 레이아웃 (기존과 동일) ---
   root.innerHTML = `
@@ -216,7 +234,7 @@ export async function showEncounter(){
     </div>
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn" id="btnStart" disabled>조우 시작</button>
+        <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
     </div>
   </section>`;
@@ -235,46 +253,62 @@ export async function showEncounter(){
     await renderLoadoutForMatch(document.getElementById('loadoutArea'), myCharData);
     ensureItemCss();
 
-    let matchData = null;
-    const persisted = loadMatchLock('encounter', intent.charId);
-    if (persisted) {
-      matchData = { ok:true, token: persisted.token||null, opponent: persisted.opponent };
-    } else {
-      matchData = await requestMatch(intent.charId, 'encounter');
-      if(!matchData?.ok || !matchData?.opponent) throw new Error('매칭 상대를 찾지 못했습니다.');
-      saveMatchLock('encounter', intent.charId, { token: matchData.token, opponent: matchData.opponent });
-    }
+    if (intent.targetId) {
+  // ★ 모의조우: targetId가 있으면 그 캐릭터를 상대 고정
+  const targetId = String(intent.targetId).replace(/^chars\//,'');
+  const oppDoc = await fx.getDoc(fx.doc(db,'chars', targetId));
+  if (!oppDoc.exists()) throw new Error('상대 캐릭터를 찾을 수 없습니다.');
+  opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
+  renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+} else {
+  // 일반 조우: 기존 자동매칭
+  let matchData = null;
+  const persisted = loadMatchLock('encounter', intent.charId);
+  if (persisted) {
+    matchData = { ok:true, token: persisted.token||null, opponent: persisted.opponent };
+  } else {
+    matchData = await requestMatch(intent.charId, 'encounter');
+    if(!matchData?.ok || !matchData?.opponent) throw new Error('매칭 상대를 찾지 못했습니다.');
+    saveMatchLock('encounter', intent.charId, { token: matchData.token, opponent: matchData.opponent });
+  }
 
-    const oppId = String(matchData.opponent.id||matchData.opponent.charId||'').replace(/^chars\//,'');
-    const oppDoc = await fx.getDoc(fx.doc(db,'chars', oppId));
-    
-    if (!oppDoc.exists()) {
-      showToast('상대 정보가 없어 다시 매칭할게.');
-      sessionStorage.removeItem(_lockKey('encounter', intent.charId));
-      setTimeout(() => showEncounter(), 1000);
-      return;
-    }
-    
-    opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
-    
-    renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+  const oppId = String(matchData.opponent.id||matchData.opponent.charId||'').replace(/^chars\//,'');
+  const oppDoc = await fx.getDoc(fx.doc(db,'chars', oppId));
 
-    const btnStart = document.getElementById('btnStart');
-    mountCooldownOnButton(btnStart, 'encounter', '조우 시작');
+  if (!oppDoc.exists()) {
+    showToast('상대 정보가 없어 다시 매칭할게.');
+    sessionStorage.removeItem(_lockKey('encounter', intent.charId));
+    setTimeout(() => showEncounter(), 1000);
+    return;
+  }
+
+  opponentCharData = { id: oppDoc.id, ...oppDoc.data() };
+  renderOpponentCard(document.getElementById('matchArea'), opponentCharData);
+}
+
+
+    mountCooldownOnButton(btnStart, 'encounter', labelReady);
+
 
     
     // --- [교체] 시작 버튼 클릭 시 startEncounterProcess 함수 호출 ---
 
   btnStart.onclick = async () => {
   btnStart.disabled = true;
+
+  // ★ 공용 쿨타임 즉시 잠금(서버+로컬) : 4모드(일반/모의/배틀/조우) 공유
+  try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown pre-start failed', e); }
+  try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_){}
+
   try {
     await startEncounterProcess(myCharData, opponentCharData);
   } catch (e) {
     showToast(e?.message || '시작에 실패했어.');
   } finally {
-    await mountCooldownOnButton(btnStart, 'encounter', '조우 시작');
+    await mountCooldownOnButton(btnStart, 'encounter', labelReady);
   }
 };
+
 
 
   } catch(e) {
