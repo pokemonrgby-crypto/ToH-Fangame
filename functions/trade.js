@@ -319,36 +319,68 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
 
 
 
-  const auctionBid = onCall({ region:'us-central1' }, async (req)=>{
-    const uid = req.auth?.uid;
-    _assert(uid, 'unauthenticated', '로그인이 필요해');
-    const { auctionId, amount } = req.data || {};
-    _assert(auctionId && Number.isFinite(Number(amount)), 'invalid-argument', '잘못된 입력');
-    const ref = aucCol.doc(String(auctionId));
-    await db.runTransaction(async (tx)=>{
-      const snap = await tx.get(ref);
-      _assert(snap.exists, 'not-found', '경매 없음');
-      const A = snap.data();
-      _assert(A.status==='active', 'failed-precondition', '종료된 경매야');
-      _assert(A.seller_uid !== uid, 'failed-precondition', '내 경매엔 입찰 불가');
-      _assert(A.endsAt?.toMillis() > Date.now(), 'failed-precondition', '이미 마감됨');
-      const bid = Math.floor(Number(amount));
-      const minOk = Math.max(Number(A.minBid||1), (A.topBid?.amount||0) + MIN_STEP);
-      _assert(bid >= minOk, 'failed-precondition', `입찰가는 최소 ${minOk} 이상이어야 해`);
-      const meRef = db.doc(`users/${uid}`);
-      const me = await tx.get(meRef);
-      _assert(me.exists, 'not-found', '유저 없음');
+  // [교체] 재입찰(delta hold) + 역전 알림
+const auctionBid = onCall({ region:'us-central1' }, async (req)=>{
+  const uid = req.auth?.uid;
+  _assert(uid, 'unauthenticated', '로그인이 필요해');
+  const { auctionId, amount } = req.data || {};
+  _assert(auctionId && Number.isFinite(Number(amount)), 'invalid-argument', '잘못된 입력');
+
+  const ref = aucCol.doc(String(auctionId));
+  await db.runTransaction(async (tx)=>{
+    const snap = await tx.get(ref);
+    _assert(snap.exists, 'not-found', '경매 없음');
+    const A = snap.data();
+    _assert(A.status==='active', 'failed-precondition', '종료된 경매야');
+    _assert(A.seller_uid !== uid, 'failed-precondition', '내 경매엔 입찰 불가');
+    _assert(A.endsAt?.toMillis() > Date.now(), 'failed-precondition', '이미 마감됨');
+
+    const bid = Math.floor(Number(amount));
+    const prev = A.topBid || null;
+    const minOk = Math.max(Number(A.minBid||1), (prev?.amount||0) + MIN_STEP);
+    _assert(bid >= minOk, 'failed-precondition', `입찰가는 최소 ${minOk} 이상이어야 해`);
+
+    const meRef = db.doc(`users/${uid}`);
+    const me = await tx.get(meRef);
+    _assert(me.exists, 'not-found', '유저 없음');
+
+    if (prev?.uid && prev.uid === uid) {
+      // 같은 사람이 금액 올릴 때: 증가분만 홀드
+      const delta = bid - Number(prev.amount||0);
+      _assert(delta >= MIN_STEP, 'failed-precondition', '이전 입찰보다 높아야 해');
+      _hold(tx, meRef, me, delta);
+    } else {
+      // 새 사람의 입찰: 전체 금액 홀드 후 이전 보증금 해제
       _hold(tx, meRef, me, bid);
-      if (A.topBid?.uid) {
-        const prevRef = db.doc(`users/${A.topBid.uid}`);
-        const prev = await tx.get(prevRef);
-        if (prev.exists) _release(tx, prevRef, prev, Number(A.topBid.amount||0));
+      if (prev?.uid) {
+        const prevRef = db.doc(`users/${prev.uid}`);
+        const prevSnap = await tx.get(prevRef);
+        if (prevSnap.exists) _release(tx, prevRef, prevSnap, Number(prev.amount||0));
       }
-      tx.update(ref, { topBid: { uid, amount: bid }, updatedAt: nowTs() });
-      tx.set(ref.collection('bids').doc(), { uid, amount: bid, at: nowTs() });
-    });
-    return { ok:true };
+    }
+
+    tx.update(ref, { topBid: { uid, amount: bid }, updatedAt: nowTs() });
+    tx.set(ref.collection('bids').doc(), { uid, amount: bid, at: nowTs() });
+
+    // 역전 알림: 이전 최고입찰자가 있고, 내가 그 사람이 아닐 때
+    if (prev?.uid && prev.uid !== uid) {
+      const mailRef = db.collection('mail').doc(prev.uid).collection('msgs').doc();
+      tx.set(mailRef, {
+        kind: 'notice',
+        title: '경매 입찰 알림',
+        body: `참여 중인 경매가 다른 입찰로 갱신되었습니다. 경매: ${ref.id}`,
+        sentAt: nowTs(),
+        read: false,
+        from: 'system',
+        attachments: { coins:0, items:[], ticket:null },
+        claimed: false
+      });
+    }
   });
+
+  return { ok:true };
+});
+
 
   const auctionSettle = onCall({ region:'us-central1' }, async (req)=>{
     const uid = req.auth?.uid;
@@ -381,6 +413,42 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
     return { ok:true };
   });
 
+  // [추가] 내가 입찰한 경매 목록/최근입찰
+const auctionListMyBids = onCall({ region:'us-central1' }, async (req)=>{
+  const uid = req.auth?.uid;
+  _assert(uid, 'unauthenticated', '로그인이 필요해');
+
+  const snap = await db.collectionGroup('bids')
+    .where('uid','==',uid)
+    .orderBy('at','desc')
+    .limit(100)
+    .get();
+
+  const rows = [];
+  for (const d of snap.docs) {
+    const aucRef = d.ref.parent.parent;
+    if (!aucRef) continue;
+    const aSnap = await aucRef.get();
+    if (!aSnap.exists) continue;
+    const A = aSnap.data() || {};
+    rows.push({
+      id: aucRef.id,
+      kind: A.kind || 'normal',
+      status: A.status || 'active',
+      myAmount: Number(d.data().amount||0),
+      topBid: A.topBid || null,
+      endsAt: A.endsAt || null,
+      createdAt: A.createdAt || null,
+      item_name: A.item?.name || null,
+      item_rarity: A.item?.rarity || null,
+      minBid: Number(A.minBid||1),
+      seller_uid: A.seller_uid || null
+    });
+  }
+  return { ok:true, rows };
+});
+
+
   return {
     tradeCreateListing,
     tradeCancelListing,
@@ -394,5 +462,6 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
     auctionListMyListings,
     auctionBid,
     auctionSettle,
+    auctionListMyBids,
   };
 };
