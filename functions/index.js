@@ -695,7 +695,6 @@ exports.kickGuildMember = guildFns.kickFromGuild;
 
 
 Object.assign(exports, maintenanceFns);
-Object.assign(exports, stockmarketFns);
 
 
 // === BEGIN PATCH: trade module export ===
