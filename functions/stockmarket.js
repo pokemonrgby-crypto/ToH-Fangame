@@ -195,9 +195,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     const currentMinute = now.getHours() * 60 + now.getMinutes();
 
     // [ADD] '지났으면 처리' 판정기 (자정 래핑 대응)
-    const isDue = (m, lastMinute) => {
-      const t   = ((m % 1440) + 1440) % 1440;
-      const cur = currentMinute;
+    const isPastToday = (m) => {
+      const t = ((m % 1440) + 1440) % 1440;
+      return currentMinute >= t; // 재시작/지연 시에도 '이미 지남'이면 즉시 처리
+    };
       if (typeof lastMinute !== 'number' || lastMinute < 0) return cur >= t;
       const last = ((lastMinute % 1440) + 1440) % 1440;
       if (last < cur) return t > last && t <= cur;
@@ -226,7 +227,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
         for (const ev of events) {
           // (1) 트리거 정각: 예고 발송 (지났으면 처리)
-          if (!ev.forecast_sent && isDue(ev.trigger_minute, lastProcessed)) {
+          if (!ev.forecast_sent && isPastToday(ev.trigger_minute)) {
             const subscribers = Array.isArray(stock.subscribers) ? stock.subscribers : [];
             const worldName = plan.world_name || stock.world_name || stock.world_id || '';
             const worldBadge = worldName ? `【${worldName}】 ` : '';
@@ -243,7 +244,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           }
 
           // (2) +10분: 실제 결과 반영 (지났으면 처리)
-          if (ev.forecast_sent && !ev.processed && isDue(ev.trigger_minute + 10, lastProcessed)) {
+          if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
             price = applyEventToPrice(price, ev.actual_outcome, 'large');
             try {
               const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
@@ -771,6 +772,8 @@ ${event.premise}
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
     const { stock_id, potential_impact, premise, trigger_minute } = req.data;
+    const _tm = Math.max(0, Math.min(1429, Math.floor(Number(trigger_minute))));
+
     if (!stock_id || !potential_impact || !premise || trigger_minute === null) {
       throw new HttpsError('invalid-argument', '필수 인자가 누락되었습니다.');
     }
@@ -789,7 +792,7 @@ ${event.premise}
     const newEvent = {
       premise: premise, title_before: idea.title_before, potential_impact: potential_impact,
       actual_outcome: Math.random() < 0.85 ? potential_impact : (potential_impact === 'positive' ? 'negative' : 'positive'),
-      trigger_minute: trigger_minute, forecast_sent: false, processed: false, is_manual: true,
+      trigger_minute: _tm, forecast_sent: false, processed: false, is_manual: true,
     };
     await planRef.set({ major_events: FieldValue.arrayUnion(newEvent) }, { merge: true });
     return { ok: true, event: newEvent };
@@ -801,6 +804,19 @@ ${event.premise}
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
 
     const { world_id, premise, trigger_time } = req.data;
+    // [ADD] KST 안전 파서: 타임존 미기재 문자열을 한국시간으로 간주
+function _parseKST(input) {
+  if (input instanceof Date) return input;
+  if (typeof input === 'number') return new Date(input);
+  const s = String(input || '').trim();
+  if (!s) throw new HttpsError('invalid-argument', 'trigger_time이 비어있습니다.');
+  // 이미 타임존 포함이면 그대로
+  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+  // "YYYY-MM-DD HH:mm" 또는 "YYYY-MM-DDTHH:mm" → KST로 처리
+  return new Date(s.replace(' ', 'T') + ':00+09:00');
+}
+const when = _parseKST(trigger_time);
+
     if (!world_id || !premise || !trigger_time) {
       throw new HttpsError('invalid-argument', '세계관, 사건 내용, 실행 시간은 필수입니다.');
     }
@@ -809,7 +825,7 @@ ${event.premise}
     await eventRef.set({
       world_id,
       premise,
-      trigger_time: admin.firestore.Timestamp.fromDate(new Date(trigger_time)),
+      trigger_time: admin.firestore.Timestamp.fromDate(when),
       processed_preliminary: false, // 1단계 처리 플래그
       processed_final: false,       // 2단계 처리 플래그
       createdAt: FieldValue.serverTimestamp(),
