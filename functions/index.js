@@ -21,6 +21,7 @@ const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger 
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
+exports.adjustStockPricesByVolume = stockmarket.adjustStockPricesByVolume; // 이 줄 추가
 exports.buyStock               = stockmarket.buyStock;
 exports.sellStock              = stockmarket.sellStock;
 exports.subscribeToStock       = stockmarket.subscribeToStock;
