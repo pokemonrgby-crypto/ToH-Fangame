@@ -646,8 +646,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
     if (!stock_id || !potential_impact || !premise || Number.isNaN(_tm)) {
      throw new HttpsError('invalid-argument', '필수 인자가 누락되었습니다.');
-
-
     }
     const today = dayStamp();
     const planRef = db.collection('stock_events').doc(`${stock_id}_${today}`);
@@ -670,24 +668,20 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return { ok: true, event: newEvent };
   });
 
-  // 세계관 사건 생성 함수
   const adminCreateWorldEvent = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
 
     const { world_id, premise, trigger_time } = req.data;
-    // [ADD] KST 안전 파서: 타임존 미기재 문자열을 한국시간으로 간주
-function _parseKST(input) {
-  if (input instanceof Date) return input;
-  if (typeof input === 'number') return new Date(input);
-  const s = String(input || '').trim();
-  if (!s) throw new HttpsError('invalid-argument', 'trigger_time이 비어있습니다.');
-  // 이미 타임존 포함이면 그대로
-  if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
-  // "YYYY-MM-DD HH:mm" 또는 "YYYY-MM-DDTHH:mm" → KST로 처리
-  return new Date(s.replace(' ', 'T') + ':00+09:00');
-}
-const when = _parseKST(trigger_time);
+    function _parseKST(input) {
+      if (input instanceof Date) return input;
+      if (typeof input === 'number') return new Date(input);
+      const s = String(input || '').trim();
+      if (!s) throw new HttpsError('invalid-argument', 'trigger_time이 비어있습니다.');
+      if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
+      return new Date(s.replace(' ', 'T') + ':00+09:00');
+    }
+    const when = _parseKST(trigger_time);
 
     if (!world_id || !premise || !trigger_time) {
       throw new HttpsError('invalid-argument', '세계관, 사건 내용, 실행 시간은 필수입니다.');
@@ -698,8 +692,8 @@ const when = _parseKST(trigger_time);
       world_id,
       premise,
       trigger_time: admin.firestore.Timestamp.fromDate(when),
-      processed_preliminary: false, // 1단계 처리 플래그
-      processed_final: false,       // 2단계 처리 플래그
+      processed_preliminary: false,
+      processed_final: false,
       createdAt: FieldValue.serverTimestamp(),
       createdBy: uid,
     });
@@ -708,8 +702,16 @@ const when = _parseKST(trigger_time);
   });
 
   return {
-    planDailyStockEvents, updateStockMarket, buyStock, sellStock, subscribeToStock,
-    createGuildStock, distributeDividends, adminCreateStock, adminCreateManualEvent,
+    planDailyStockEvents,
+    updateStockMarket,
+    adjustStockPricesByVolume,
+    buyStock,
+    sellStock,
+    subscribeToStock,
+    createGuildStock,
+    distributeDividends,
+    adminCreateStock,
+    adminCreateManualEvent,
     adminCreateWorldEvent
   };
 };
