@@ -203,6 +203,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     const stocksSnap = await db.collection('stocks').where('status', '==', 'listed').get();
 
     for (const stockDoc of stocksSnap.docs) {
+      // [ADD] 트랜잭션 밖에서 처리할 큐들
+      const postForecastMails = [];
+      const postResultJobs = [];
+
       const stockRef = stockDoc.ref;
       const planDocRef = db.collection('stock_events').doc(`${stockRef.id}_${today}`);
 
@@ -227,66 +231,51 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
             const worldName = plan.world_name || stock.world_name || stock.world_id || '';
             const worldBadge = worldName ? `【${worldName}】 ` : '';
             subscribers.forEach(uid => {
-              const mailRef = db.collection('mail').doc(uid).collection('msgs').doc();
-              tx.set(mailRef, {
-                kind: 'etc', title: `[주식 예고] ${worldBadge}${stock.name}`,
+              postForecastMails.push({
+                uid,
+                title: `[주식 예고] ${worldBadge}${stock.name}`,
                 body: `${ev.title_before}\n\n(10분 후 결과 반영 예정)`,
-                sentAt: FieldValue.serverTimestamp(), from: '증권 정보국', read: false,
               });
             });
+
             ev.forecast_sent = true;
             planUpdated = true;
           }
 
           // (2) +10분: 실제 결과 반영 (지났으면 처리)
-          if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
-            price = applyEventToPrice(price, ev.actual_outcome, 'large');
-            try {
-              const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
-출력은 JSON 한 개만. 마크다운/설명/코드펜스 금지.
-형식:
-{
-  "title_after": "<=40자 한국어 제목>",
-  "body_after": "2~4문장 한국어 본문. 사건의 '실제 결과'를 간결히 요약."
+          // (2) +10분: 실제 결과 반영 (지났으면 처리)
+if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
+  // 가격 반영은 트랜잭션 안에서 처리
+  price = applyEventToPrice(price, ev.actual_outcome, 'large');
+  ev.processed = true;
+  movedByEvent = true;
+  planUpdated = true;
+
+  // [MOVE-OUT] 결과 기사/메일은 트랜잭션 종료 후 처리
+  const subscribers = Array.isArray(stock.subscribers) ? stock.subscribers : [];
+  const worldName = plan.world_name || stock.world_name || stock.world_id || '';
+  const worldBadge = worldName ? `【${worldName}】 ` : '';
+  postResultJobs.push({
+    subscribers,
+    worldBadge,
+    stockName: stock.name,
+    premise: ev.premise,
+    expected: ev.potential_impact,
+    actual: ev.actual_outcome,
+  });
+
+  // [KEEP] 목표가(target_price) 조정은 트랜잭션 안에서 수행
+  const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
+  const dailySnap = await tx.get(dailyRef);
+  if (dailySnap.exists) {
+    const dplan = dailySnap.data();
+    const currentTarget = dplan.target_price || price;
+    const impactMultiplier = ev.actual_outcome === 'positive' ? 1.075 : 0.925;
+    const newTarget = Math.round(currentTarget * impactMultiplier);
+    tx.update(dailyRef, { target_price: newTarget });
+  }
 }
-규칙:
-- 요약은 과장 없이 간단히.
-- JSON 외 다른 글자 금지.`;
-              const userPrompt = `사건 전말: ${ev.premise}
-예상: ${ev.potential_impact}
-실제 결과: ${ev.actual_outcome}`;
-              const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
-              const newsObj = safeJson(resultRaw, {});
-              const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
-              const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
 
-              const subscribers = stock.subscribers || [];
-              const worldName = plan.world_name || stock.world_name || stock.world_id || '';
-              const worldBadge = worldName ? `【${worldName}】 ` : '';
-              subscribers.forEach(uid => {
-                const mailRef = db.collection('mail').doc(uid).collection('msgs').doc();
-                tx.set(mailRef, {
-                  kind: 'etc', title: `[주식 결과] ${worldBadge}${stock.name}`,
-                  body: `${titleA}\n\n${bodyA}`,
-                  sentAt: FieldValue.serverTimestamp(), from: '증권 정보국', read: false,
-                });
-              });
-            } catch (e) { logger.error('결과 기사 생성 실패:', e); }
-            ev.processed = true;
-            movedByEvent = true;
-            planUpdated = true;
-
-            // [추가] 이벤트 발생 시 목표가(target_price)를 조정하여 지속적인 영향 부여
-            const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
-            const dailySnap = await tx.get(dailyRef);
-            if (dailySnap.exists) {
-              const dplan = dailySnap.data();
-              const currentTarget = dplan.target_price || price;
-              const impactMultiplier = ev.actual_outcome === 'positive' ? 1.075 : 0.925;
-              const newTarget = Math.round(currentTarget * impactMultiplier);
-              tx.update(dailyRef, { target_price: newTarget });
-            }
-          }
         }
 
         // (3) 잔물결 효과 (이벤트가 없었을 때만)
@@ -336,6 +325,65 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         // [ADD] 이번 루프의 마지막 처리 분 기록 (중복 방지 & 누락분 보정 기준)
         tx.set(planDocRef, { last_processed_minute: currentMinute }, { merge: true });
       });
+
+      // [ADD] 트랜잭션 커밋 후: 예고 메일 일괄 발송
+if (postForecastMails.length) {
+  const batch = db.batch();
+  for (const m of postForecastMails) {
+    const mailRef = db.collection('mail').doc(m.uid).collection('msgs').doc();
+    batch.set(mailRef, {
+      kind: 'etc',
+      title: m.title,
+      body: m.body,
+      sentAt: FieldValue.serverTimestamp(),
+      from: '증권 정보국',
+      read: false,
+    });
+  }
+  await batch.commit();
+  postForecastMails.length = 0;
+}
+
+// [ADD] 트랜잭션 커밋 후: 결과 기사 생성 → 메일 발송
+for (const job of postResultJobs) {
+  try {
+    const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
+출력은 JSON 한 개만. 마크다운/설명/코드펜스 금지.
+형식:
+{
+  "title_after": "<=40자 한국어 제목>",
+  "body_after": "2~4문장 한국어 본문. 사건의 '실제 결과'를 간결히 요약."
+}`;
+    const userPrompt = `사건 전말: ${job.premise}
+예상: ${job.expected}
+실제 결과: ${job.actual}`;
+
+    const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
+    const newsObj = safeJson(resultRaw, {});
+    const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
+    const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
+
+    if (job.subscribers?.length) {
+      const batch = db.batch();
+      for (const uid of job.subscribers) {
+        const mailRef = db.collection('mail').doc(uid).collection('msgs').doc();
+        batch.set(mailRef, {
+          kind: 'etc',
+          title: `[주식 결과] ${job.worldBadge}${job.stockName}`,
+          body: `${titleA}\n\n${bodyA}`,
+          sentAt: FieldValue.serverTimestamp(),
+          from: '증권 정보국',
+          read: false,
+        });
+      }
+      await batch.commit();
+    }
+  } catch (e) {
+    logger.error('결과 기사 생성/발송 실패:', e);
+  }
+}
+postResultJobs.length = 0;
+
     }
 
     // === 세계관 사건 (예고) 처리 ===
