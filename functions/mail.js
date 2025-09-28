@@ -220,16 +220,15 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           const ps = await db.collection('configs').doc('prompts').get();
           systemText = String((ps.exists && ps.data()?.gacha_item_system) || '');
 
-          // [수정] .slice(0,500) 제거
+          // [최종 수정] 요청 시/응답 처리 시 모든 글자수 제한 제거
           userText = `생성할 아이템의 희귀도: ${picked}\n유저의 요청사항: ${String(prompt||'없음')}`;
-
-          // [수정] HTTP 호출 대신 내부 함수를 직접 호출합니다.
+          
           rawAiResponse = await _callGeminiForItem(systemText, userText);
           
           const gen = rawAiResponse ? JSON.parse(rawAiResponse) : {};
           
           const name = String(gen?.name || '이름 없는 아이템');
-          const description = String(gen?.description || '').slice(0, 500);
+          const description = String(gen?.description || ''); // .slice(0, 500) 제거
           const isConsumable = !!gen?.isConsumable;
           const uses = Math.max(1, Number(gen?.uses||1));
 
