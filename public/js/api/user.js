@@ -1,5 +1,6 @@
 // /public/js/api/user.js
-import { db, auth, fx, storage, sx } from './firebase.js';
+import { db, auth, fx, func, storage, sx } from './firebase.js';
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 
 // BYOK 키 저장 위치 통일 (ai.js의 'toh_byok'와도 동기화)
 export function getLocalGeminiKey(){
@@ -178,4 +179,18 @@ export async function getUserInventory(uid = null) {
     console.error(`Failed to get inventory for UID ${targetUid}:`, e);
     return [];
   }
+}
+
+// (파일 맨 아래에 추가)
+/**
+ * 아이템의 잠금 상태를 서버에 요청하여 토글합니다.
+ * @param {string} itemId - 잠금 상태를 변경할 아이템의 ID
+ * @param {boolean} lock - true: 잠금, false: 해제
+ * @returns {Promise<{ok: boolean, itemId: string, isLocked: boolean}>}
+ */
+export async function toggleItemLock(itemId, lock) {
+  if (!auth.currentUser) throw new Error('로그인이 필요합니다.');
+  const call = httpsCallable(func, 'toggleItemLock');
+  const result = await call({ itemId, lock });
+  return result.data;
 }
