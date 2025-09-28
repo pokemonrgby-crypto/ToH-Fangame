@@ -35,7 +35,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       }],
       generationConfig: {
         temperature: 0.9,
-        maxOutputTokens: 1024,
+        maxOutputTokens: 8192, // ◀◀ 수정: 1024에서 8192로 상향 조정
         responseMimeType: "application/json"
       }
     };
@@ -228,7 +228,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           const gen = rawAiResponse ? JSON.parse(rawAiResponse) : {};
           
           const name = String(gen?.name || '이름 없는 아이템');
-          const description = String(gen?.description || ''); // .slice(0, 500) 제거
+          const description = String(gen?.description || '');
           const isConsumable = !!gen?.isConsumable;
           const uses = Math.max(1, Number(gen?.uses||1));
 
