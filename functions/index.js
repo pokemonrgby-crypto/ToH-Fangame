@@ -715,7 +715,7 @@ Object.assign(exports, battleFns);
 
 
 // === BEGIN PATCH: mail module export ===
-const mailFns = require('./mail')(admin, { onCall, HttpsError, logger });
+const mailFns = require('./mail')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); // [수정] GEMINI_API_KEY 추가
 Object.assign(exports, mailFns);
 // === END PATCH ===
 
