@@ -79,15 +79,18 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return n > 0 ? n : 1;
   };
 
+// ANCHOR: applyTradeToPrice 함수 시작
   const applyTradeToPrice = (currentPrice, quantity, isBuy) => {
     const price = Number.isFinite(+currentPrice) && +currentPrice > 0 ? +currentPrice : 1;
     const qty = Math.max(1, Math.floor(+quantity || 0));
-    const baseRate = 0.001; // 개별 거래가 현재가에 미치는 영향 (소폭)
+    // [수정] 즉시 변동폭을 1/5로 줄여 안정성 확보 (0.001 -> 0.0002)
+    const baseRate = 0.0002;
     const changeRate = baseRate * (qty / 100);
     const mult = isBuy ? (1 + changeRate) : Math.max(0.5, 1 - changeRate);
     const n = Math.round(price * mult);
     return n > 0 ? n : 1;
   };
+// ANCHOR_END
 
   const ensureListed = (s) => {
     if (!s || s.status !== 'listed') throw new HttpsError('failed-precondition', '상장 상태가 아닙니다.');
@@ -483,6 +486,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     });
   });
 
+// ANCHOR: adjustStockPricesByVolume 함수 시작
   // [신규] 5분마다 거래량 기반으로 목표가(target_price) 조정
   const adjustStockPricesByVolume = onSchedule({
     schedule: 'every 5 minutes', timeZone: 'Asia/Seoul', region: 'us-central1',
@@ -518,8 +522,8 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           const plan = planSnap.data();
           const netVolume = (volumeData.buy_volume || 0) - (volumeData.sell_volume || 0);
           
-          // [핵심] 순수 거래량에 기반한 목표가 조정 (영향 계수는 낮게 설정)
-          const impact = Math.round(netVolume * 0.0001); 
+          // [수정] 목표가 영향 계수를 0.0001에서 0.000008로 대폭 하향 조정
+          const impact = Math.round(netVolume * 0.000008); 
           const currentTarget = Number(plan.target_price || 0);
           
           if (impact !== 0) {
@@ -532,6 +536,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       }
     }
   });
+// ANCHOR_END
 
   // ==================================================================
   // 4) 기타: 구독/상장/배당
