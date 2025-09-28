@@ -20,13 +20,13 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
       throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
     }
 
-    const model = 'gemini-1.5-flash'; // 아이템 생성에 flash 모델 사용
+    const model = 'gemini-2.5-flash'; // 아이템 생성에 flash 모델 사용
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = {
       contents: [{ role: 'user', parts: [{ text: `${systemText}\n\n${userText||''}` }]}],
       generationConfig: { 
         temperature: 0.9, 
-        maxOutputTokens: 1024,
+        maxOutputTokens: 2048,
         responseMimeType: "application/json" // JSON 응답을 명시적으로 요청
       },
       safetySettings: []
