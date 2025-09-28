@@ -1,4 +1,4 @@
-// /functions/stockmarket.js  (no-index fallbacks 적용 완전체)
+// /functions/stockmarket.js  (5분 주기 거래량 집계 방식 적용)
 module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY }) => {
   const db = admin.firestore();
   const { FieldValue } = admin.firestore;
@@ -19,6 +19,19 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return kstDate.toISOString().slice(0, 10);
   };
   const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
+
+  // [신규] 5분 단위 시간 버킷 ID 생성
+  const get5MinBucketId = (d = new Date()) => {
+    const kstOffset = 9 * 60 * 60 * 1000;
+    const kstDate = new Date(d.getTime() + kstOffset);
+    const year = kstDate.getUTCFullYear();
+    const month = String(kstDate.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(kstDate.getUTCDate()).padStart(2, '0');
+    const hour = String(kstDate.getUTCHours()).padStart(2, '0');
+    const minute = String(Math.floor(kstDate.getUTCMinutes() / 5) * 5).padStart(2, '0');
+    return `${year}-${month}-${day}T${hour}:${minute}`;
+  };
+
 
   async function callGemini(model, system, user) {
     const key = GEMINI_API_KEY.value();
@@ -43,7 +56,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return text;
   }
 
-  // === 안전 파서 & 펜스 제거 ===
   function stripFence(s='') {
     return String(s).trim()
       .replace(/^```json\s*/i, '')
@@ -70,7 +82,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   const applyTradeToPrice = (currentPrice, quantity, isBuy) => {
     const price = Number.isFinite(+currentPrice) && +currentPrice > 0 ? +currentPrice : 1;
     const qty = Math.max(1, Math.floor(+quantity || 0));
-    const baseRate = 0.001;
+    const baseRate = 0.001; // 개별 거래가 현재가에 미치는 영향 (소폭)
     const changeRate = baseRate * (qty / 100);
     const mult = isBuy ? (1 + changeRate) : Math.max(0.5, 1 - changeRate);
     const n = Math.round(price * mult);
@@ -137,7 +149,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         try {
           const ideaRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
           const idea = safeJson(ideaRaw, { title_before: '임시 제목' });
-          // [CHANGE] 자정 직전 10분은 피한다 (결과 +10분 유실 방지)
           const triggerMinute = Math.floor(Math.random() * ((24 * 60) - 10));
           const actual_outcome = Math.random() < 0.7 ? idea.potential_impact
             : (idea.potential_impact === 'positive' ? 'negative' : 'positive');
@@ -156,29 +167,27 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         }
       }
 
-      // ★ 항상 문서를 남긴다 (이벤트 0개여도)
       await planRef.set({
         stock_id: doc.id,
         date: today,
         world_id: stock.world_id || worldInfo.id || null,
         world_name: stock.world_name || worldInfo.name || null,
         major_events: majorEvents,
-        last_processed_minute: -1 // [ADD] 처음엔 초깃값
+        last_processed_minute: -1
       }, { merge: true });
 
-      // [신규] 일일 잔물결 계획(목표가/트렌드) 초기화
       const dailyRef = db.collection('stock_daily_plans').doc(`${doc.id}_${today}`);
       const basePrice = Number(stock.current_price || 0);
-      const trendSign = Math.random() < 0.5 ? -1 : 1;  // 하루 방향성
-      const driftBps = ({ low: 2, normal: 5, high: 10 }[stock.volatility] ?? 5); // 분당 bps
+      const trendSign = Math.random() < 0.5 ? -1 : 1;
+      const driftBps = ({ low: 2, normal: 5, high: 10 }[stock.volatility] ?? 5);
 
       await dailyRef.set({
         stock_id: doc.id,
         date: today,
         target_price: basePrice,
-        trend_sign: trendSign,   // -1, +1
+        trend_sign: trendSign,
         daily_open: basePrice,
-        drift_bps: driftBps      // 분당 기초 변동폭
+        drift_bps: driftBps
       }, { merge: true });
     }
   });
@@ -194,16 +203,14 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     const now = new Date(new Date().toLocaleString('en-US', { timeZone: 'Asia/Seoul' }));
     const currentMinute = now.getHours() * 60 + now.getMinutes();
 
-    // [ADD] '지났으면 처리' 판정기 (자정 래핑 대응)
     const isPastToday = (m) => {
       const t = ((m % 1440) + 1440) % 1440;
-      return currentMinute >= t; // 재시작/지연 시에도 '이미 지남'이면 즉시 처리
+      return currentMinute >= t;
     };
 
     const stocksSnap = await db.collection('stocks').where('status', '==', 'listed').get();
 
     for (const stockDoc of stocksSnap.docs) {
-      // [ADD] 트랜잭션 밖에서 처리할 큐들
       const postForecastMails = [];
       const postResultJobs = [];
 
@@ -220,12 +227,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         let planUpdated = false;
 
         const events = Array.isArray(plan.major_events) ? plan.major_events : [];
-        const lastProcessed = typeof plan.last_processed_minute === 'number' ? plan.last_processed_minute : -1;
-
+        
         let movedByEvent = false;
 
         for (const ev of events) {
-          // (1) 트리거 정각: 예고 발송 (지났으면 처리)
           if (!ev.forecast_sent && isPastToday(ev.trigger_minute)) {
             const subscribers = Array.isArray(stock.subscribers) ? stock.subscribers : [];
             const worldName = plan.world_name || stock.world_name || stock.world_id || '';
@@ -242,43 +247,36 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
             planUpdated = true;
           }
 
-          // (2) +10분: 실제 결과 반영 (지났으면 처리)
-          // (2) +10분: 실제 결과 반영 (지났으면 처리)
-if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
-  // 가격 반영은 트랜잭션 안에서 처리
-  price = applyEventToPrice(price, ev.actual_outcome, 'large');
-  ev.processed = true;
-  movedByEvent = true;
-  planUpdated = true;
+          if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
+            price = applyEventToPrice(price, ev.actual_outcome, 'large');
+            ev.processed = true;
+            movedByEvent = true;
+            planUpdated = true;
 
-  // [MOVE-OUT] 결과 기사/메일은 트랜잭션 종료 후 처리
-  const subscribers = Array.isArray(stock.subscribers) ? stock.subscribers : [];
-  const worldName = plan.world_name || stock.world_name || stock.world_id || '';
-  const worldBadge = worldName ? `【${worldName}】 ` : '';
-  postResultJobs.push({
-    subscribers,
-    worldBadge,
-    stockName: stock.name,
-    premise: ev.premise,
-    expected: ev.potential_impact,
-    actual: ev.actual_outcome,
-  });
+            const subscribers = Array.isArray(stock.subscribers) ? stock.subscribers : [];
+            const worldName = plan.world_name || stock.world_name || stock.world_id || '';
+            const worldBadge = worldName ? `【${worldName}】 ` : '';
+            postResultJobs.push({
+              subscribers,
+              worldBadge,
+              stockName: stock.name,
+              premise: ev.premise,
+              expected: ev.potential_impact,
+              actual: ev.actual_outcome,
+            });
 
-  // [KEEP] 목표가(target_price) 조정은 트랜잭션 안에서 수행
-  const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
-  const dailySnap = await tx.get(dailyRef);
-  if (dailySnap.exists) {
-    const dplan = dailySnap.data();
-    const currentTarget = dplan.target_price || price;
-    const impactMultiplier = ev.actual_outcome === 'positive' ? 1.075 : 0.925;
-    const newTarget = Math.round(currentTarget * impactMultiplier);
-    tx.update(dailyRef, { target_price: newTarget });
-  }
-}
-
+            const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
+            const dailySnap = await tx.get(dailyRef);
+            if (dailySnap.exists) {
+              const dplan = dailySnap.data();
+              const currentTarget = dplan.target_price || price;
+              const impactMultiplier = ev.actual_outcome === 'positive' ? 1.075 : 0.925;
+              const newTarget = Math.round(currentTarget * impactMultiplier);
+              tx.update(dailyRef, { target_price: newTarget });
+            }
+          }
         }
 
-        // (3) 잔물결 효과 (이벤트가 없었을 때만)
         if (!movedByEvent) {
           const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
           const dailySnap = await tx.get(dailyRef);
@@ -297,7 +295,7 @@ if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
           const trend = Number(dplan.trend_sign || 1);
           const nextTarget = (dplan.target_price || price) * (1 + trend * (bps / 10000));
           const gap = nextTarget - price;
-          const step = gap * 0.25; // 25% 이동
+          const step = gap * 0.25;
 
           const volatility = stock.volatility || 'normal';
           const noiseFactor = { low: 0.003, normal: 0.006, high: 0.015 }[volatility] || 0.006;
@@ -307,306 +305,82 @@ if (ev.forecast_sent && !ev.processed && isPastToday(ev.trigger_minute + 10)) {
           if (Math.round(newPrice) === price) newPrice += (Math.random() < 0.5 ? -1 : 1);
           price = Math.max(1, Math.round(newPrice));
 
-          tx.update(dailyRef, { target_price: nextTarget }); // 소수점 목표가 저장
+          tx.update(dailyRef, { target_price: nextTarget });
         }
 
-        // (4) 계산된 최종 가격과 히스토리를 DB에 업데이트
         if (price !== Number(stock.current_price)) {
           const history = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
           history.push({ date: nowISO(), price });
           tx.update(stockRef, { current_price: price, price_history: history });
         }
 
-        // (5) 이벤트 계획 변경분 저장
         if (planUpdated) {
           tx.set(planDocRef, plan, { merge: true });
         }
-
-        // [ADD] 이번 루프의 마지막 처리 분 기록 (중복 방지 & 누락분 보정 기준)
+        
         tx.set(planDocRef, { last_processed_minute: currentMinute }, { merge: true });
       });
 
-      // [ADD] 트랜잭션 커밋 후: 예고 메일 일괄 발송
-if (postForecastMails.length) {
-  const batch = db.batch();
-  for (const m of postForecastMails) {
-    const mailRef = db.collection('mail').doc(m.uid).collection('msgs').doc();
-    batch.set(mailRef, {
-      kind: 'etc',
-      title: m.title,
-      body: m.body,
-      sentAt: FieldValue.serverTimestamp(),
-      from: '증권 정보국',
-      read: false,
-    });
-  }
-  await batch.commit();
-  postForecastMails.length = 0;
-}
+      if (postForecastMails.length) {
+        const batch = db.batch();
+        for (const m of postForecastMails) {
+          const mailRef = db.collection('mail').doc(m.uid).collection('msgs').doc();
+          batch.set(mailRef, {
+            kind: 'etc',
+            title: m.title,
+            body: m.body,
+            sentAt: FieldValue.serverTimestamp(),
+            from: '증권 정보국',
+            read: false,
+          });
+        }
+        await batch.commit();
+        postForecastMails.length = 0;
+      }
 
-// [ADD] 트랜잭션 커밋 후: 결과 기사 생성 → 메일 발송
-for (const job of postResultJobs) {
-  try {
-    const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
+      for (const job of postResultJobs) {
+        try {
+          const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
 출력은 JSON 한 개만. 마크다운/설명/코드펜스 금지.
 형식:
 {
   "title_after": "<=40자 한국어 제목>",
   "body_after": "2~4문장 한국어 본문. 사건의 '실제 결과'를 간결히 요약."
 }`;
-    const userPrompt = `사건 전말: ${job.premise}
+          const userPrompt = `사건 전말: ${job.premise}
 예상: ${job.expected}
 실제 결과: ${job.actual}`;
 
-    const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
-    const newsObj = safeJson(resultRaw, {});
-    const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
-    const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
+          const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
+          const newsObj = safeJson(resultRaw, {});
+          const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
+          const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
 
-    if (job.subscribers?.length) {
-      const batch = db.batch();
-      for (const uid of job.subscribers) {
-        const mailRef = db.collection('mail').doc(uid).collection('msgs').doc();
-        batch.set(mailRef, {
-          kind: 'etc',
-          title: `[주식 결과] ${job.worldBadge}${job.stockName}`,
-          body: `${titleA}\n\n${bodyA}`,
-          sentAt: FieldValue.serverTimestamp(),
-          from: '증권 정보국',
-          read: false,
-        });
-      }
-      await batch.commit();
-    }
-  } catch (e) {
-    logger.error('결과 기사 생성/발송 실패:', e);
-  }
-}
-postResultJobs.length = 0;
-
-    }
-
-    // === 세계관 사건 (예고) 처리 ===
-    try {
-      const nowUtc = new Date();
-
-      // [NO-INDEX PATH] 인덱스 필요시 에러 → fallback 스캔
-      let worldEventsSnap;
-      try {
-        const q = db.collection('world_events')
-          .where('processed_preliminary', '==', false)
-          .where('trigger_time', '<=', admin.firestore.Timestamp.fromDate(nowUtc));
-        worldEventsSnap = await q.get();
-      } catch (idxErr) {
-        logger.warn('[fallback] world_events 인덱스 미설정. processed_preliminary만 가져와 메모리 필터합니다.', idxErr);
-        const q2 = db.collection('world_events').where('processed_preliminary', '==', false);
-        const s2 = await q2.get();
-        worldEventsSnap = {
-          docs: s2.docs.filter(d => {
-            const ms = d.data()?.trigger_time?.toMillis?.();
-            return typeof ms === 'number' && ms <= nowUtc.getTime();
-          })
-        };
-      }
-
-      for (const eventDoc of worldEventsSnap.docs) {
-        const event = eventDoc.data();
-
-        // --- 이전 사건들 맥락 (인덱스 실패 대비) ---
-        const historyLogs = [];
-        let recentDocs = [];
-        try {
-          const q1 = db.collection('world_events')
-            .where('world_id', '==', event.world_id)
-            .where('processed_final', '==', true)
-            .where('trigger_time', '<', event.trigger_time)
-            .orderBy('trigger_time', 'desc')
-            .limit(3);
-          const s1 = await q1.get();
-          recentDocs = s1.docs;
-        } catch (idxErr) {
-          const q2 = db.collection('world_events')
-            .where('world_id', '==', event.world_id)
-            .where('processed_final', '==', true)
-            .limit(20);
-          const s2 = await q2.get();
-          recentDocs = s2.docs
-            .filter(d => (d.data()?.trigger_time?.toMillis?.()||0) < event.trigger_time.toMillis())
-            .sort((a,b)=> (b.data().trigger_time?.toMillis?.()||0) - (a.data().trigger_time?.toMillis?.()||0))
-            .slice(0,3);
-        }
-        for (const d of recentDocs) historyLogs.push(`- ${d.data().premise}`);
-        const historyContext = historyLogs.length
-          ? `\n\n## 참고: 최근 일어난 사건\n${historyLogs.join('\n')}`
-          : '';
-
-        // 영향받는 종목 조회 (인덱스 실패 시 world_id만 조회 → 메모리 필터)
-        let affectedStocksSnap;
-        try {
-          affectedStocksSnap = await db.collection('stocks')
-            .where('world_id', '==', event.world_id)
-            .where('status', '==', 'listed')
-            .get();
-        } catch (idxErr) {
-          logger.warn('[fallback] stocks(world_id,status) 복합 인덱스 미설정. world_id만으로 조회 후 메모리 필터.', idxErr);
-          const s2 = await db.collection('stocks').where('world_id', '==', event.world_id).get();
-          affectedStocksSnap = {
-            docs: s2.docs.filter(d => d.data()?.status === 'listed')
-          };
-        }
-
-        for (const stockDoc of affectedStocksSnap.docs) {
-          const stock = stockDoc.data();
-
-          const systemPrompt = `역할: 너는 게임 속 경제 기사 작가야.
-출력은 "JSON 한 개"만. 마크다운/설명/코드펜스 금지.
-형식:
-{
-  "impact": "positive" | "negative" | "neutral",
-  "news_title_preliminary": "<=40자 한국어 제목(결과는 말하지 말기)>",
-  "news_body_preliminary": "2~3문장 한국어 본문. 회사의 '대응 방법'만 암시. 결과/주가 금지."
-}
-규칙:
-- impact는 위 셋 중 하나(소문자).
-- 제목/본문은 한국어, 회사명은 본문에 1회만.
-- 결과를 드러내는 문장 금지.
-- JSON 외 다른 글자(마크다운, 주석, 코드펜스) 금지.`;
-
-          const userPrompt = `## 세계관 사건
-${event.premise}
-
-## 분석 대상 회사
-- 이름: ${stock.name}
-- 설명: ${stock.description || ''}
-- 세계관: ${stock.world_name || stock.world_id}${historyContext}`;
-
-          let analysis;
-          try {
-            const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
-            const parsed = safeJson(raw, {});
-            const impact = /pos/i.test(parsed.impact) ? 'positive' :
-                           /neg/i.test(parsed.impact) ? 'negative' : 'neutral';
-            const titleP = parsed.news_title_preliminary || parsed.news_title || parsed.title || parsed.headline;
-            const bodyP  = parsed.news_body_preliminary  || parsed.news_body  || parsed.body  || parsed.summary;
-
-            analysis = {
-              impact,
-              news_title_preliminary: titleP || '대응 미확인',
-              news_body_preliminary:  bodyP  || '회사의 대응 정황을 확인 중입니다.'
-            };
-          } catch (e) {
-            logger.warn(`세계관 사건 AI 분석 실패 (stock: ${stockDoc.id})`, e);
-            analysis = { impact: 'neutral', news_title_preliminary: '대응 미확인', news_body_preliminary: '회사의 대응 정황을 확인 중입니다.' };
-          }
-
-          // 결과 반영은 15분 뒤로 예약
-          const finalImpactTime = new Date(event.trigger_time.toDate().getTime() + 15 * 60 * 1000);
-
-          // 회사별 대응 결과를 이벤트 문서의 하위 컬렉션에 저장
-          await eventDoc.ref.collection('responses').doc(stockDoc.id).set({
-            stock_id: stockDoc.id,
-            world_id: event.world_id,
-            impact: analysis.impact || 'neutral',
-            processed_final: false,
-            final_impact_at: admin.firestore.Timestamp.fromDate(finalImpactTime)
-          });
-
-          // 예고 기사 발송
-          const subscribers = stock.subscribers || [];
-          if (subscribers.length > 0) {
+          if (job.subscribers?.length) {
             const batch = db.batch();
-            for (const uid of subscribers) {
+            for (const uid of job.subscribers) {
               const mailRef = db.collection('mail').doc(uid).collection('msgs').doc();
               batch.set(mailRef, {
                 kind: 'etc',
-                title: `[속보] ${analysis.news_title_preliminary}`,
-                body: `${analysis.news_body_preliminary}\n\n(회사: ${stock.name})\n(15분 후 시장에 결과가 반영됩니다.)`,
-                sentAt: FieldValue.serverTimestamp(), from: '세계 정세 분석국'
+                title: `[주식 결과] ${job.worldBadge}${job.stockName}`,
+                body: `${titleA}\n\n${bodyA}`,
+                sentAt: FieldValue.serverTimestamp(),
+                from: '증권 정보국',
+                read: false,
               });
             }
             await batch.commit();
           }
-        }
-        await eventDoc.ref.update({ processed_preliminary: true });
-      }
-    } catch (e) { logger.error('세계관 사건(예고) 처리 중 오류', e); }
-
-    // === 세계관 사건 (결과) 처리 ===
-    try {
-      const nowUtcTs = admin.firestore.Timestamp.now();
-
-      // [NO-INDEX PATH] 우선 시도, 실패 시 스캔
-      let dueDocs = [];
-      try {
-        const q = db.collectionGroup('responses')
-          .where('processed_final', '==', false)
-          .where('final_impact_at', '<=', nowUtcTs)
-          .orderBy('final_impact_at', 'asc');
-        const snap = await q.get();
-        dueDocs = snap.docs;
-      } catch (idxErr) {
-        logger.warn('[fallback] responses 인덱스 문제 또는 미생성. 범위/정렬 없이 스캔합니다.', idxErr);
-        const snap = await db.collectionGroup('responses')
-          .where('processed_final', '==', false)
-          .get();
-        const nowMs = Date.now();
-        dueDocs = snap.docs
-          .filter(d => {
-            const ms = d.data()?.final_impact_at?.toMillis?.();
-            return typeof ms === 'number' && ms <= nowMs;
-          })
-          .slice(0, 500);
-      }
-
-      for (const responseDoc of dueDocs) {
-        try {
-          await db.runTransaction(async (tx) => {
-            const freshRespSnap = await tx.get(responseDoc.ref);
-            const resp = freshRespSnap.data() || {};
-            if (resp.processed_final === true) return; // 중복 방지
-
-            const stockId = resp.stock_id || responseDoc.id;
-            const stockRef = db.doc(`stocks/${stockId}`);
-            const stockSnap = await tx.get(stockRef);
-
-            if (stockSnap.exists && resp.impact !== 'neutral') {
-              const s = stockSnap.data();
-              const basePrice = Number.isFinite(+s?.current_price) && +s.current_price > 0 ? +s.current_price : 1;
-              const newPrice = applyEventToPrice(basePrice, resp.impact, 'medium');
-              const history = Array.isArray(s?.price_history) ? s.price_history.slice(-1439) : [];
-              history.push({ date: nowISO(), price: newPrice });
-              tx.update(stockRef, { current_price: newPrice, price_history: history });
-            } else if (!stockSnap.exists) {
-              logger.warn(`[responses] stock 문서 없음: ${stockId} (event=${responseDoc.ref.parent?.parent?.id || 'unknown'})`);
-            }
-
-            tx.update(responseDoc.ref, { processed_final: true });
-          });
-        } catch (txErr) {
-          logger.error('[responses] 트랜잭션 실패. 응답 문서만 마감 처리합니다.', txErr);
-          await responseDoc.ref.update({ processed_final: true }).catch(()=>{});
-        }
-
-        const eventRef = responseDoc.ref.parent?.parent;
-        if (eventRef) {
-          const pending = await eventRef.collection('responses')
-            .where('processed_final', '==', false)
-            .limit(1)
-            .get();
-          if (pending.empty) {
-            await eventRef.update({ processed_final: true });
-            logger.info(`[world_event done] ${eventRef.id} → processed_final=true`);
-          }
+        } catch (e) {
+          logger.error('결과 기사 생성/발송 실패:', e);
         }
       }
-    } catch (e) {
-      logger.error('세계관 사건(결과) 처리 중 오류', e);
+      postResultJobs.length = 0;
     }
-    // === 끝 ===
   });
-
+  
   // ==================================================================
-  // 3) 매수/매도: 현재가와 히스토리를 항상 동시 갱신
+  // 3) 매수/매도: 거래량을 5분 단위로 집계
   // ==================================================================
   const buyStock = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
@@ -619,9 +393,8 @@ ${event.premise}
       const userRef = db.doc(`users/${uid}`);
       const stockRef = db.collection('stocks').doc(stockId);
       const portRef = db.doc(`users/${uid}/portfolio/${stockId}`);
-      const planRef = db.collection('stock_daily_plans').doc(`${stockId}_${dayStamp()}`);
-
-      const [userSnap, stockSnap, portSnap, planSnap] = await Promise.all([tx.get(userRef), tx.get(stockRef), tx.get(portRef), tx.get(planRef)]);
+      
+      const [userSnap, stockSnap, portSnap] = await Promise.all([tx.get(userRef), tx.get(stockRef), tx.get(portRef)]);
       if (!stockSnap.exists) throw new HttpsError('not-found', '해당 종목이 없습니다.');
       const stock = stockSnap.data();
       ensureListed(stock);
@@ -631,15 +404,17 @@ ${event.premise}
       const coins = Number(userSnap.data()?.coins || 0);
       if (coins < cost) throw new HttpsError('failed-precondition', '코인이 부족합니다.');
 
+      // [수정] 즉시 가격 변동 + 5분 거래량 집계
       const newPrice = applyTradeToPrice(price, quantity, true);
+      const bucketId = get5MinBucketId();
+      const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
 
-      // 목표가 조정
-      if (planSnap.exists) {
-        const plan = planSnap.data();
-        const currentTarget = plan.target_price || price;
-        const impact = Math.round(cost * 0.0005);
-        tx.update(planRef, { target_price: currentTarget + impact });
-      }
+      tx.set(volumeRef, {
+        stock_id: stockId,
+        bucket_id: bucketId,
+        buy_volume: FieldValue.increment(cost),
+        sell_volume: FieldValue.increment(0)
+      }, { merge: true });
 
       const heldQty = Number(portSnap.data()?.quantity || 0);
       const heldAvg = Number(portSnap.data()?.average_buy_price || 0);
@@ -668,9 +443,8 @@ ${event.premise}
       const userRef = db.doc(`users/${uid}`);
       const stockRef = db.collection('stocks').doc(stockId);
       const portRef = db.doc(`users/${uid}/portfolio/${stockId}`);
-      const planRef = db.collection('stock_daily_plans').doc(`${stockId}_${dayStamp()}`);
-
-      const [userSnap, stockSnap, portSnap, planSnap] = await Promise.all([tx.get(userRef), tx.get(stockRef), tx.get(portRef), tx.get(planRef)]);
+      
+      const [userSnap, stockSnap, portSnap] = await Promise.all([tx.get(userRef), tx.get(stockRef), tx.get(portRef)]);
       if (!stockSnap.exists) throw new HttpsError('not-found', '해당 종목이 없습니다.');
       const stock = stockSnap.data();
       ensureListed(stock);
@@ -681,14 +455,17 @@ ${event.premise}
       const price = Number(stock.current_price || 0);
       const income = price * quantity;
 
+      // [수정] 즉시 가격 변동 + 5분 거래량 집계
       const newPrice = applyTradeToPrice(price, quantity, false);
+      const bucketId = get5MinBucketId();
+      const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
 
-      if (planSnap.exists) {
-        const plan = planSnap.data();
-        const currentTarget = plan.target_price || price;
-        const impact = Math.round(income * 0.0005);
-        tx.update(planRef, { target_price: currentTarget - impact });
-      }
+      tx.set(volumeRef, {
+        stock_id: stockId,
+        bucket_id: bucketId,
+        buy_volume: FieldValue.increment(0),
+        sell_volume: FieldValue.increment(income)
+      }, { merge: true });
 
       const nextQty = heldQty - quantity;
       if (nextQty > 0) {
@@ -704,6 +481,56 @@ ${event.premise}
 
       return { ok: true, received: income, quantity, price };
     });
+  });
+
+  // [신규] 5분마다 거래량 기반으로 목표가(target_price) 조정
+  const adjustStockPricesByVolume = onSchedule({
+    schedule: 'every 5 minutes', timeZone: 'Asia/Seoul', region: 'us-central1',
+  }, async () => {
+    const now = new Date();
+    const prevBucketDate = new Date(now.getTime() - 5 * 60 * 1000);
+    const bucketId = get5MinBucketId(prevBucketDate);
+    
+    logger.info(`5분 주기 목표가 조정을 시작합니다. (대상 버킷: ${bucketId})`);
+
+    const volumeSnap = await db.collection('stock_trade_volumes')
+                               .where('bucket_id', '==', bucketId).get();
+
+    if (volumeSnap.empty) {
+      logger.info('지난 5분간 거래량이 집계된 종목이 없습니다.');
+      return;
+    }
+    
+    for (const doc of volumeSnap.docs) {
+      const volumeData = doc.data();
+      const stockId = volumeData.stock_id;
+      const today = dayStamp(now);
+      const planRef = db.collection('stock_daily_plans').doc(`${stockId}_${today}`);
+      
+      try {
+        await db.runTransaction(async (tx) => {
+          const planSnap = await tx.get(planRef);
+          if (!planSnap.exists) {
+            logger.warn(`일일 계획 문서가 없는 종목입니다: ${stockId}`);
+            return;
+          }
+          
+          const plan = planSnap.data();
+          const netVolume = (volumeData.buy_volume || 0) - (volumeData.sell_volume || 0);
+          
+          // [핵심] 순수 거래량에 기반한 목표가 조정 (영향 계수는 낮게 설정)
+          const impact = Math.round(netVolume * 0.0001); 
+          const currentTarget = Number(plan.target_price || 0);
+          
+          if (impact !== 0) {
+            tx.update(planRef, { target_price: currentTarget + impact });
+            logger.log(`종목 ${stockId}: 순수 거래량 ${netVolume}, 목표가 조정 ${impact}`);
+          }
+        });
+      } catch (e) {
+        logger.error(`종목 ${stockId}의 목표가 조정 중 오류 발생:`, e);
+      }
+    }
   });
 
   // ==================================================================
