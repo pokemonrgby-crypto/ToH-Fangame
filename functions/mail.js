@@ -13,37 +13,55 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
   // [신규] Gemini API 호출을 위한 내부 헬퍼 함수
   // functions/index.js의 aiGenerate 로직을 가져와 직접 호출 방식으로 변경
   async function _callGeminiForItem(systemText, userText) {
-    // API 키는 Cloud Functions 환경 변수에서 안전하게 로드됩니다.
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      logger.error('GEMINI_API_KEY is not set in environment variables.');
-      throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
-    }
-
-    const model = 'gemini-2.5-flash'; // 아이템 생성에 flash 모델 사용
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-    const body = {
-      contents: [{ role: 'user', parts: [{ text: `${systemText}\n\n${userText||''}` }]}],
-      generationConfig: { 
-        temperature: 0.9, 
-        maxOutputTokens: 2048,
-        responseMimeType: "application/json" // JSON 응답을 명시적으로 요청
-      },
-      safetySettings: []
-    };
-
-    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-    if(!res.ok){
-      const txt = await res.text().catch(()=> '');
-      throw new HttpsError('internal', `Gemini 직접 호출 실패: ${res.status} ${txt}`);
-    }
-
-    const j = await res.json().catch(()=>null);
-    const text = j?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
-    if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
-
-    return text;
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    logger.error('GEMINI_API_KEY is not set in environment variables.');
+    throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
   }
+
+  const model = 'gemini-2.5-flash';
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  
+  // [수정] 시스템 프롬프트와 사용자 입력을 명확히 분리하는 최신 요청 구조로 변경
+  const body = {
+    systemInstruction: {
+      role: 'system',
+      parts: [{ text: systemText }]
+    },
+    contents: [{ 
+      role: 'user', 
+      parts: [{ text: userText || '' }]
+    }],
+    generationConfig: { 
+      temperature: 0.9, 
+      maxOutputTokens: 1024,
+      responseMimeType: "application/json"
+    },
+    // safetySettings를 제거하여 기본 설정을 따르도록 함
+  };
+
+  const res = await fetch(url, { 
+    method: 'POST', 
+    headers: { 'Content-Type': 'application/json' }, 
+    body: JSON.stringify(body) 
+  });
+
+  if(!res.ok){
+    const txt = await res.text().catch(()=> '');
+    // [수정] 더 상세한 에러 로그를 남기도록 개선
+    logger.error('Gemini API call failed', { status: res.status, response: txt });
+    throw new HttpsError('internal', `Gemini API 호출 실패: ${res.status}`);
+  }
+
+  const j = await res.json().catch(() => null);
+  const text = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+  if(!text) {
+    logger.error('Gemini response was empty', { response: j });
+    throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
+  }
+
+  return text;
+}
 
 
   async function isAdmin(uid){
