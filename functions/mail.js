@@ -20,48 +20,36 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
   }
 
   const model = 'gemini-2.5-flash';
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  
-  // [수정] 시스템 프롬프트와 사용자 입력을 명확히 분리하는 최신 요청 구조로 변경
-  const body = {
-    systemInstruction: {
-      role: 'system',
-      parts: [{ text: systemText }]
-    },
-    contents: [{ 
-      role: 'user', 
-      parts: [{ text: userText || '' }]
-    }],
-    generationConfig: { 
-      temperature: 0.9, 
-      maxOutputTokens: 1024,
-      responseMimeType: "application/json"
-    },
-    // safetySettings를 제거하여 기본 설정을 따르도록 함
-  };
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const body = {
+      // [수정] 시스템 프롬프트와 사용자 입력을 분리하는 최신 요청 구조로 변경
+      systemInstruction: {
+        role: 'system',
+        parts: [{ text: systemText }]
+      },
+      contents: [{ 
+        role: 'user', 
+        parts: [{ text: userText || '' }]
+      }],
+      generationConfig: { 
+        temperature: 0.9, 
+        maxOutputTokens: 1024,
+        responseMimeType: "application/json"
+      }
+    };
 
-  const res = await fetch(url, { 
-    method: 'POST', 
-    headers: { 'Content-Type': 'application/json' }, 
-    body: JSON.stringify(body) 
-  });
+    const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+    if(!res.ok){
+      const txt = await res.text().catch(()=> '');
+      throw new HttpsError('internal', `Gemini API 호출 실패: ${res.status} ${txt}`);
+    }
 
-  if(!res.ok){
-    const txt = await res.text().catch(()=> '');
-    // [수정] 더 상세한 에러 로그를 남기도록 개선
-    logger.error('Gemini API call failed', { status: res.status, response: txt });
-    throw new HttpsError('internal', `Gemini API 호출 실패: ${res.status}`);
+    const j = await res.json().catch(()=>null);
+    const text = j?.candidates?.[0]?.content?.parts?.map(p => p.text).join('') || '';
+    if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
+
+    return text;
   }
-
-  const j = await res.json().catch(() => null);
-  const text = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-  if(!text) {
-    logger.error('Gemini response was empty', { response: j });
-    throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
-  }
-
-  return text;
-}
 
 
   async function isAdmin(uid){
