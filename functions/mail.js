@@ -220,7 +220,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           const ps = await db.collection('configs').doc('prompts').get();
           systemText = String((ps.exists && ps.data()?.gacha_item_system) || '');
 
-          userText = `생성할 아이템의 희귀도: ${picked}\n유저의 요청사항: ${String(prompt||'없음').slice(0,500)}`;
+          // [수정] .slice(0,500) 제거
+          userText = `생성할 아이템의 희귀도: ${picked}\n유저의 요청사항: ${String(prompt||'없음')}`;
 
           // [수정] HTTP 호출 대신 내부 함수를 직접 호출합니다.
           rawAiResponse = await _callGeminiForItem(systemText, userText);
