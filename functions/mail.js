@@ -6,20 +6,22 @@
 //         → ★내부 AI 헬퍼 함수 호출로 아이템 생성(JSON) → 유저 인벤토리에 추가
 //         (아이템 스키마: {id, name, rarity, isConsumable, uses, description})
 
-module.exports = (admin, { onCall, HttpsError, logger }) => {
+// [수정] 모듈이 GEMINI_API_KEY를 받도록 구조 변경
+module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
   const fetch = (...args)=>import('node-fetch').then(({default:fetch})=>fetch(...args)); // ESM 호환
 
   // [신규] Gemini API 호출을 위한 내부 헬퍼 함수
   // functions/index.js의 aiGenerate 로직을 가져와 직접 호출 방식으로 변경
   async function _callGeminiForItem(systemText, userText) {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    logger.error('GEMINI_API_KEY is not set in environment variables.');
-    throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
-  }
+    // [수정] process.env 대신 전달받은 GEMINI_API_KEY 사용
+    const apiKey = GEMINI_API_KEY.value();
+    if (!apiKey) {
+      logger.error('GEMINI_API_KEY is not set in environment variables.');
+      throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
+    }
 
-  const model = 'gemini-2.5-flash';
+    const model = 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = {
       // [수정] 시스템 프롬프트와 사용자 입력을 분리하는 최신 요청 구조로 변경
@@ -27,12 +29,12 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
         role: 'system',
         parts: [{ text: systemText }]
       },
-      contents: [{ 
-        role: 'user', 
+      contents: [{
+        role: 'user',
         parts: [{ text: userText || '' }]
       }],
-      generationConfig: { 
-        temperature: 0.9, 
+      generationConfig: {
+        temperature: 0.9,
         maxOutputTokens: 1024,
         responseMimeType: "application/json"
       }
@@ -171,7 +173,7 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
 
   // === 수령 ===
   // 입력: { mailId, prompt? } — prompt는 뽑기권일 때만 사용(사용자 입력 텍스트)
-  const claimMail = onCall({ region:'us-central1' }, async (req)=>{
+  const claimMail = onCall({ region:'us-central1', secrets: [GEMINI_API_KEY] }, async (req)=>{ // [수정] secrets 옵션 추가
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요합니다.');
     const { mailId, prompt } = req.data || {};
