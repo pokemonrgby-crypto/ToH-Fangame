@@ -1034,63 +1034,88 @@ const nudgeBluechipsDaily = onSchedule({
   });
 
   const adminDelistAllAndRefund = onCall({ region: 'us-central1' }, async (req) => {
-  const uid = req.auth?.uid;
-  if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-
-  const refundMode = String(req.data?.refund_mode || 'current'); // 'current' | 'fixed'
-  const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
-  if (refundMode === 'fixed' && fixedPrice <= 0) {
-    throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
-  }
-
-  const listedSnap = await db.collection('stocks').where('status','==','listed').get();
-  if (listedSnap.empty) return { ok: true, stocks: 0, users: 0, paid: 0 };
-
-  let totalPaid = 0, userCount = 0, stockCount = 0;
-
-  for (const sdoc of listedSnap.docs) {
-    const stockId = sdoc.id;
-    const sdata = sdoc.data() || {};
-    const pricePerShare = (refundMode === 'current')
-      ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
-      : fixedPrice;
-
-    // 이 종목 보유자 전부 조회
-    const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
-
-    // 배치 커밋 관리(500 제한)
-    let ops = 0;
-    let batch = db.batch();
-    const commitIfNeeded = async(force=false) => {
-      if (force || ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
-    };
-
-    if (!holdersSnap.empty) {
-      for (const hdoc of holdersSnap.docs) {
-        const h = hdoc.data() || {};
-        const qty = Math.floor(Number(h.quantity || 0));
-        if (qty > 0) {
-          const holderUid = hdoc.ref.parent.parent.id;
-          const pay = qty * pricePerShare;
-          batch.update(db.doc(`users/${holderUid}`), { coins: admin.firestore.FieldValue.increment(pay) });
-          totalPaid += pay; userCount++;
-          ops++;
-        }
-        batch.delete(hdoc.ref); ops++;
-        await commitIfNeeded();
-      }
+    const uid = req.auth?.uid;
+    if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
+  
+    const refundMode = String(req.data?.refund_mode || 'current'); // 'current' | 'fixed'
+    const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
+    if (refundMode === 'fixed' && fixedPrice <= 0) {
+      throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
     }
-
-    // 종목 상태 delisted
-    batch.update(sdoc.ref, { status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
-    ops++; await commitIfNeeded(true);
-    stockCount++;
-  }
-
-  logger.info(`[일괄폐지] stocks=${stockCount} users=${userCount} paid=${totalPaid}`);
-  return { ok:true, stocks: stockCount, users: userCount, paid: totalPaid };
-});
-
+  
+    logger.info(`[일괄폐지 시작] Mode: ${refundMode}, FixedPrice: ${fixedPrice}`);
+  
+    const listedSnap = await db.collection('stocks').where('status','==','listed').get();
+    if (listedSnap.empty) {
+      logger.info('[일괄폐지] 대상 주식 없음.');
+      return { ok: true, stocks: 0, users: 0, paid: 0 };
+    }
+  
+    let totalPaid = 0, userCount = new Set(), stockCount = 0;
+  
+    try {
+      for (const sdoc of listedSnap.docs) {
+        const stockId = sdoc.id;
+        const sdata = sdoc.data() || {};
+        logger.info(`처리 중인 주식: ${sdata.name || stockId}`);
+  
+        const pricePerShare = (refundMode === 'current')
+          ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
+          : fixedPrice;
+  
+        // 이 종목 보유자 전부 조회
+        const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
+        
+        if (holdersSnap.empty) {
+          logger.info(`  -> 보유자 없음. 상장 폐지만 진행.`);
+          await sdoc.ref.update({ status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
+          stockCount++;
+          continue;
+        }
+  
+        // 배치 커밋 관리(500 제한)
+        let ops = 0;
+        let batch = db.batch();
+        const commitIfNeeded = async(force=false) => {
+          if (force || ops >= 400) {
+            await batch.commit();
+            batch = db.batch();
+            ops = 0;
+          }
+        };
+  
+        logger.info(`  -> ${holdersSnap.size}명의 보유자 처리 시작...`);
+        for (const hdoc of holdersSnap.docs) {
+          const h = hdoc.data() || {};
+          const qty = Math.floor(Number(h.quantity || 0));
+          if (qty > 0) {
+            const holderUid = hdoc.ref.parent.parent.id;
+            const pay = qty * pricePerShare;
+            batch.update(db.doc(`users/${holderUid}`), { coins: admin.firestore.FieldValue.increment(pay) });
+            totalPaid += pay;
+            userCount.add(holderUid);
+            ops++;
+          }
+          batch.delete(hdoc.ref);
+          ops++;
+          await commitIfNeeded();
+        }
+  
+        // 종목 상태 delisted
+        batch.update(sdoc.ref, { status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
+        ops++;
+        await commitIfNeeded(true);
+        stockCount++;
+        logger.info(`  -> ${sdata.name || stockId} 처리 완료.`);
+      }
+    } catch(error) {
+      logger.error('[일괄폐지 처리 중 심각한 오류 발생]', error);
+      throw new HttpsError('internal', `처리 중 오류가 발생했습니다: ${error.message}`);
+    }
+  
+    logger.info(`[일괄폐지 완료] stocks=${stockCount} users=${userCount.size} paid=${totalPaid}`);
+    return { ok:true, stocks: stockCount, users: userCount.size, paid: totalPaid };
+  });
 
   return {
     // 스케줄러
