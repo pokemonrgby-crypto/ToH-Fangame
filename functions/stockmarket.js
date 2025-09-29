@@ -152,6 +152,53 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   }
 
   // ===== 인덱스 없는 환경에서도 동작하도록 “시도 → 우회” 유틸 =====
+
+  // --- holders 조회: 인덱스(컬렉션 그룹) 없으면 admin.auth()로 전체 유저 스캔 우회 ---
+  async function _listAllUids() {
+    const uids = [];
+    let pageToken = undefined;
+    do {
+      const page = await admin.auth().listUsers(1000, pageToken);
+      page.users.forEach(u => uids.push(u.uid));
+      pageToken = page.pageToken;
+    } while (pageToken);
+    return uids;
+  }
+
+  async function _scanHoldersByAuth(stockId) {
+    const uids = await _listAllUids();
+    const holders = [];
+    const limit = 40; // 동시 요청 제한 (과부하 방지)
+    for (let i = 0; i < uids.length; i += limit) {
+      const slice = uids.slice(i, i + limit);
+      const snaps = await Promise.all(
+        slice.map(uid => db.doc(`users/${uid}/portfolio/${stockId}`).get())
+      );
+      snaps.forEach((snap, idx) => {
+        if (snap.exists) {
+          holders.push({ uid: slice[idx], ref: snap.ref, data: snap.data() });
+        }
+      });
+    }
+    return holders;
+  }
+
+  async function _fetchHoldersForStock(stockId, logger) {
+    try {
+      const cg = await db.collectionGroup('portfolio').where('stock_id', '==', stockId).get();
+      return cg.docs.map(d => ({ uid: d.ref.parent.parent.id, ref: d.ref, data: d.data() }));
+    } catch (e) {
+      const msg = String(e?.message || '');
+      if (e?.code === 9 || msg.includes('FAILED_PRECONDITION') || msg.includes('requires an index')) {
+        logger?.warn?.(`[index-fallback] portfolio CG 인덱스 없음: admin.auth() 우회로 진행`);
+        return await _scanHoldersByAuth(stockId);
+      }
+      throw e;
+    }
+  }
+
+
+  
   function _isIndexError(e) {
     const msg = String(e?.message || '');
     return msg.includes('FAILED_PRECONDITION') && msg.includes('requires an index');
@@ -1065,37 +1112,34 @@ const nudgeBluechipsDaily = onSchedule({
         ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
         : fixedPrice;
   
-      const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
-      
-      if (!holdersSnap.empty) {
-        logger.info(`  -> ${holdersSnap.size}명의 보유자 처리 시작...`);
-        for (const hdoc of holdersSnap.docs) {
-          const holderUid = hdoc.ref.parent.parent.id;
-          const qty = Math.floor(Number(hdoc.data()?.quantity || 0));
-          
+      const holders = await _fetchHoldersForStock(stockId, logger);
+
+      if (holders.length > 0) {
+        logger.info(`  -> ${holders.length}명의 보유자 처리 시작...`);
+        for (const h of holders) {
+          const holderUid = h.uid;
+          const qty = Math.floor(Number(h.data?.quantity || 0));
           if (qty > 0 && holderUid) {
             const pay = qty * pricePerShare;
             try {
-              // 각 유저를 개별 트랜잭션으로 처리
               await db.runTransaction(async (tx) => {
                 const userRef = db.doc(`users/${holderUid}`);
-                const portRef = hdoc.ref;
-  
+                const portRef = h.ref;
                 const userSnap = await tx.get(userRef);
-                // [수정] userSnap.exists -> userSnap.exists()
-                if (!userSnap.exists()) { 
-                   logger.warn(`유저 문서 없음: ${holderUid}, 환불 건너뛰지만 포트폴리오는 정리합니다.`);
-                   tx.delete(portRef);
-                   return;
+
+                // exists는 "속성"이야 (함수 아님)
+                if (!userSnap.exists) {
+                  logger.warn(`유저 문서 없음: ${holderUid}, 환불 건너뛰지만 포트폴리오는 정리합니다.`);
+                  tx.delete(portRef);
+                  return;
                 }
-  
+
                 tx.update(userRef, { coins: FieldValue.increment(pay) });
                 tx.delete(portRef);
               });
 
               totalPaid += pay;
               userCount.add(holderUid);
-
             } catch (error) {
               logger.error(`환불 실패: User ${holderUid} (Stock ${stockId}). 원인: ${error.message}`);
               failedRefunds.push({
@@ -1105,13 +1149,14 @@ const nudgeBluechipsDaily = onSchedule({
                 refundAmount: pay,
                 reason: error.message
               });
-              await hdoc.ref.delete().catch(e => logger.error(`실패 후 포트폴리오 정리 실패: ${holderUid}`, e));
+              await h.ref.delete().catch(e => logger.error(`실패 후 포트폴리오 정리 실패: ${holderUid}`, e));
             }
           } else {
-            await hdoc.ref.delete().catch(e => logger.error(`빈 포트폴리오 정리 실패: ${holderUid}`, e));
+            await h.ref.delete().catch(e => logger.error(`빈 포트폴리오 정리 실패: ${holderUid}`, e));
           }
         }
       }
+
 
       // 주식 상장 폐지
       await sdoc.ref.update({ status: 'delisted', delistedAt: FieldValue.serverTimestamp() });
