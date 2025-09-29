@@ -231,6 +231,7 @@ function economyTpl() {
         <button class="manage-tab active" data-subtab="company">주식회사 관리</button>
         <button class="manage-tab" data-subtab="event">개별 사건 관리</button>
         <button class="manage-tab" data-subtab="world-event">세계관 사건 관리</button>
+        <button class="manage-tab" data-subtab="emergency">일괄 폐지/가격상향</button>
     </div>
     <div id="economy-sub-content" class="manage-card" style="border-top-left-radius:0;"></div>
   </div>
@@ -254,7 +255,7 @@ function economyCompanyTpl() {
           <option value="corporation">일반 기업</option>
           <option value="guild">길드</option>
       </select>
-      <input id="stock-price" type="number" min="1" class="manage-input" placeholder="초기 가격 (1 이상)">
+      <input id="stock-price" type="number" min="1" value="250" class="manage-input" placeholder="초기 가격 (1 이상)">
       <select id="stock-volatility" class="manage-select">
           <option value="low">변동성: 낮음</option>
           <option value="normal" selected>변동성: 보통</option>
@@ -298,25 +299,48 @@ function economyEventTpl() {
   `;
 }
 
-function economyWorldEventTpl() {
-    return `
-    <h5 style="margin-top:0;">세계관 거시 사건 생성</h5>
+function economyEmergencyTpl() {
+  return `
+    <h5 style="margin-top:0;">전 종목 일괄 상장 폐지 & 환불</h5>
+    <div class="manage-hint">모든 상장 종목을 폐지하고 보유자에게 환불합니다. 되돌릴 수 없습니다.</div>
     <div class="manage-col">
-        <select id="world-event-world" class="manage-select">
-            <option value="">사건이 발생할 세계관 선택</option>
-        </select>
-        <textarea id="world-event-premise" class="manage-textarea" rows="4" placeholder="세계관 전체에 영향을 미칠 사건 프롬프트 (예: 기온키르 대륙에 거대한 운석이 떨어져 희귀 광물이 대량 발견됨. 이로 인해...)"></textarea>
-        <div class="manage-row">
-            <label class="manage-label">실행 시점</label>
-            <input id="world-event-time" type="datetime-local" class="manage-input">
-        </div>
-        <div class="manage-row" style="justify-content:flex-end">
-          <button id="btn-create-world-event" class="btn primary">세계관 사건 생성</button>
-        </div>
+      <select id="refund-mode" class="manage-select">
+        <option value="current">현재가로 환불</option>
+        <option value="fixed" selected>고정가로 환불</option>
+      </select>
+      <input id="refund-fixed" type="number" min="1" value="250" class="manage-input" placeholder="고정 환불가(주당)">
+      <div class="manage-row" style="justify-content:flex-end">
+        <button id="btn-nuke-stocks" class="btn danger">전체 상장 폐지 실행</button>
+      </div>
     </div>
   `;
 }
 
+async function bindEmergencyEvents() {
+  const modeEl = document.getElementById('refund-mode');
+  const fixedEl = document.getElementById('refund-fixed');
+  const btn = document.getElementById('btn-nuke-stocks');
+
+  btn.addEventListener('click', async () => {
+    const mode = modeEl.value;
+    const fixed = Number(fixedEl.value);
+    if (mode === 'fixed' && (!fixed || fixed <= 0)) return showToast('고정 환불가를 제대로 입력해줘.');
+
+    if (!confirm('정말로 모든 주식을 상장 폐지하고 환불할까? 되돌릴 수 없어.')) return;
+
+    btn.disabled = true; btn.textContent = '처리 중...';
+    try {
+      const fn = httpsCallable(func, 'adminDelistAllAndRefund');
+      const res = await fn({ refund_mode: mode, fixed_price: fixed });
+      const d = res?.data || {};
+      showToast(`완료: 종목 ${d.stocks||0}개 폐지, ${ (d.users||0) }명에게 ${ (d.paid||0).toLocaleString() }코인 환불`);
+    } catch (e) {
+      showToast(`실패: ${e.message}`);
+    } finally {
+      btn.disabled = false; btn.textContent = '전체 상장 폐지 실행';
+    }
+  });
+}
 
 export async function showManage(){
   stylesOnce();
@@ -643,6 +667,11 @@ function bindEconomyEvents() {
         } else if (subTabId === 'event') {
             content.innerHTML = economyEventTpl();
             bindEventEvents();
+        } else if (subTabId === 'emergency') {
+            content.innerHTML = economyEmergencyTpl();
+            bindEmergencyEvents();
+          }
+  
         } else if (subTabId === 'world-event') {
             content.innerHTML = economyWorldEventTpl();
             bindWorldEventEvents();
