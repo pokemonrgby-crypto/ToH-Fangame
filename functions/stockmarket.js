@@ -1,4 +1,5 @@
-// /functions/stockmarket.js  (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=250 스케일 / 강도 상하한)
+// /functions/stockmarket.js (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=250 스케일 / 강도 상하한)
+// [수정] 총 발행량 및 수수료 기능 추가
 
 module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY }) => {
   const db = admin.firestore();
@@ -83,6 +84,8 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       bluechip_daily_growth_rate: Number.isFinite(+d.bluechip_daily_growth_rate) ? +d.bluechip_daily_growth_rate : 0.01,
 
       avg_unit_price: Number.isFinite(+d.avg_unit_price) ? +d.avg_unit_price : AVG_UNIT_PRICE,
+      // [추가] 거래 수수료 (기본 1%)
+      trade_tax_rate: Number.isFinite(+d.trade_tax_rate) ? +d.trade_tax_rate : 0.01,
       
     };
     _cachedAt = now;
@@ -761,10 +764,22 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const stock = stockSnap.data();
       ensureListed(stock);
 
+      // [추가] 발행량 확인
+      const total = Number(stock.total_supply || 0);
+      const circulating = Number(stock.circulating_supply || 0);
+      if (total > 0 && (circulating + quantity) > total) {
+        throw new HttpsError('failed-precondition', `매수 가능 수량(${total - circulating}주)을 초과했습니다.`);
+      }
+
       const price = Number(stock.current_price || 0);
+      const settings = await getSettings();
+      const taxRate = settings.trade_tax_rate || 0.01;
       const cost = price * quantity;
+      const tax = Math.ceil(cost * taxRate);
+      const totalCost = cost + tax;
+
       const coins = Number(userSnap.data()?.coins || 0);
-      if (coins < cost) throw new HttpsError('failed-precondition', '코인이 부족합니다.');
+      if (coins < totalCost) throw new HttpsError('failed-precondition', '코인이 부족합니다.');
 
       const bucketId = get5MinBucketId();
       const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
@@ -780,10 +795,11 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const nextQty = heldQty + quantity;
       const nextAvg = Math.round(((heldQty * heldAvg) + (price * quantity)) / nextQty);
 
-      tx.update(userRef, { coins: FieldValue.increment(-cost) });
+      tx.update(userRef, { coins: FieldValue.increment(-totalCost) });
+      tx.update(stockRef, { circulating_supply: FieldValue.increment(quantity) }); // [추가] 유통량 증가
       tx.set(portRef, { stock_id: stockId, quantity: nextQty, average_buy_price: nextAvg, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
-      return { ok: true, paid: cost, quantity, price };
+      return { ok: true, paid: totalCost, quantity, price, tax };
     });
   });
 
@@ -808,7 +824,12 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       if (heldQty < quantity) throw new HttpsError('failed-precondition', '보유 수량이 부족합니다.');
 
       const price = Number(stock.current_price || 0);
+      const settings = await getSettings();
+      const taxRate = settings.trade_tax_rate || 0.01;
       const income = price * quantity;
+      const tax = Math.ceil(income * taxRate);
+      const finalIncome = income - tax;
+
 
       const bucketId = get5MinBucketId();
       const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
@@ -825,9 +846,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       } else {
         tx.delete(portRef);
       }
-      tx.update(userRef, { coins: FieldValue.increment(income) });
+      tx.update(userRef, { coins: FieldValue.increment(finalIncome) });
+      tx.update(stockRef, { circulating_supply: FieldValue.increment(-quantity) }); // [추가] 유통량 감소
 
-      return { ok: true, received: income, quantity, price };
+      return { ok: true, received: finalIncome, quantity, price, tax };
     });
   });
 
@@ -899,10 +921,16 @@ const nudgeBluechipsDaily = onSchedule({
       const level = Number(g.level || 1), members = Number(g.member_count || 1), weekly = Number(g.weekly_points || 0), coins = Number(g.coins || 0);
       const base = (level * 100) + (members * 5) + Math.floor(weekly / 10) + Math.floor(coins / 100);
       const initPrice = clamp(base, 10, 100000);
+      
+      // [추가] 길드 주식 발행량: 멤버 수 * 1000
+      const totalSupply = Math.max(1000, members * 1000);
+
       tx.set(stockRef, {
         name: `길드: ${g.name || guildId}`, type: 'guild', guild_id: guildId, status: 'listed',
         current_price: initPrice, price_history: [{ date: nowISO(), price: initPrice }], subscribers: [],
-        volatility: 'normal', quality: 'standard'
+        volatility: 'normal', quality: 'standard',
+        total_supply: totalSupply,
+        circulating_supply: 0
       });
       tx.set(guildRef, { stock_treasury: FieldValue.increment(0) }, { merge: true });
       return { ok: true, stockId, price: initPrice };
@@ -952,7 +980,7 @@ const nudgeBluechipsDaily = onSchedule({
   const adminCreateStock = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-    const { name, world_id, world_name, type, initial_price, volatility, description, quality } = req.data;
+    const { name, world_id, world_name, type, initial_price, volatility, description, quality, total_supply } = req.data;
     if (!name || !world_id || !type || !initial_price || initial_price <= 0) {
       throw new HttpsError('invalid-argument', '필수 인자가 누락되었습니다.');
     }
@@ -960,11 +988,16 @@ const nudgeBluechipsDaily = onSchedule({
     const stockRef = db.collection('stocks').doc(stockId);
     const doc = await stockRef.get();
     if (doc.exists) throw new HttpsError('already-exists', '이미 존재하는 주식회사입니다.');
+    
+    const totalSupply = Math.max(1000, Number(total_supply) || 1000000); // [추가] 총 발행량 설정
+
     const newStock = {
       name, world_id, world_name: world_name || world_id, type, status: 'listed',
       current_price: initial_price, volatility: volatility || 'normal', quality: quality || 'standard',
       description: description || '',
       price_history: [{ date: nowISO(), price: initial_price }], subscribers: [], createdAt: FieldValue.serverTimestamp(),
+      total_supply: totalSupply,
+      circulating_supply: 0
     };
     await stockRef.set(newStock);
     return { ok: true, stockId };
