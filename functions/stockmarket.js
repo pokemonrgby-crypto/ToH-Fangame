@@ -1,4 +1,5 @@
-// /functions/stockmarket.js  (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=25 스케일 / 강도 상하한)
+// /functions/stockmarket.js  (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=250 스케일 / 강도 상하한)
+
 module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY }) => {
   const db = admin.firestore();
   const { FieldValue } = admin.firestore;
