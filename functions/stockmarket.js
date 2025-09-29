@@ -1,4 +1,4 @@
-// /functions/stockmarket.js (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=250 스케일 / 강도 상하한)
+// functions/stockmarket.js (세계관+기업 사건 처리 / 인덱스-우회 내장 / 품질(quality) / 평균단가=250 스케일 / 강도 상하한)
 // [수정] 총 발행량 및 수수료 기능 추가
 
 module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY }) => {
@@ -1082,8 +1082,8 @@ const nudgeBluechipsDaily = onSchedule({
                 const portRef = hdoc.ref;
   
                 const userSnap = await tx.get(userRef);
-                // [수정] userSnap.exists() -> userSnap.exists
-                if (!userSnap.exists) { 
+                // [수정] userSnap.exists -> userSnap.exists()
+                if (!userSnap.exists()) { 
                    logger.warn(`유저 문서 없음: ${holderUid}, 환불 건너뛰지만 포트폴리오는 정리합니다.`);
                    tx.delete(portRef);
                    return;
