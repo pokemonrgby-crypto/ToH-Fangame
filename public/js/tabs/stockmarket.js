@@ -1,6 +1,6 @@
 // /public/js/tabs/stockmarket.js (전체 교체)
 import { db, fx, auth, func } from '../api/firebase.js';
-import { httpsCallable } from '[https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js](https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js)';
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 
 const call = (name)=> httpsCallable(func, name);
