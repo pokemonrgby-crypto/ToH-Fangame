@@ -1037,7 +1037,7 @@ const nudgeBluechipsDaily = onSchedule({
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
   
-    const refundMode = String(req.data?.refund_mode || 'current'); // 'current' | 'fixed'
+    const refundMode = String(req.data?.refund_mode || 'current');
     const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
     if (refundMode === 'fixed' && fixedPrice <= 0) {
       throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
@@ -1048,94 +1048,81 @@ const nudgeBluechipsDaily = onSchedule({
     const listedSnap = await db.collection('stocks').where('status','==','listed').get();
     if (listedSnap.empty) {
       logger.info('[일괄폐지] 대상 주식 없음.');
-      return { ok: true, stocks: 0, users: 0, paid: 0 };
+      return { ok: true, stocks: 0, users: 0, paid: 0, failedRefunds: [] };
     }
   
     let totalPaid = 0;
     let userCount = new Set();
     let stockCount = 0;
+    const failedRefunds = []; // 환불 실패 유저 목록
   
-    try {
-      for (const sdoc of listedSnap.docs) {
-        const stockId = sdoc.id;
-        const sdata = sdoc.data() || {};
-        logger.info(`처리 중인 주식: ${sdata.name || stockId}`);
+    for (const sdoc of listedSnap.docs) {
+      const stockId = sdoc.id;
+      const sdata = sdoc.data() || {};
+      logger.info(`처리 중인 주식: ${sdata.name || stockId}`);
   
-        const pricePerShare = (refundMode === 'current')
-          ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
-          : fixedPrice;
+      const pricePerShare = (refundMode === 'current')
+        ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
+        : fixedPrice;
   
-        // 이 종목 보유자 전부 조회
-        const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
-        
-        if (holdersSnap.empty) {
-          logger.info(`  -> 보유자 없음. 상장 폐지만 진행.`);
-          await sdoc.ref.update({ status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
-          stockCount++;
-          continue;
-        }
-  
-        // 배치 커밋 관리(500 제한)
-        let ops = 0;
-        let batch = db.batch();
-        const commitIfNeeded = async(force=false) => {
-          if (force || ops >= 400) {
-            try {
-                await batch.commit();
-                logger.info(` -> 중간 배치 커밋 완료 (작업 ${ops}개)`);
-            } catch(commitErr) {
-                logger.error("배치 커밋 실패!", commitErr);
-                throw new HttpsError('internal', '배치 작업 커밋 중 오류가 발생했습니다.');
-            }
-            batch = db.batch();
-            ops = 0;
-          }
-        };
-  
+      const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
+      
+      if (!holdersSnap.empty) {
         logger.info(`  -> ${holdersSnap.size}명의 보유자 처리 시작...`);
         for (const hdoc of holdersSnap.docs) {
-          const h = hdoc.data() || {};
-          const qty = Math.floor(Number(h.quantity || 0));
           const holderUid = hdoc.ref.parent.parent.id;
-
+          const qty = Math.floor(Number(hdoc.data()?.quantity || 0));
+          
           if (qty > 0 && holderUid) {
             const pay = qty * pricePerShare;
-            const userRef = db.doc(`users/${holderUid}`);
-            
-            // 유저 문서가 실제로 존재하는지 확인 (유령 데이터 방지)
-            const userSnap = await userRef.get();
-            if(userSnap.exists()){
-                batch.update(userRef, { coins: admin.firestore.FieldValue.increment(pay) });
-                totalPaid += pay;
-                userCount.add(holderUid);
-                ops++;
-            } else {
-                logger.warn(` -> 유저 문서 없음: ${holderUid}, 환불 건너뜀.`);
-            }
-          }
-          batch.delete(hdoc.ref);
-          ops++;
-          await commitIfNeeded();
-        }
+            try {
+              // [수정] 각 유저를 개별 트랜잭션으로 처리하여 오류 전파 방지
+              await db.runTransaction(async (tx) => {
+                const userRef = db.doc(`users/${holderUid}`);
+                const portRef = hdoc.ref;
   
-        // 종목 상태 delisted
-        batch.update(sdoc.ref, { status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
-        ops++;
-        await commitIfNeeded(true); // 남은 작업 강제 커밋
-        stockCount++;
-        logger.info(`  -> ${sdata.name || stockId} 처리 완료.`);
+                const userSnap = await tx.get(userRef);
+                if (!userSnap.exists()) {
+                   logger.warn(`유저 문서 없음: ${holderUid}, 환불 건너뛰지만 포트폴리오는 정리합니다.`);
+                   tx.delete(portRef); // 유령 포트폴리오 데이터 삭제
+                   return;
+                }
+  
+                tx.update(userRef, { coins: FieldValue.increment(pay) });
+                tx.delete(portRef);
+              });
+
+              totalPaid += pay;
+              userCount.add(holderUid);
+
+            } catch (error) {
+              logger.error(`환불 실패: User ${holderUid} (Stock ${stockId}). 원인: ${error.message}`);
+              // 실패한 유저 정보 기록
+              failedRefunds.push({
+                uid: holderUid,
+                stockId: stockId,
+                stockName: sdata.name || 'N/A',
+                refundAmount: pay,
+                reason: error.message
+              });
+              // 트랜잭션 실패 시 포트폴리오 문서라도 따로 삭제 시도
+              await hdoc.ref.delete().catch(e => logger.error(`실패 후 포트폴리오 정리 실패: ${holderUid}`, e));
+            }
+          } else {
+            // 보유량이 0이거나 유효하지 않은 포트폴리오 문서는 그냥 삭제
+             await hdoc.ref.delete().catch(e => logger.error(`빈 포트폴리오 정리 실패: ${holderUid}`, e));
+          }
+        }
       }
-    } catch(error) {
-      logger.error('[일괄폐지 처리 중 심각한 오류 발생]', {
-          errorMessage: error.message,
-          errorCode: error.code,
-          stack: error.stack
-      });
-      throw new HttpsError('internal', `처리 중 오류가 발생했습니다: ${error.message}`);
+
+      // 모든 보유자 처리 후 주식 상장 폐지
+      await sdoc.ref.update({ status: 'delisted', delistedAt: FieldValue.serverTimestamp() });
+      stockCount++;
+      logger.info(`  -> ${sdata.name || stockId} 처리 완료.`);
     }
   
-    logger.info(`[일괄폐지 완료] stocks=${stockCount} users=${userCount.size} paid=${totalPaid}`);
-    return { ok:true, stocks: stockCount, users: userCount.size, paid: totalPaid };
+    logger.info(`[일괄폐지 완료] stocks=${stockCount} users=${userCount.size} paid=${totalPaid}, failures=${failedRefunds.length}`);
+    return { ok: true, stocks: stockCount, users: userCount.size, paid: totalPaid, failedRefunds };
   });
 
   return {
