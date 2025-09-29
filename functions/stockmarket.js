@@ -79,18 +79,11 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return n > 0 ? n : 1;
   };
 
-// ANCHOR: applyTradeToPrice 함수 시작
+  // [수정] 주가 변동이 없도록 현재 가격을 그대로 반환합니다.
   const applyTradeToPrice = (currentPrice, quantity, isBuy) => {
     const price = Number.isFinite(+currentPrice) && +currentPrice > 0 ? +currentPrice : 1;
-    const qty = Math.max(1, Math.floor(+quantity || 0));
-    // [수정] 즉시 변동폭을 1/5로 줄여 안정성 확보 (0.001 -> 0.0002)
-    const baseRate = 0.0002;
-    const changeRate = baseRate * (qty / 100);
-    const mult = isBuy ? (1 + changeRate) : Math.max(0.5, 1 - changeRate);
-    const n = Math.round(price * mult);
-    return n > 0 ? n : 1;
+    return price;
   };
-// ANCHOR_END
 
   const ensureListed = (s) => {
     if (!s || s.status !== 'listed') throw new HttpsError('failed-precondition', '상장 상태가 아닙니다.');
@@ -407,8 +400,8 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const coins = Number(userSnap.data()?.coins || 0);
       if (coins < cost) throw new HttpsError('failed-precondition', '코인이 부족합니다.');
 
-      // [수정] 즉시 가격 변동 + 5분 거래량 집계
-      const newPrice = applyTradeToPrice(price, quantity, true);
+      // [수정] 즉시 가격 변동 제거 및 5분 거래량 집계
+      // const newPrice = applyTradeToPrice(price, quantity, true);
       const bucketId = get5MinBucketId();
       const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
 
@@ -426,10 +419,11 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
       tx.update(userRef, { coins: FieldValue.increment(-cost) });
       tx.set(portRef, { stock_id: stockId, quantity: nextQty, average_buy_price: nextAvg, updatedAt: FieldValue.serverTimestamp() }, { merge: true });
-
-      const histBuy = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
-      histBuy.push({ date: nowISO(), price: Number(newPrice) });
-      tx.update(stockRef, { current_price: Number(newPrice), price_history: histBuy });
+      
+      // [수정] 가격 업데이트 로직 제거
+      // const histBuy = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
+      // histBuy.push({ date: nowISO(), price: Number(newPrice) });
+      // tx.update(stockRef, { current_price: Number(newPrice), price_history: histBuy });
 
       return { ok: true, paid: cost, quantity, price };
     });
@@ -458,8 +452,8 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const price = Number(stock.current_price || 0);
       const income = price * quantity;
 
-      // [수정] 즉시 가격 변동 + 5분 거래량 집계
-      const newPrice = applyTradeToPrice(price, quantity, false);
+      // [수정] 즉시 가격 변동 제거 및 5분 거래량 집계
+      // const newPrice = applyTradeToPrice(price, quantity, false);
       const bucketId = get5MinBucketId();
       const volumeRef = db.collection('stock_trade_volumes').doc(`${stockId}_${bucketId}`);
 
@@ -478,15 +472,15 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       }
       tx.update(userRef, { coins: FieldValue.increment(income) });
 
-      const histSell = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
-      histSell.push({ date: nowISO(), price: Number(newPrice) });
-      tx.update(stockRef, { current_price: Number(newPrice), price_history: histSell });
+      // [수정] 가격 업데이트 로직 제거
+      // const histSell = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
+      // histSell.push({ date: nowISO(), price: Number(newPrice) });
+      // tx.update(stockRef, { current_price: Number(newPrice), price_history: histSell });
 
       return { ok: true, received: income, quantity, price };
     });
   });
 
-// ANCHOR: adjustStockPricesByVolume 함수 시작
   // [신규] 5분마다 거래량 기반으로 목표가(target_price) 조정
   const adjustStockPricesByVolume = onSchedule({
     schedule: 'every 5 minutes', timeZone: 'Asia/Seoul', region: 'us-central1',
@@ -536,7 +530,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       }
     }
   });
-// ANCHOR_END
 
   // ==================================================================
   // 4) 기타: 구독/상장/배당
