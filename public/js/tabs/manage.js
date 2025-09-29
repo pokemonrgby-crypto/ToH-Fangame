@@ -670,7 +670,6 @@ function bindEconomyEvents() {
         } else if (subTabId === 'emergency') {
             content.innerHTML = economyEmergencyTpl();
             bindEmergencyEvents();
-          }
   
         } else if (subTabId === 'world-event') {
             content.innerHTML = economyWorldEventTpl();
