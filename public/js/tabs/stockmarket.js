@@ -1,6 +1,6 @@
 // /public/js/tabs/stockmarket.js (전체 교체)
 import { db, fx, auth, func } from '../api/firebase.js';
-import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
+import { httpsCallable } from '[https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js](https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js)';
 import { showToast } from '../ui/toast.js';
 
 const call = (name)=> httpsCallable(func, name);
@@ -67,7 +67,7 @@ export async function renderStocks(container){
     <div class="kv-card" style="margin-bottom:8px">
       <div class="row" style="gap:8px;align-items:center">
         <div style="font-weight:900">주식 시장</div>
-        <div class="text-dim" style="font-size:12px">1분 주기 업데이트</div>
+        <div class="text-dim" style="font-size:12px">1분 주기 업데이트 / 거래 수수료 1%</div>
       </div>
     </div>
     <div id="stock-list-container"></div>
@@ -122,11 +122,18 @@ export async function renderStocks(container){
 
       const priceEl = row.querySelector('.price');
       const changeEl = row.querySelector('.change');
+      const supplyEl = row.querySelector('.supply'); // [추가]
       if (priceEl)  priceEl.textContent = price.toLocaleString();
       if (changeEl) {
         changeEl.textContent = `${change > 0 ? '▲' : (change < 0 ? '▼' : '—')} ${Math.abs(change).toLocaleString()} (${changePct}%)`;
         changeEl.classList.toggle('up',   change > 0);
         changeEl.classList.toggle('down', change < 0);
+      }
+      // [추가] 유통량/발행량 업데이트
+      if (supplyEl) {
+        const circulating = Number(s.circulating_supply || 0).toLocaleString();
+        const total = Number(s.total_supply || 0).toLocaleString();
+        supplyEl.textContent = `유통량: ${circulating} / ${total}`;
       }
     });
     return;
@@ -143,13 +150,15 @@ export async function renderStocks(container){
     const changePct = todayOpen > 0 ? (change / todayOpen * 100).toFixed(2) : '0.00';
     const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
     const changeIcon = change > 0 ? '▲' : change < 0 ? '▼' : '—';
+    const circulating = Number(s.circulating_supply || 0).toLocaleString();
+    const total = Number(s.total_supply || 0).toLocaleString();
 
     return `
       <div class="stock-row ${s.id === activeId ? 'active' : ''}" data-id="${s.id}" data-open="${todayOpen}">
         <div class="row">
           <div>
             <div style="font-weight:700;">${esc(s.name || s.id)}</div>
-            <div class="text-dim" style="font-size:12px;">${esc(s.type || '-')}, 변동성: ${esc(s.volatility || 'normal')}</div>
+            <div class="text-dim supply" style="font-size:12px;">유통량: ${circulating} / ${total}</div>
           </div>
           <div style="flex:1;"></div>
           <div style="text-align:right">
