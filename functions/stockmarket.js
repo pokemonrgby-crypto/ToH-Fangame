@@ -62,7 +62,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   let _cachedSettings = null, _cachedAt = 0;
   const MAGS = ['tiny','small','medium','large','massive'];
   const MAG2RATE = { tiny:0.015, small:0.03, medium:0.08, large:0.20, massive:0.35 }; // 가격 * 비율
-  const AVG_UNIT_PRICE = 25; // 평균 단가 가정
+  const AVG_UNIT_PRICE = 250; // 평균 단가 가정
 
   async function getSettings() {
     const now = Date.now();
@@ -79,7 +79,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       // 거래량→목표가 영향 상한 (버킷당 최대 이동폭)
       max_bucket_impact: Number.isFinite(+d.max_bucket_impact) ? +d.max_bucket_impact : 5,
       // 평균 단가 (스케일)
+      bluechip_daily_growth_rate: Number.isFinite(+d.bluechip_daily_growth_rate) ? +d.bluechip_daily_growth_rate : 0.01,
+
       avg_unit_price: Number.isFinite(+d.avg_unit_price) ? +d.avg_unit_price : AVG_UNIT_PRICE,
+      
     };
     _cachedAt = now;
     return _cachedSettings;
@@ -827,66 +830,37 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     });
   });
 
-  // 5분마다: 거래량 → 목표가(target_price) 조정 (평균단가 25 기준 스케일 + 품질 가중)
-  const adjustStockPricesByVolume = onSchedule({
-    schedule: 'every 5 minutes', timeZone: KST_TZ, region: 'us-central1',
-  }, async () => {
-    const now = new Date();
-    const prevBucketDate = new Date(now.getTime() - 5 * 60 * 1000);
-    const bucketId = get5MinBucketId(prevBucketDate);
-    logger.info(`5분 주기 목표가 조정 시작 (버킷: ${bucketId})`);
+const adjustStockPricesByVolume = onSchedule({
+  schedule: 'every 5 minutes', timeZone: KST_TZ, region: 'us-central1',
+}, async () => {
+  logger.info('[주가 볼륨 반영] 비활성화됨: 거래량에 따른 가격 변동 없음');
+  return;
+});
 
-    const s = await getSettings();
-    const volumeSnap = await db.collection('stock_trade_volumes').where('bucket_id', '==', bucketId).get();
-    if (volumeSnap.empty) {
-      logger.info('지난 5분간 거래량 집계 없음');
-      return;
-    }
-
-    for (const doc of volumeSnap.docs) {
-      const volumeData = doc.data();
-      const stockId = volumeData.stock_id;
-      const today = dayStamp(now);
-      const planRef = db.collection('stock_daily_plans').doc(`${stockId}_${today}`);
-      const stockRef = db.collection('stocks').doc(stockId);
-
-      try {
-        await db.runTransaction(async (tx) => {
-          const [planSnap, stockSnap] = await Promise.all([tx.get(planRef), tx.get(stockRef)]);
-          if (!stockSnap.exists) return;
-          const stock = stockSnap.data();
-          const plan = planSnap.exists ? planSnap.data() : null;
-
-          const netVolumeCoins = (Number(volumeData.buy_volume || 0) - Number(volumeData.sell_volume || 0));
-          // “코인” 기준 거래량을 “주 수”로 환산: 평균단가(s.avg_unit_price)로 나눔
-          const netShares = netVolumeCoins / Math.max(1, s.avg_unit_price);
-          // 50주 순매수당 목표가 1p 정도 움직이게 (기본) + 품질 가중
-          const qMul = qualityMultipliers(stock.quality || 'standard').volumeImpact;
-          const rawImpact = netShares / 50 * qMul;
-          const impact = clamp(Math.round(rawImpact), -Math.abs(s.max_bucket_impact), Math.abs(s.max_bucket_impact));
-
-          if (!plan) {
-            tx.set(planRef, {
-              stock_id: stockId, date: today,
-              target_price: Math.max(1, Number(stock.current_price || 1) + impact),
-              trend_sign: Math.random() < 0.5 ? -1 : 1,
-              daily_open: Number(stock.current_price || 1),
-              drift_bps: volatilityParams(stock.volatility || 'normal').drift_bps
-            }, { merge: true });
-            return;
-          }
-
-          const currentTarget = Number(plan.target_price || stock.current_price || 0);
-          if (impact !== 0) {
-            tx.update(planRef, { target_price: Math.max(1, currentTarget + impact) });
-            logger.log(`종목 ${stockId}: 순매수주 ${netShares.toFixed(1)} → 목표가 ${impact > 0?'+':''}${impact}`);
-          }
-        });
-      } catch (e) {
-        logger.error(`종목 ${stockId} 목표가 조정 중 오류:`, e);
-      }
-    }
+const nudgeBluechipsDaily = onSchedule({
+  schedule: '10 2 * * *', timeZone: KST_TZ, region: 'us-central1'
+}, async () => {
+  const s = await getSettings();
+  const grow = Number(s.bluechip_daily_growth_rate || 0.01);
+  const snap = await db.collection('stocks')
+    .where('status', '==', 'listed')
+    .where('quality', '==', 'bluechip')
+    .get();
+  if (snap.empty) return;
+  const now = nowISO();
+  const batch = db.batch();
+  snap.docs.forEach(doc => {
+    const d = doc.data() || {};
+    const cur = Math.max(1, Number(d.current_price || 1));
+    const next = Math.max(1, Math.round(cur * (1 + grow)));
+    const hist = Array.isArray(d.price_history) ? d.price_history.slice(-1439) : [];
+    hist.push({ date: now, price: next });
+    batch.update(doc.ref, { current_price: next, price_history: hist });
   });
+  await batch.commit();
+  logger.info(`[bluechip 우상향] ${snap.size}개 종목 일괄 +${(grow*100).toFixed(2)}%`);
+});
+
 
   // ==================================================================
   // 4) 기타(구독/상장/배당/관리)
@@ -1025,34 +999,64 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     return { ok: true, event: newEvent };
   });
 
-  const adminCreateWorldEvent = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid;
-    if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-    const { world_id, premise, trigger_time } = req.data;
-    function _parseKST(input) {
-      if (input instanceof Date) return input;
-      if (typeof input === 'number') return new Date(input);
-      const s = String(input || '').trim();
-      if (!s) throw new HttpsError('invalid-argument', 'trigger_time이 비어있습니다.');
-      if (/[zZ]$|[+-]\d{2}:\d{2}$/.test(s)) return new Date(s);
-      return new Date(s.replace(' ', 'T') + ':00+09:00');
+  const adminDelistAllAndRefund = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
+
+  const refundMode = String(req.data?.refund_mode || 'current'); // 'current' | 'fixed'
+  const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
+  if (refundMode === 'fixed' && fixedPrice <= 0) {
+    throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
+  }
+
+  const listedSnap = await db.collection('stocks').where('status','==','listed').get();
+  if (listedSnap.empty) return { ok: true, stocks: 0, users: 0, paid: 0 };
+
+  let totalPaid = 0, userCount = 0, stockCount = 0;
+
+  for (const sdoc of listedSnap.docs) {
+    const stockId = sdoc.id;
+    const sdata = sdoc.data() || {};
+    const pricePerShare = (refundMode === 'current')
+      ? Math.max(1, Math.floor(Number(sdata.current_price || 1)))
+      : fixedPrice;
+
+    // 이 종목 보유자 전부 조회
+    const holdersSnap = await db.collectionGroup('portfolio').where('stock_id','==', stockId).get();
+
+    // 배치 커밋 관리(500 제한)
+    let ops = 0;
+    let batch = db.batch();
+    const commitIfNeeded = async(force=false) => {
+      if (force || ops >= 400) { await batch.commit(); batch = db.batch(); ops = 0; }
+    };
+
+    if (!holdersSnap.empty) {
+      for (const hdoc of holdersSnap.docs) {
+        const h = hdoc.data() || {};
+        const qty = Math.floor(Number(h.quantity || 0));
+        if (qty > 0) {
+          const holderUid = hdoc.ref.parent.parent.id;
+          const pay = qty * pricePerShare;
+          batch.update(db.doc(`users/${holderUid}`), { coins: admin.firestore.FieldValue.increment(pay) });
+          totalPaid += pay; userCount++;
+          ops++;
+        }
+        batch.delete(hdoc.ref); ops++;
+        await commitIfNeeded();
+      }
     }
-    const when = _parseKST(trigger_time);
-    if (!world_id || !premise || !trigger_time) {
-      throw new HttpsError('invalid-argument', '세계관, 사건 내용, 실행 시간은 필수입니다.');
-    }
-    const eventRef = db.collection('world_events').doc();
-    await eventRef.set({
-      world_id,
-      premise,
-      trigger_time: admin.firestore.Timestamp.fromDate(when),
-      processed_preliminary: false,
-      processed_final: false,
-      createdAt: FieldValue.serverTimestamp(),
-      createdBy: uid,
-    });
-    return { ok: true, eventId: eventRef.id };
-  });
+
+    // 종목 상태 delisted
+    batch.update(sdoc.ref, { status:'delisted', delistedAt: admin.firestore.FieldValue.serverTimestamp() });
+    ops++; await commitIfNeeded(true);
+    stockCount++;
+  }
+
+  logger.info(`[일괄폐지] stocks=${stockCount} users=${userCount} paid=${totalPaid}`);
+  return { ok:true, stocks: stockCount, users: userCount, paid: totalPaid };
+});
+
 
   return {
     // 스케줄러
@@ -1068,6 +1072,8 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
     distributeDividends,
     adminCreateStock,
     adminCreateManualEvent,
+      nudgeBluechipsDaily,         // ★ 우량주 일일 우상향
+  adminDelistAllAndRefund,     // ★ 전 종목 일괄 폐지 + 환불
     adminCreateWorldEvent
   };
 };
