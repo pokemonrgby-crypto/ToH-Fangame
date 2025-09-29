@@ -1073,8 +1073,8 @@ const nudgeBluechipsDaily = onSchedule({
     distributeDividends,
     adminCreateStock,
     adminCreateManualEvent,
-      nudgeBluechipsDaily,         // ★ 우량주 일일 우상향
-  adminDelistAllAndRefund,     // ★ 전 종목 일괄 폐지 + 환불
-    adminCreateWorldEvent
+    nudgeBluechipsDaily,         // ★ 우량주 일일 우상향
+    adminDelistAllAndRefund,     // ★ 전 종목 일괄 폐지 + 환불
+    adminCreateWorldEvent      // ★ 누락된 함수 추가
   };
 };
