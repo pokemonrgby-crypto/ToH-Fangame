@@ -260,6 +260,13 @@ function economyCompanyTpl() {
           <option value="normal" selected>변동성: 보통</option>
           <option value="high">변동성: 높음</option>
       </select>
+      <select id="stock-quality" class="manage-select">
+        <option value="standard" selected>품질: 일반</option>
+        <option value="bluechip">품질: 우량주(bluechip)</option>
+        <option value="growth">품질: 성장주(growth)</option>
+        <option value="speculative">품질: 투기주(speculative)</option>
+      </select>
+
       <textarea id="stock-desc" class="manage-textarea" rows="2" placeholder="회사 설명"></textarea>
       <div class="manage-row" style="justify-content:flex-end">
           <button id="btn-create-stock" class="btn primary">상장</button>
@@ -707,6 +714,8 @@ async function bindCompanyEvents() {
                 initial_price: Number(document.getElementById('stock-price').value),
                 volatility: document.getElementById('stock-volatility').value,
                 description: document.getElementById('stock-desc').value,
+                quality: document.getElementById('stock-quality').value,
+
             };
             if (!payload.name || !payload.world_id || !payload.initial_price) throw new Error("회사명, 세계관, 초기 가격은 필수입니다.");
 
@@ -740,7 +749,10 @@ async function bindEventEvents() {
                 stock_id: document.getElementById('event-stock').value,
                 potential_impact: document.getElementById('event-impact').value,
                 premise: document.getElementById('event-premise').value,
-                trigger_minute: dtValue ? (new Date(dtValue).getUTCHours() * 60 + new Date(dtValue).getUTCMinutes()) : null
+                const hhmm = dtValue ? dtValue.split('T')[1] : '';
+                const [hh, mm] = hhmm ? hhmm.split(':').map(Number) : [null, null];
+                const trigger_minute = (hh == null || mm == null) ? null : (hh * 60 + mm);
+
             };
             if (!payload.stock_id || !payload.premise || payload.trigger_minute === null) {
                 throw new Error("모든 필드를 채워주세요.");
