@@ -1,5 +1,5 @@
 // functions/index.js
-const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/h');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const logger = require('firebase-functions/logger');
