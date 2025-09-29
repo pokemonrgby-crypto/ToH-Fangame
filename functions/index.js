@@ -1,5 +1,5 @@
 // functions/index.js
-const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, onRequest, HttpsError } = require('firebase-functions/v2/h');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 
 const logger = require('firebase-functions/logger');
@@ -16,12 +16,11 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // 이미 있다면 재�
 
 const exploreV2 = require('./explore_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
-const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger }); 
-const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger }); // ◀◀ 이 줄 추가
+const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
+const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger });
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
-// exports.adjustStockPricesByVolume = stockmarket.adjustStockPricesByVolume; // 이 줄 추가
 exports.buyStock               = stockmarket.buyStock;
 exports.sellStock              = stockmarket.sellStock;
 exports.subscribeToStock       = stockmarket.subscribeToStock;
@@ -30,10 +29,9 @@ exports.distributeDividends    = stockmarket.distributeDividends;
 exports.planDailyStockEvents   = stockmarket.planDailyStockEvents;
 exports.adminCreateStock       = stockmarket.adminCreateStock;
 exports.adminCreateManualEvent = stockmarket.adminCreateManualEvent;
-exports.adminCreateWorldEvent  = stockmarket.adminCreateWorldEvent;
-exports.processWorldEvents     = stockmarket.processWorldEvents; // [신규] 세계관 사건 스케줄러
+exports.processWorldEvents     = stockmarket.processWorldEvents;
 exports.adminDelistAllAndRefund = stockmarket.adminDelistAllAndRefund;
-exports.nudgeBluechipsDaily      = stockmarket.nudgeBluechipsDaily;
+exports.nudgeBluechipsDaily     = stockmarket.nudgeBluechipsDaily;
 
 
 // === [탐험 난이도/룰 테이블 & 헬퍼] ===
@@ -41,11 +39,11 @@ const EXPLORE_CONFIG = {
   staminaStart: 10,
   exp: { basePerTurn: 6, min: 10, max: 120 },
   diff: {
-    easy:  { rewardMult:1.0, prob:{calm:35, find:25, trap:10, rest:20, battle:10}, trap:[1,2], battle:[1,2], rest:[1,2] },
-    normal:{ rewardMult:1.2, prob:{calm:30, find:22, trap:18, rest:15, battle:15}, trap:[1,3], battle:[1,3], rest:[1,2] },
-    hard:  { rewardMult:1.4, prob:{calm:25, find:20, trap:25, rest:10, battle:20}, trap:[2,4], battle:[2,4], rest:[1,1] },
-    vhard: { rewardMult:1.6, prob:{calm:20, find:18, trap:30, rest: 8, battle:24}, trap:[2,5], battle:[3,5], rest:[1,1] },
-    legend:{ rewardMult:1.8, prob:{calm:15, find:15, trap:35, rest: 5, battle:30}, trap:[3,6], battle:[3,6], rest:[1,1] },
+    easy:   { rewardMult:1.0, prob:{calm:35, find:25, trap:10, rest:20, battle:10}, trap:[1,2], battle:[1,2], rest:[1,2] },
+    normal: { rewardMult:1.2, prob:{calm:30, find:22, trap:18, rest:15, battle:15}, trap:[1,3], battle:[1,3], rest:[1,2] },
+    hard:   { rewardMult:1.4, prob:{calm:25, find:20, trap:25, rest:10, battle:20}, trap:[2,4], battle:[2,4], rest:[1,1] },
+    vhard:  { rewardMult:1.6, prob:{calm:20, find:18, trap:30, rest: 8, battle:24}, trap:[2,5], battle:[3,5], rest:[1,1] },
+    legend: { rewardMult:1.8, prob:{calm:15, find:15, trap:35, rest: 5, battle:30}, trap:[3,6], battle:[3,6], rest:[1,1] },
   }
 };
 function pickByProb(prob){
@@ -264,7 +262,7 @@ exports.stepExplore = onCall({ region:'us-central1' }, async (req)=>{
 
   let delta = 0, text='';
   if (kind==='calm'){   delta=-1;                text='고요한 이동… 체력 -1'; }
-  else if (kind==='find'){ delta=-1;             text='무언가를 발견했어! (임시 보상 후보) 체력 -1'; }
+  else if (kind==='find'){ delta=-1;              text='무언가를 발견했어! (임시 보상 후보) 체력 -1'; }
   else if (kind==='trap'){ delta= -rnd(DC.trap[0],   DC.trap[1]); text=`함정! 체력 ${delta}`; }
   else if (kind==='rest'){ delta=  rnd(DC.rest[0],   DC.rest[1]); text=`짧은 휴식… 체력 +${delta}`; }
   else if (kind==='battle'){delta= -rnd(DC.battle[0], DC.battle[1]); text=`소규모 교전! 체력 ${delta}`; }
