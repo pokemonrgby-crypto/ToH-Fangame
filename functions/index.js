@@ -32,6 +32,9 @@ exports.adminCreateStock       = stockmarket.adminCreateStock;
 exports.adminCreateManualEvent = stockmarket.adminCreateManualEvent;
 exports.adminCreateWorldEvent  = stockmarket.adminCreateWorldEvent;
 exports.processWorldEvents     = stockmarket.processWorldEvents; // [신규] 세계관 사건 스케줄러
+exports.adminDelistAllAndRefund = stockmarket.adminDelistAllAndRefund;
+exports.nudgeBluechipsDaily      = stockmarket.nudgeBluechipsDaily;
+
 
 // === [탐험 난이도/룰 테이블 & 헬퍼] ===
 const EXPLORE_CONFIG = {
