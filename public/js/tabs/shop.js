@@ -5,6 +5,10 @@ import { showToast } from '../ui/toast.js';
 import { getUserInventory } from '../api/user.js';
 import { rarityStyle, ensureItemCss, esc, showItemDetailModal } from './char.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
+// [수정] Firebase Functions 사용을 위한 import 추가
+import { func } from '../api/firebase.js';
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
+
 
 // (renderShop 함수는 기존과 동일)
 export async function renderShop(container) {
