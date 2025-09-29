@@ -1033,17 +1033,18 @@ const nudgeBluechipsDaily = onSchedule({
     return { ok: true, event: newEvent };
   });
 
-  const adminDelistAllAndRefund = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid;
-    if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
+  const adminDelistAllAndRefund = onCall({ region: 'us-central1', timeoutSeconds: 540 }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
+
+  const refundMode = String(req.data?.refund_mode || 'current');
+  const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
+  if (refundMode === 'fixed' && fixedPrice <= 0) {
+    throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
+  }
+
+  logger.info(`[일괄폐지 시작] Mode: ${refundMode}, FixedPrice: ${fixedPrice}`);
   
-    const refundMode = String(req.data?.refund_mode || 'current');
-    const fixedPrice = Math.floor(Number(req.data?.fixed_price || 250));
-    if (refundMode === 'fixed' && fixedPrice <= 0) {
-      throw new HttpsError('invalid-argument', '고정 환불가는 1 이상이어야 합니다.');
-    }
-  
-    logger.info(`[일괄폐지 BRUTE FORCE 시작] Mode: ${refundMode}, FixedPrice: ${fixedPrice}`);
   
     // 1. 상장 폐지할 모든 주식 정보를 메모리에 로드
     const listedSnap = await db.collection('stocks').where('status','==','listed').get();
