@@ -575,6 +575,42 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           await batch.commit();
         }
       } catch (e) { logger.error('세계관 예고 메일 실패:', e); }
+            // [추가] 예고 기록: world_events/{id}/stocks, world_events/{id}/ops/forecast
+      try {
+        const batch = db.batch();
+
+        // 각 종목별 예고 스냅샷
+        for (const sd of stocks) {
+          const sdata = sd.data() || {};
+          const docRef = evRef.collection('stocks').doc(sd.id);
+          batch.set(docRef, {
+            stock_id: sd.id,
+            name: sdata.name || sd.id,
+            world_id: ev.world_id || null,
+            forecast: {
+              title_before: ai.title_before,
+              direction: ai.direction,
+              magnitude: ai.magnitude,
+              at: FieldValue.serverTimestamp()
+            },
+            result: { applied: false } // 나중에 finalize에서 채움
+          }, { merge: true });
+        }
+
+        // 메타: 예고 오퍼레이션 로그
+        batch.set(evRef.collection('ops').doc('forecast'), {
+          at: FieldValue.serverTimestamp(),
+          title_before: ai.title_before,
+          direction: ai.direction,
+          magnitude: ai.magnitude,
+          stock_count: stocks.length
+        }, { merge: true });
+
+        await batch.commit();
+      } catch (e) {
+        logger.error('세계관 예고 기록(서브컬렉션) 실패:', e);
+      }
+
 
       await evRef.set({
         processed_preliminary: true,
@@ -611,8 +647,11 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
             const stock = stockSnap.data();
             if (stock.status !== 'listed') return;
 
-            let price = Number(stock.current_price || 0);
+            const priceBefore = Number(stock.current_price || 0);
+            let price = priceBefore;
             price = applyEventToPrice(price, dir, mag);
+
+            
 
             // 히스토리 + 안전 디폴트 보정
             const history = Array.isArray(stock.price_history) ? stock.price_history.slice(-1439) : [];
@@ -626,6 +665,21 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
               type: stock.type || 'corp',
             });
 
+            // [추가] 세계관 이벤트 결과 기록: world_events/{id}/stocks/{stockId}
+            const evStockRef = evRef.collection('stocks').doc(stockRef.id);
+            tx.set(evStockRef, {
+              result: {
+                applied: true,
+                direction: dir,
+                magnitude: mag,
+                price_before: priceBefore,
+                price_after: price,
+                at: FieldValue.serverTimestamp()
+              }
+            }, { merge: true });
+
+
+            
             await nudgeDailyTargetByEvent(tx, stockRef, today, dir, mag);
           });
         } catch (e) {
@@ -633,6 +687,19 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         }
       }
 
+      // [추가] finalize 오퍼레이션 로그: world_events/{id}/ops/finalize
+      try {
+        await evRef.collection('ops').doc('finalize').set({
+          at: FieldValue.serverTimestamp(),
+          direction: dir,
+          magnitude: mag,
+          stock_count: stocks.length
+        }, { merge: true });
+      } catch (e) {
+        logger.error('세계관 finalize 로그 기록 실패:', e);
+      }
+
+      
       // 결과 메일
       try {
         const subs = new Set();
