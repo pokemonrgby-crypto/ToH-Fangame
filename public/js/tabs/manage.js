@@ -316,6 +316,25 @@ function economyEmergencyTpl() {
   `;
 }
 
+function economyWorldEventTpl() {
+    return `
+    <h5 style="margin-top:0;">세계관 전체 사건 생성</h5>
+    <div class="manage-col">
+        <select id="world-event-world" class="manage-select">
+            <option value="">사건을 적용할 세계관 선택</option>
+        </select>
+        <textarea id="world-event-premise" class="manage-textarea" rows="3" placeholder="사건의 전말 프롬프트 (예: [아르카]에 정체불명의 역병이 창궐하여 대도시가 봉쇄됨)"></textarea>
+        <div class="manage-row">
+            <label class="manage-label">실행 시점</label>
+            <input id="world-event-time" type="datetime-local" class="manage-input">
+        </div>
+        <div class="manage-row" style="justify-content:flex-end">
+          <button id="btn-create-world-event" class="btn primary">세계관 사건 생성</button>
+        </div>
+    </div>
+  `;
+}
+
 async function bindEmergencyEvents() {
   const modeEl = document.getElementById('refund-mode');
   const fixedEl = document.getElementById('refund-fixed');
