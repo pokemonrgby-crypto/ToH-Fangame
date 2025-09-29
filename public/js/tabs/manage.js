@@ -733,6 +733,8 @@ async function bindCompanyEvents() {
     await loadData();
 }
 
+// /public/js/tabs/manage.js
+
 async function bindEventEvents() {
     const eventStockSelect = document.getElementById('event-stock');
     const stockSnap = await fx.getDocs(fx.query(fx.collection(db, 'stocks'), fx.orderBy('name')));
@@ -745,15 +747,17 @@ async function bindEventEvents() {
         btn.disabled = true;
         try {
             const dtValue = document.getElementById('event-time').value;
+            const hhmm = dtValue ? dtValue.split('T')[1] : '';
+            const [hh, mm] = hhmm ? hhmm.split(':').map(Number) : [null, null];
+            const trigger_minute = (hh == null || mm == null) ? null : (hh * 60 + mm);
+
             const payload = {
                 stock_id: document.getElementById('event-stock').value,
                 potential_impact: document.getElementById('event-impact').value,
                 premise: document.getElementById('event-premise').value,
-                const hhmm = dtValue ? dtValue.split('T')[1] : '';
-                const [hh, mm] = hhmm ? hhmm.split(':').map(Number) : [null, null];
-                const trigger_minute = (hh == null || mm == null) ? null : (hh * 60 + mm);
-
+                trigger_minute: trigger_minute
             };
+
             if (!payload.stock_id || !payload.premise || payload.trigger_minute === null) {
                 throw new Error("모든 필드를 채워주세요.");
             }
