@@ -115,7 +115,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   function volatilityParams(v='normal') {
     const s = String(v||'').toLowerCase();
     return {
-      drift_bps: ({ low:2, normal:5, high:10 }[s] ?? 5),           // 일일 목표가 추세(bps)
+      drift_bps: ({ low:2, normal:5, high:10 }[s] ?? 5),             // 일일 목표가 추세(bps)
       noise: ({ low:0.003, normal:0.006, high:0.015 }[s] ?? 0.006) // 분당 노이즈 비율
     };
   }
@@ -225,7 +225,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 - direction은 둘 중 하나.
 - magnitude는 tiny/small/medium/large/massive 중 하나.`;
 
-    const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
+    const raw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
     const obj = safeJson(raw, {});
     const dir = (obj.direction === 'negative') ? 'negative' : 'positive';
     const clamped = clampMag(obj.magnitude || 'medium', s.event_mag_min, s.event_mag_max);
@@ -493,7 +493,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           const userPrompt = `사건 전말: ${job.premise}
 예상: ${job.expected}
 실제 결과: ${job.actual}`;
-          const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
+          const resultRaw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
           const newsObj = safeJson(resultRaw, {});
           const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
           const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
@@ -715,7 +715,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 결과: ${dir} / 강도: ${mag}`;
           let titleA = '세계관 결과', bodyA = '결과 요약 수신 실패';
           try {
-            const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
+            const raw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
             const obj = safeJson(raw, {});
             titleA = obj.title_after || obj.title || titleA;
             bodyA  = obj.body_after  || obj.body  || bodyA;
@@ -1073,8 +1073,7 @@ const nudgeBluechipsDaily = onSchedule({
     distributeDividends,
     adminCreateStock,
     adminCreateManualEvent,
-    nudgeBluechipsDaily,         // ★ 우량주 일일 우상향
-    adminDelistAllAndRefund,     // ★ 전 종목 일괄 폐지 + 환불
-    adminCreateWorldEvent      // ★ 누락된 함수 추가
+    nudgeBluechipsDaily,       // ★ 우량주 일일 우상향
+    adminDelistAllAndRefund,    // ★ 전 종목 일괄 폐지 + 환불
   };
 };
