@@ -256,6 +256,7 @@ function economyCompanyTpl() {
           <option value="guild">길드</option>
       </select>
       <input id="stock-price" type="number" min="1" value="250" class="manage-input" placeholder="초기 가격 (1 이상)">
+      <input id="stock-supply" type="number" min="1000" value="1000000" class="manage-input" placeholder="총 발행량 (기본 1,000,000)">
       <select id="stock-volatility" class="manage-select">
           <option value="low">변동성: 낮음</option>
           <option value="normal" selected>변동성: 보통</option>
@@ -762,7 +763,7 @@ async function bindCompanyEvents() {
                 volatility: document.getElementById('stock-volatility').value,
                 description: document.getElementById('stock-desc').value,
                 quality: document.getElementById('stock-quality').value,
-
+                total_supply: Number(document.getElementById('stock-supply').value) // [추가]
             };
             if (!payload.name || !payload.world_id || !payload.initial_price) throw new Error("회사명, 세계관, 초기 가격은 필수입니다.");
 
@@ -779,6 +780,7 @@ async function bindCompanyEvents() {
     
     await loadData();
 }
+
 
 // /public/js/tabs/manage.js
 
