@@ -77,7 +77,13 @@ export async function renderStocks(container){
   let activeChart = null;
   let eventListenerAttached = false;
 
-  const q = fx.query(fx.collection(db, 'stocks'), fx.where('status', '==', 'listed'), fx.limit(50));
+  const q = fx.query(
+  fx.collection(db, 'stocks'),
+  fx.where('status', '==', 'listed'),
+  fx.orderBy('name'),
+  fx.limit(50)
+);
+
   
   const unsub = fx.onSnapshot(q, (snap) => {
     const me = auth.currentUser?.uid;
@@ -95,44 +101,68 @@ export async function renderStocks(container){
   });
 
   function updateStockList(stocks) {
-    const activeId = listContainer.querySelector('.stock-row.active')?.dataset.id;
-    
-    listContainer.innerHTML = stocks.map(s => {
+  // 현재 화면의 순서와 새 데이터의 순서가 같은 경우엔 가격/등락 텍스트만 업데이트한다.
+  const rows = Array.from(listContainer.querySelectorAll('.stock-row'));
+  const currIds = rows.map(r => r.dataset.id);
+  const newIds  = stocks.map(s => s.id);
+
+  const sameOrder = currIds.length === newIds.length && currIds.every((id, i) => id === newIds[i]);
+
+  if (sameOrder && rows.length) {
+    // 빠른 경로: DOM 구조 유지 → 텍스트만 갱신 (차트/열림 상태 유지)
+    stocks.forEach((s, i) => {
+      const row = rows[i];
       const price = Number(s.current_price || 0);
       const history = Array.isArray(s.price_history) ? s.price_history : [];
-
       const todayOpen = getTodayOpenFromHistory(history, price);
       const change = Number(price) - Number(todayOpen);
       const changePct = todayOpen > 0 ? (change / todayOpen * 100).toFixed(2) : '0.00';
 
-      const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
-      const changeIcon = change > 0 ? '▲' : change < 0 ? '▼' : '—';
+      row.dataset.open = todayOpen;
 
-      return `
-        <div class="stock-row ${s.id === activeId ? 'active' : ''}" data-id="${s.id}" data-open="${todayOpen}">
-          <div class="row">
-            <div>
-              <div style="font-weight:700;">${esc(s.name || s.id)}</div>
-              <div class="text-dim" style="font-size:12px;">${esc(s.type || '-')}, 변동성: ${esc(s.volatility || 'normal')}</div>
-            </div>
-            <div style="flex:1;"></div>
-            <div style="text-align:right">
-              <div class="price">${price.toLocaleString()}</div>
-              <div class="change ${changeClass}">${changeIcon} ${Math.abs(change).toLocaleString()} (${changePct}%)</div>
-            </div>
+      const priceEl = row.querySelector('.price');
+      const changeEl = row.querySelector('.change');
+      if (priceEl)  priceEl.textContent = price.toLocaleString();
+      if (changeEl) {
+        changeEl.textContent = `${change > 0 ? '▲' : (change < 0 ? '▼' : '—')} ${Math.abs(change).toLocaleString()} (${changePct}%)`;
+        changeEl.classList.toggle('up',   change > 0);
+        changeEl.classList.toggle('down', change < 0);
+      }
+    });
+    return;
+  }
+
+  // 순서가 달라졌거나 처음 렌더: 기존 방식으로 생성 (디테일은 클릭 시 채움)
+  const activeId = listContainer.querySelector('.stock-row.active')?.dataset.id;
+
+  listContainer.innerHTML = stocks.map(s => {
+    const price = Number(s.current_price || 0);
+    const history = Array.isArray(s.price_history) ? s.price_history : [];
+    const todayOpen = getTodayOpenFromHistory(history, price);
+    const change = Number(price) - Number(todayOpen);
+    const changePct = todayOpen > 0 ? (change / todayOpen * 100).toFixed(2) : '0.00';
+    const changeClass = change > 0 ? 'up' : change < 0 ? 'down' : '';
+    const changeIcon = change > 0 ? '▲' : change < 0 ? '▼' : '—';
+
+    return `
+      <div class="stock-row ${s.id === activeId ? 'active' : ''}" data-id="${s.id}" data-open="${todayOpen}">
+        <div class="row">
+          <div>
+            <div style="font-weight:700;">${esc(s.name || s.id)}</div>
+            <div class="text-dim" style="font-size:12px;">${esc(s.type || '-')}, 변동성: ${esc(s.volatility || 'normal')}</div>
+          </div>
+          <div style="flex:1;"></div>
+          <div style="text-align:right">
+            <div class="price">${price.toLocaleString()}</div>
+            <div class="change ${changeClass}">${changeIcon} ${Math.abs(change).toLocaleString()} (${changePct}%)</div>
           </div>
         </div>
-        <div class="stock-detail" id="detail-${s.id}"></div>
-      `;
-    }).join('');
+      </div>
+      <div class="stock-detail" id="detail-${s.id}"></div>
+    `;
+  }).join('');
+}
 
-    if (activeId) {
-      const activeRow = listContainer.querySelector(`.stock-row[data-id="${activeId}"]`);
-      if (activeRow) {
-        toggleDetailView(activeRow, true);
-      }
-    }
-  }
   
   function attachEventListeners() {
     listContainer.addEventListener('click', async (e) => {
