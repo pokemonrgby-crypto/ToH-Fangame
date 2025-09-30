@@ -380,8 +380,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         target_price: basePrice,
         trend_sign: trendSign,
         daily_open: basePrice,
-        drift_bps
+        drift_bps,
+        trend_sign_last_changed_at: FieldValue.serverTimestamp() // 최초 기준 시각 남겨두기
       }, { merge: true });
+
     }
   });
 
