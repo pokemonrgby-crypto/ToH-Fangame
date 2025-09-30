@@ -474,16 +474,30 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
             dplan = {
               stock_id: stockRef.id, date: today, target_price: price,
               trend_sign: Math.random() < 0.5 ? -1 : 1, daily_open: price,
-              drift_bps
+              drift_bps, trend_sign_last_changed_at: Timestamp.now()
             };
             tx.set(dailyRef, dplan, { merge: true });
           }
+
+          // ★★★★★ 30분마다 추세 방향 1/2 확률로 변경 ★★★★★
+          let trend = Number(dplan.trend_sign || 1);
+          const lastChangedMs = dplan.trend_sign_last_changed_at?.toMillis() || 0;
+          const thirtyMinAgoMs = now.getTime() - 30 * 60 * 1000;
+          
+          if (lastChangedMs < thirtyMinAgoMs) {
+            if (Math.random() < 0.5) {
+              trend *= -1; // 50% 확률로 방향 전환
+            }
+            // 확률에 상관없이 시간은 갱신
+            tx.update(dailyRef, { trend_sign: trend, trend_sign_last_changed_at: Timestamp.now() });
+          }
+          // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
           const v = volatilityParams(stock.volatility || 'normal');
           const q = qualityMultipliers(stock.quality || 'standard');
 
           const bps = Number(dplan.drift_bps || v.drift_bps) * q.drift;
-          const trend = Number(dplan.trend_sign || 1);
+          // const trend = Number(dplan.trend_sign || 1); // <- 이 줄은 위에서 선언한 let trend를 사용하므로 제거
           const nextTarget = (dplan.target_price || price) * (1 + trend * ((bps) / 10000));
           const gap = nextTarget - price;
           const step = gap * 0.25;
@@ -504,7 +518,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           tx.update(stockRef, {
             current_price: price,
             price_history: history,
-            // 빈 필드에 대한 디폴트 안전 보정
             volatility: stock.volatility || 'normal',
             quality: stock.quality || 'standard',
             type: stock.type || 'corp'
@@ -517,6 +530,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
         tx.set(planDocRef, { last_processed_minute: (now.getHours()*60 + now.getMinutes()) }, { merge: true });
       });
+
 
       // 메일: 예고
       if (postForecastMails.length) {
