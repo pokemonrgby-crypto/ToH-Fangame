@@ -407,8 +407,12 @@ async function sellItemsCore(uid, data) {
           
           const isConsumable = item.isConsumable || item.consumable || item.consume;
           const priceTier = isConsumable ? prices.consumable : prices.non_consumable;
-          const price = priceTier[item.rarity] || 0;
-          totalGold += price;
+          const basePrice = priceTier[item.rarity] || 0;
+          
+          // [수정] 미관 점수 보너스 추가
+          const aestheticBonus = Math.floor(0.02 * (item.properties?.aestheticValue || 0));
+
+          totalGold += (basePrice + aestheticBonus);
         } else {
           itemsToKeep.push(item);
         }
@@ -476,7 +480,7 @@ exports.sellItemsHttp = onRequest({ region: 'us-central1' }, async (req, res) =>
   if (origin && allow.has(origin)) {
     res.set('Access-Control-Allow-Origin', origin);
     res.set('Vary', 'Origin');
-    res.set('Access-Control-Allow-Credentials', 'true');
+    res.set('Access-control-Allow-Credentials', 'true');
   }
   res.set('Access-Control-Allow-Methods', 'POST,OPTIONS');
   res.set('Access-Control-Allow-Headers', 'Content-Type,Authorization');
