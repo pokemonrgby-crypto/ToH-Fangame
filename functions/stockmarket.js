@@ -497,7 +497,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           const q = qualityMultipliers(stock.quality || 'standard');
 
           const bps = Number(dplan.drift_bps || v.drift_bps) * q.drift;
-          // const trend = Number(dplan.trend_sign || 1); // <- 이 줄은 위에서 선언한 let trend를 사용하므로 제거
+          const trend = Number(dplan.trend_sign || 1); // <- 이 줄은 위에서 선언한 let trend를 사용하므로 제거
           const nextTarget = (dplan.target_price || price) * (1 + trend * ((bps) / 10000));
           const gap = nextTarget - price;
           const step = gap * 0.25;
