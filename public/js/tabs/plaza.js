@@ -160,8 +160,36 @@ export default async function showPlaza() {
     });
     
     wrap.querySelector('#btn-open-create')?.addEventListener('click', () => {
-        if (myGuildId) { showToast('이미 길드 소속이라 만들 수 없습니다.'); return; }
-        if (!c) { openCharPicker(showPlaza); return; }
-        showToast('길드 생성 기능은 준비 중입니다.');
+        if (myGuildId) {
+            showToast('이미 길드에 소속되어 있습니다.');
+            return;
+        }
+        if (!c) {
+            showToast('길드를 생성하려면 먼저 활동할 캐릭터를 선택해야 합니다.');
+            openCharPicker(showPlaza);
+            return;
+        }
+
+        // 길드 생성 모달을 띄우는 로직 (예시)
+        const guildName = prompt('생성할 길드의 이름을 입력하세요 (2~20자):');
+        if (guildName && guildName.trim().length >= 2 && guildName.trim().length <= 20) {
+            const btn = wrap.querySelector('#btn-open-create');
+            btn.disabled = true;
+            btn.textContent = '생성 중...';
+
+            createGuild({ charId: c.id, name: guildName.trim() })
+                .then(result => {
+                    showToast(`'${guildName}' 길드가 성공적으로 생성되었습니다!`);
+                    // 성공 후 광장 페이지를 새로고침하여 내 길드 정보를 표시
+                    showPlaza();
+                })
+                .catch(e => {
+                    showToast(`길드 생성 실패: ${e.message}`);
+                    btn.disabled = false;
+                    btn.textContent = '길드 만들기';
+                });
+        } else if (guildName !== null) { // 사용자가 취소를 누르지 않았을 경우
+            showToast('길드 이름은 2자 이상 20자 이하로 입력해주세요.');
+        }
     });
 }
