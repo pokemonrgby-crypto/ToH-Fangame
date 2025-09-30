@@ -31,6 +31,77 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     return text;
   }
 
+
+
+// [신규] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
+function normalizeAppraisalResult(generated, baseItem) {
+  const G = generated || {};
+  const B = baseItem || {};
+  const R = (B.rarity || 'normal').toLowerCase();
+
+  const result = { appraised: true }; // 감정 완료 플래그는 항상 포함
+
+  // 1. 허용된 목록에서 category와 subCategory 값 검증
+  const validCategories = ["equipment", "consumable", "material", "furniture", "decoration", "etc"];
+  const validSubCategories = [
+    "weapon", "armor", "shield", "clothing", "boots", "gloves", "accessory",
+    "potion", "food", "scroll", "bomb", "tome", "ore", "herb", "leather",
+    "cloth", "gem", "monsterPart", "essence", "chair", "table", "bed",
+    "storage", "painting", "sculpture", "rug", "lighting", "plant",
+    "key", "quest", "collectible", "junk"
+  ];
+
+  if (typeof G.category === 'string' && validCategories.includes(G.category)) {
+    result.category = G.category;
+  }
+  if (typeof G.subCategory === 'string' && validSubCategories.includes(G.subCategory)) {
+    result.subCategory = G.subCategory;
+  }
+
+  // 2. boolean 값은 명확하게 boolean으로 변환
+  result.equipable = G.equipable === true;
+  result.placeable = G.placeable === true;
+
+  // 3. aestheticValue (미관 점수)는 규칙에 따라 서버에서 직접 재계산 및 검증
+  if (result.placeable || result.category === "furniture" || result.category === "decoration") {
+    const ranges = {
+      normal: { min: 10, max: 50 },
+      rare:   { min: 20, max: 150 },
+      epic:   { min: 30, max: 400 },
+      legend: { min: 40, max: 1000 },
+      myth:   { min: 100, max: 2500 },
+      aether: { min: 250, max: 5000 },
+    };
+    const range = ranges[R] || ranges.normal;
+    // AI가 생성한 값이 있더라도, 서버에서 지정한 범위 내 값으로 Clamp하여 보안 강화
+    let value = Math.max(range.min, Math.min(range.max, Math.floor(Number(G.aestheticValue) || range.min)));
+
+    // 가구/장식품 보너스 규칙도 서버에서 직접 적용
+    if (result.category === "furniture" || result.category === "decoration") {
+      const bonusRatio = 0.3 + Math.random() * 0.7; // 30% ~ 100%
+      value = Math.floor(value * (1 + bonusRatio));
+    }
+    result.aestheticValue = value;
+  }
+
+  // 4. effects는 구조와 내용 길이를 제한하여 저장
+  if (Array.isArray(G.effects)) {
+    result.effects = G.effects.slice(0, 2).map(eff => {
+      if (typeof eff === 'object' && eff !== null) {
+        return {
+          trigger: String(eff.trigger || '').slice(0, 50),
+          description: String(eff.description || '').slice(0, 200)
+        };
+      }
+      return { description: String(eff || '').slice(0, 200) };
+    }).filter(e => e.description); // 내용이 있는 효과만 저장
+  }
+
+  return result;
+}
+
+  
+
   /**
    * 아이템 감정 (Appraise Item) 함수
    */
@@ -69,18 +140,21 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       // AI 호출
       const aiResponseRaw = await _callGemini(systemPrompt, userPrompt);
-      const generatedProperties = JSON.parse(aiResponseRaw);
+    const generatedProperties = JSON.parse(aiResponseRaw);
 
-      // 감정 결과(properties)를 아이템에 추가
-      items[itemIndex].properties = { ...generatedProperties, appraised: true };
+    // [수정] 감정 결과를 그대로 저장하는 대신, 정규화 함수를 통과시킵니다.
+    const finalProperties = normalizeAppraisalResult(generatedProperties, item);
 
-      // Firestore 문서 업데이트
-      tx.update(userRef, { items_all: items });
+    // 감정 결과(properties)를 아이템에 추가
+    items[itemIndex].properties = finalProperties;
 
-      logger.info(`Item ${itemId} for user ${uid} has been appraised.`);
-      return { ok: true, item: items[itemIndex] };
-    });
+    // Firestore 문서 업데이트
+    tx.update(userRef, { items_all: items });
+
+    logger.info(`Item ${itemId} for user ${uid} has been appraised.`);
+    return { ok: true, item: items[itemIndex] };
   });
+});
 
   /**
    * 사용자의 인벤토리에서 특정 아이템의 isLocked 상태를 토글합니다.
