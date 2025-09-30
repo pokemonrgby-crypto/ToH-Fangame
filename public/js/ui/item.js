@@ -41,8 +41,12 @@ export function showItemDetailModal(item, context = {}) {
         const valueTranslations = {
             // Categories
             "equipment": "장비", "consumable": "소모품", "material": "재료", "furniture": "가구", "decoration": "장식", "etc": "기타",
-            // SubCategories
-            "weapon": "무기", "armor": "방어구", "accessory": "장신구", "potion": "물약", "food": "음식", "scroll": "주문서", "ore": "광석", "herb": "약초", "leather": "가죽", "essence": "정수", "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니"
+            // SubCategories (추가된 항목 포함)
+            "weapon": "무기", "armor": "방어구", "shield": "방패", "clothing": "의상", "boots": "신발", "gloves": "장갑", "accessory": "장신구", 
+            "potion": "물약", "food": "음식", "scroll": "주문서", "bomb": "폭탄", "tome": "마도서",
+            "ore": "광석", "herb": "약초", "leather": "가죽", "cloth": "옷감", "gem": "보석", "monsterPart": "마물 부속", "essence": "정수",
+            "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "lighting": "조명", "plant": "화분/식물",
+            "key": "열쇠", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니"
         };
         
         // 2. 표시할 속성의 순서를 미리 정의합니다.
