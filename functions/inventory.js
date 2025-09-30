@@ -1,7 +1,7 @@
 // /functions/inventory.js
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
-  const fetch = (...args)=>import('node-fetch').then(({default:fetch})=>fetch(...args));
+  // const fetch = (...args)=>import('node-fetch').then(({default:fetch})=>fetch(...args)); // 이 줄을 삭제합니다.
 
   // Gemini API 호출 헬퍼 함수
   async function _callGemini(systemText, userText) {
@@ -21,6 +21,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         responseMimeType: "application/json"
       }
     };
+    // 'node-fetch' 대신 내장 fetch를 사용합니다.
     const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
     if(!res.ok){
       const txt = await res.text().catch(()=> '');
