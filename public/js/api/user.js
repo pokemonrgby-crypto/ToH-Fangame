@@ -194,3 +194,15 @@ export async function toggleItemLock(itemId, lock) {
   const result = await call({ itemId, lock });
   return result.data;
 }
+
+/**
+ * 아이템 감정을 서버에 요청합니다.
+ * @param {string} itemId - 감정할 아이템의 ID
+ * @returns {Promise<{ok: boolean, item: object}>}
+ */
+export async function appraiseItem(itemId) {
+    if (!auth.currentUser) throw new Error('로그인이 필요합니다.');
+    const call = httpsCallable(func, 'appraiseItem');
+    const result = await call({ itemId });
+    return result.data;
+}
