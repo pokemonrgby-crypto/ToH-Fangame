@@ -34,14 +34,15 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
 
 // [신규] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
+// [최종 수정] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
 function normalizeAppraisalResult(generated, baseItem) {
   const G = generated || {};
   const B = baseItem || {};
   const R = (B.rarity || 'normal').toLowerCase();
 
-  const result = { appraised: true }; // 감정 완료 플래그는 항상 포함
+  const result = { appraised: true };
 
-  // 1. 허용된 목록에서 category와 subCategory 값 검증
+  // 1. (기존과 동일)
   const validCategories = ["equipment", "consumable", "material", "furniture", "decoration", "etc"];
   const validSubCategories = [
     "weapon", "armor", "shield", "clothing", "boots", "gloves", "accessory",
@@ -58,12 +59,16 @@ function normalizeAppraisalResult(generated, baseItem) {
     result.subCategory = G.subCategory;
   }
 
-  // 2. boolean 값은 명확하게 boolean으로 변환
+  // 2. (기존과 동일)
   result.equipable = G.equipable === true;
   result.placeable = G.placeable === true;
 
-  // 3. aestheticValue (미관 점수)는 규칙에 따라 서버에서 직접 재계산 및 검증
-  if (result.placeable || result.category === "furniture" || result.category === "decoration") {
+  // 3. aestheticValue 계산 조건 (기존과 동일)
+  if (result.placeable || 
+      result.category === "furniture" || 
+      result.category === "decoration" ||
+      result.subCategory === "clothing" ||
+      result.subCategory === "accessory") {
     const ranges = {
       normal: { min: 10, max: 50 },
       rare:   { min: 20, max: 150 },
@@ -73,18 +78,20 @@ function normalizeAppraisalResult(generated, baseItem) {
       aether: { min: 250, max: 5000 },
     };
     const range = ranges[R] || ranges.normal;
-    // AI가 생성한 값이 있더라도, 서버에서 지정한 범위 내 값으로 Clamp하여 보안 강화
     let value = Math.max(range.min, Math.min(range.max, Math.floor(Number(G.aestheticValue) || range.min)));
 
-    // 가구/장식품 보너스 규칙도 서버에서 직접 적용
-    if (result.category === "furniture" || result.category === "decoration") {
+    // [수정] 보너스 규칙 적용 조건에 의상/장신구 추가
+    if (result.category === "furniture" || 
+        result.category === "decoration" ||
+        result.subCategory === "clothing" ||
+        result.subCategory === "accessory") {
       const bonusRatio = 0.3 + Math.random() * 0.7; // 30% ~ 100%
       value = Math.floor(value * (1 + bonusRatio));
     }
     result.aestheticValue = value;
   }
 
-  // 4. effects는 구조와 내용 길이를 제한하여 저장
+  // 4. (기존과 동일)
   if (Array.isArray(G.effects)) {
     result.effects = G.effects.slice(0, 2).map(eff => {
       if (typeof eff === 'object' && eff !== null) {
@@ -94,12 +101,11 @@ function normalizeAppraisalResult(generated, baseItem) {
         };
       }
       return { description: String(eff || '').slice(0, 200) };
-    }).filter(e => e.description); // 내용이 있는 효과만 저장
+    }).filter(e => e.description);
   }
 
   return result;
 }
-
   
 
   /**
