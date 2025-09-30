@@ -474,7 +474,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
             dplan = {
               stock_id: stockRef.id, date: today, target_price: price,
               trend_sign: Math.random() < 0.5 ? -1 : 1, daily_open: price,
-              drift_bps, trend_sign_last_changed_at: Timestamp.now()
+              drift_bps, trend_sign_last_changed_at: admin.firestore.Timestamp.now()
             };
             tx.set(dailyRef, dplan, { merge: true });
           }
@@ -489,7 +489,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
               trend *= -1; // 50% 확률로 방향 전환
             }
             // 확률에 상관없이 시간은 갱신
-            tx.update(dailyRef, { trend_sign: trend, trend_sign_last_changed_at: Timestamp.now() });
+            tx.update(dailyRef, { trend_sign: trend, trend_sign_last_changed_at: admin.firestore.Timestamp.now() });
           }
           // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
@@ -497,7 +497,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           const q = qualityMultipliers(stock.quality || 'standard');
 
           const bps = Number(dplan.drift_bps || v.drift_bps) * q.drift;
-          const trend = Number(dplan.trend_sign || 1); // <- 이 줄은 위에서 선언한 let trend를 사용하므로 제거
           const nextTarget = (dplan.target_price || price) * (1 + trend * ((bps) / 10000));
           const gap = nextTarget - price;
           const step = gap * 0.25;
