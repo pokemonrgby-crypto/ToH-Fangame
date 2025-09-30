@@ -44,18 +44,23 @@ export function showItemDetailModal(item, context = {}) {
             // SubCategories
             "weapon": "무기", "armor": "방어구", "accessory": "장신구", "potion": "물약", "food": "음식", "scroll": "주문서", "ore": "광석", "herb": "약초", "leather": "가죽", "essence": "정수", "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니"
         };
+        
+        // 2. 표시할 속성의 순서를 미리 정의합니다.
+        const propertyOrder = ['category', 'subCategory', 'equipable', 'placeable', 'aestheticValue', 'effects'];
 
         let html = '<hr style="margin:12px 0; border-color:#273247;"><div class="kv-label">감정된 속성</div>';
-        const displayProps = Object.entries(props).filter(([k]) => k !== 'appraised');
         
-        if (displayProps.length > 0) {
-            // 2. UI 개선: 2열 그리드 레이아웃 적용
+        // 3. API 응답에서 표시할 속성이 있는지 확인합니다.
+        const availableProps = propertyOrder.filter(key => props.hasOwnProperty(key));
+
+        if (availableProps.length > 0) {
             html += `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; font-size: 13px; margin-top: 8px;">`;
             
-            for (const [key, value] of displayProps) {
+            // 4. 정의된 순서대로 반복하며 HTML을 생성합니다.
+            for (const key of availableProps) {
+                const value = props[key];
                 const translatedKey = keyTranslations[key] || key;
 
-                // 'effects'는 여러 줄일 수 있으므로 특별 처리
                 if (key === 'effects' && Array.isArray(value)) {
                     html += `<b style="grid-column: 1 / -1; margin-top: 6px;">${esc(translatedKey)}</b>`;
                     if (value.length > 0) {
@@ -71,12 +76,10 @@ export function showItemDetailModal(item, context = {}) {
                     if (typeof value === 'boolean') {
                         displayValue = value ? '✔ 예' : '❌ 아니오';
                     } else if ((key === 'category' || key === 'subCategory') && typeof value === 'string') {
-                        // 3. 카테고리 값 한글로 변환
                         displayValue = valueTranslations[value] || value;
                     } else {
                         displayValue = String(value ?? '');
                     }
-                    // 그리드에 키-값 쌍 추가
                     html += `<b style="color: #9aa4b2;">${esc(translatedKey)}</b>`;
                     html += `<div>${esc(displayValue)}</div>`;
                 }
