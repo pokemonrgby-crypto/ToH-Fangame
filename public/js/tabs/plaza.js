@@ -91,7 +91,7 @@ export default async function showPlaza() {
 
     let guilds = [];
     try {
-        const qs = await fx.getDocs(fx.query(fx.collection(db, 'guilds'), fx.where('settings.isPublic', '==', true), fx.limit(50)));
+        const qs = await fx.getDocs(fx.query(fx.collection(db, 'guilds'), fx.where('settings.isPublic', '==', true), fx.limit(100)));
         guilds = qs.docs.map(d => ({ id: d.id, ...d.data() }));
         guilds.sort((a, b) => (b.weekly_points || 0) - (a.weekly_points || 0) || (b.member_count || 0) - (a.member_count || 0) || (b.updatedAt || 0) - (a.updatedAt || 0));
     } catch (e) { console.error('guild list load failed', e); guilds = []; }
