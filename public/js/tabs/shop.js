@@ -40,7 +40,12 @@ async function renderShop_Sell(root) {
     };
     const isConsumable = item.isConsumable || item.consumable;
     const tier = isConsumable ? prices.consumable : prices.non_consumable;
-    return tier[(item.rarity || 'normal').toLowerCase()] || 0;
+    const basePrice = tier[(item.rarity || 'normal').toLowerCase()] || 0;
+    
+    // [수정] 미관 점수 보너스 추가
+    const aestheticBonus = Math.floor(0.02 * (item.properties?.aestheticValue || 0));
+
+    return basePrice + aestheticBonus;
   };
 
   let inventory = [];
