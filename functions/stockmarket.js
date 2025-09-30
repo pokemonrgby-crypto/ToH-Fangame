@@ -81,7 +81,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       // 거래량→목표가 영향 상한 (버킷당 최대 이동폭)
       max_bucket_impact: Number.isFinite(+d.max_bucket_impact) ? +d.max_bucket_impact : 5,
       // 평균 단가 (스케일)
-      bluechip_daily_growth_rate: Number.isFinite(+d.bluechip_daily_growth_rate) ? +d.bluechip_daily_growth_rate : 0.01,
+      bluechip_daily_growth_rate: Number.isFinite(+d.bluechip_daily_growth_rate) ? +d.bluechip_daily_growth_rate : 0.005,
 
       avg_unit_price: Number.isFinite(+d.avg_unit_price) ? +d.avg_unit_price : AVG_UNIT_PRICE,
       // [추가] 거래 수수료 (기본 1%)
