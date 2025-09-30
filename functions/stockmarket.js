@@ -275,7 +275,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 - direction은 둘 중 하나.
 - magnitude는 tiny/small/medium/large/massive 중 하나.`;
 
-    const raw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
+    const raw = await callGemini('', systemPrompt, userPrompt);
     const obj = safeJson(raw, {});
     const dir = (obj.direction === 'negative') ? 'negative' : 'positive';
     const clamped = clampMag(obj.magnitude || 'medium', s.event_mag_min, s.event_mag_max);
@@ -558,7 +558,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           const userPrompt = `사건 전말: ${job.premise}
 예상: ${job.expected}
 실제 결과: ${job.actual}`;
-          const resultRaw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
+          const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
           const newsObj = safeJson(resultRaw, {});
           const titleA = newsObj.title_after || newsObj.after_title || newsObj.title || '결과 요약';
           const bodyA  = newsObj.body_after  || newsObj.after_body  || newsObj.body  || '요약 본문 수신 실패';
@@ -780,7 +780,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 결과: ${dir} / 강도: ${mag}`;
           let titleA = '세계관 결과', bodyA = '결과 요약 수신 실패';
           try {
-            const raw = await callGemini('gemini-1.5-flash', systemPrompt, userPrompt);
+            const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
             const obj = safeJson(raw, {});
             titleA = obj.title_after || obj.title || titleA;
             bodyA  = obj.body_after  || obj.body  || bodyA;
