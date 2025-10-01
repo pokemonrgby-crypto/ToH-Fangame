@@ -61,11 +61,13 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   const safeJson   = (s, fb={}) => { try { return JSON.parse(stripFence(s)); } catch { return fb; } };
 
   // ---- settings (with defaults) ----
-  let _cachedSettings = null, _cachedAt = 0;
-  const MAGS = ['tiny','small','medium','large','massive'];
-  const MAG2RATE = { tiny:0.015, small:0.03, medium:0.08, large:0.20, massive:0.35 }; // 가격 * 비율
-  const AVG_UNIT_PRICE = 250; // 평균 단가 가정
+  let _cachedSettings = null, _cachedAt = 0;
+  const MAGS = ['tiny','small','medium','large','massive'];
+  // [수정] 변동폭을 전체적으로 하향 조정했습니다.
+  const MAG2RATE = { tiny:0.015, small:0.025, medium:0.05, large:0.10, massive:0.18 }; // 가격 * 비율
+  const AVG_UNIT_PRICE = 250; // 평균 단가 가정
 
+  
   async function getSettings() {
     const now = Date.now();
     if (_cachedSettings && now - _cachedAt < 60_000) return _cachedSettings;
