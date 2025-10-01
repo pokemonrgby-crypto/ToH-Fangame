@@ -275,7 +275,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 - direction은 둘 중 하나.
 - magnitude는 tiny/small/medium/large/massive 중 하나.`;
 
-    const raw = await callGemini('', systemPrompt, userPrompt);
+    const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
     const obj = safeJson(raw, {});
     const dir = (obj.direction === 'negative') ? 'negative' : 'positive';
     const clamped = clampMag(obj.magnitude || 'medium', s.event_mag_min, s.event_mag_max);
