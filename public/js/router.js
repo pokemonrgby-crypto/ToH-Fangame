@@ -25,6 +25,7 @@ export const routes = {
   '#/logs': () => import('./tabs/logs.js').then(m => (m.showLogs || m.default)()),
   '#/mail': () => import('./tabs/mail.js').then(m => (m.showMailbox || m.default)()),
   '#/manage': () => import('./tabs/manage.js').then(m => (m.showManage || m.default)()),
+  '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
 };
 
 export function highlightTab() {
@@ -48,7 +49,7 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/economy'
+    '#/guild/', '#/market', '#/worldmap', '#/economy'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
