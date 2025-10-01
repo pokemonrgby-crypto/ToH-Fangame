@@ -6,16 +6,17 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 
 // URL에서 맵ID와 좌표를 파싱하는 함수
 function parseLandInfo() {
-  const m = (location.hash || '').match(/^#\/land\/([^/]+)\/(\d+)\/(\d+)$/);
+  // [수정] URL 끝에 오는 ?tile=... 같은 추가 정보를 무시하도록 정규식에서 '$' 제거
+  const m = (location.hash || '').match(/^#\/land\/([^/]+)\/(\d+)\/(\d+)/);
   if (!m) return null;
   
   // gionkir_main.json 에서 plotId 정보를 가져오기 위해 tile 정보도 함께 파싱
   const tileInfoMatch = (location.hash || '').match(/tile=([^&]+)/);
   const tileInfo = tileInfoMatch ? JSON.parse(decodeURIComponent(tileInfoMatch[1])) : null;
 
-  return { 
-    mapId: m[1], 
-    x: parseInt(m[2], 10), 
+  return {
+    mapId: m[1],
+    x: parseInt(m[2], 10),
     y: parseInt(m[3], 10),
     tile: tileInfo
   };
@@ -50,12 +51,12 @@ export async function showLandDetail() {
   try {
     const getLandDetail = httpsCallable(func, 'getLandDetail');
     // 서버 함수에 plotId도 함께 전달
-    const result = await getLandDetail({ 
-        mapId: landInfo.mapId, 
-        x: landInfo.x, 
+    const result = await getLandDetail({
+        mapId: landInfo.mapId,
+        x: landInfo.x,
         y: landInfo.y,
         tileType: landInfo.tile?.type,
-        plotId: landInfo.tile?.plotId 
+        plotId: landInfo.tile?.plotId
     });
     const { data } = result;
 
