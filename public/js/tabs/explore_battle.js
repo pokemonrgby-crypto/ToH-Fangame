@@ -113,6 +113,16 @@ const render = () => {
                     </div>
                     <div class="hp-bar-outer"><div id="playerHpBar" class="hp-bar-inner player"></div></div>
 
+                    <div class="row mt8" style="justify-content:space-between; align-items:center;">
+                      <div class="row" style="gap:8px; align-items:center;">
+                        <span class="text-dim" style="font-size:12px;">스태미나</span>
+                        <div class="hp-bar-outer" style="width:140px;"><div id="staminaBar" class="hp-bar-inner stamina"></div></div>
+                        <span id="staminaText" class="text-dim" style="font-size:12px;"></span>
+                      </div>
+                      <div id="turnText" class="text-dim" style="font-size:12px;"></div>
+                    </div>
+                    
+
                     <div class="kv-label mt12">행동 선택</div>
                     <div id="actionBox" class="grid2" style="gap:8px;"></div>
                 </div>
@@ -131,6 +141,8 @@ if (!document.getElementById('battle-ui-styles')) {
     .hp-bar-inner{height:100%;width:0%;transition:width .35s ease}
     .hp-bar-inner.player{background:#5bd4a5}
     .hp-bar-inner.enemy{background:#ff7a7a}
+    .hp-bar-inner.stamina{background:#a0b3ff}
+
     #battleLog p{margin:0 0 8px 0;opacity:0;animation:fadeInUp .25s forwards}
     @keyframes fadeInUp{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 
@@ -170,11 +182,21 @@ if (!document.getElementById('battle-ui-styles')) {
     // 데이터 업데이트
     const enemyHpPercent = Math.max(0, (battleState.enemy.hp / battleState.enemy.maxHp) * 100);
     const playerHpPercent = Math.max(0, (battleState.playerHp / runState.stamina_start) * 100);
+    const staminaMax = runState.stamina_start;
+    const staminaNow = runState.stamina ?? staminaMax;
+    const staminaPercent = Math.max(0, (staminaNow / staminaMax) * 100);
+
 
     root.querySelector('#enemyName').textContent = esc(battleState.enemy.name);
     root.querySelector('#enemyHpText').textContent = `${battleState.enemy.hp} / ${battleState.enemy.maxHp}`;
     root.querySelector('#enemyHpBar').style.width = `${enemyHpPercent}%`;
 
+    const staminaBar = root.querySelector('#staminaBar');
+    if (staminaBar) staminaBar.style.width = `${staminaPercent}%`;
+    const staminaText = root.querySelector('#staminaText');
+    if (staminaText) staminaText.textContent = `${staminaNow} / ${staminaMax}`;
+    const turnText = root.querySelector('#turnText');
+    if (turnText) turnText.textContent = `턴 ${battleState.turn}`;
 
     // 등급 라벨 표시
     const chip = root.querySelector('#enemyTierChip');
@@ -278,7 +300,12 @@ if (dPlayer !== 0 && playerBar) {
       }
 
       battleState = result.battle_state;
-      runState.stamina = battleState ? battleState.playerHp : runState.stamina;
+      // [변경] 전투HP와 스태미나 분리: 스태미나는 서버에서 별도 관리(10턴마다 -1). 덮어쓰지 않음.
+
+      // runState.stamina = battleState ? battleState.playerHp : runState.stamina;
+      // [추가] 서버에서 최신 런 정보(스태미나 등) 재조회
+      const freshRunSnap = await fx.getDoc(runRef);
+      if (freshRunSnap.exists()) runState = freshRunSnap.data();
 
       // 전투 종료 시 분기
       if (result.battle_over) {
