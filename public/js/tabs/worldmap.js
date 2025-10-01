@@ -71,7 +71,7 @@ function drawTiles(container, mapData, owners) {
                 if (tileInfo.build_conditions) {
                     buildHtml += `<li><strong>건설 조건:</strong> ${esc(tileInfo.build_conditions)}</li>`;
                 }
-                
+    
                 let resourceHtml = '';
                 if (tileInfo.obtainable_items && tileInfo.obtainable_items.length > 0) {
                     resourceHtml = `<hr style="border-color: #333; margin: 12px 0;">
@@ -79,8 +79,8 @@ function drawTiles(container, mapData, owners) {
                                     <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">
                                         <li>${tileInfo.obtainable_items.join(', ')}</li>
                                     </ul>`;
-                }
-
+                }            
+            
                 mapInfo.style.display = 'block';
                 mapInfo.innerHTML = `
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
@@ -95,13 +95,13 @@ function drawTiles(container, mapData, owners) {
                     <hr style="border-color: #333; margin: 12px 0;">
                     <div class="kv-label" style="font-size:13px; margin-bottom:4px;">건설 정보</div>
                     <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">${buildHtml}</ul>
-                    
+        
                     <hr style="border-color: #333; margin: 12px 0;">
                     <div class="kv-label" style="font-size:13px; margin-bottom:4px;">농사 정보</div>
                     <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">${farmHtml}</ul>
 
                     ${resourceHtml}
-                    
+        
                     <button class="btn primary" id="btn-land-detail" style="width: 100%; margin-top: 16px;">상세 토지 정보 보기 (10x10)</button>
                 `;
 
