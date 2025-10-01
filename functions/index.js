@@ -18,6 +18,8 @@ const exploreV2 = require('./explore_v2')(admin, { onCall, HttpsError, logger, G
 const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
+const landFns = require('./land')(admin);
+
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -726,7 +728,7 @@ Object.assign(exports, battleFns);
 const mailFns = require('./mail')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); // [수정] GEMINI_API_KEY 추가
 Object.assign(exports, mailFns);
 // === END PATCH ===
-
+Object.assign(exports, landFns);
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
