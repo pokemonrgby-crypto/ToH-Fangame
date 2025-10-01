@@ -16,6 +16,7 @@ async function renderMap(container, mapId) {
     }
 
     const owners = new Map();
+    // Firestore에서 소유권 정보를 실시간으로 가져옵니다.
     const ownershipQuery = fx.query(fx.collection(db, 'land_ownership'), fx.where('mapId', '==', mapId));
     
     fx.onSnapshot(ownershipQuery, (snapshot) => {
@@ -28,6 +29,8 @@ async function renderMap(container, mapId) {
         drawTiles(container, mapData, owners);
     }, (error) => {
         console.error("소유자 정보 실시간 수신 실패:", error);
+        // 오류가 발생해도 일단 타일은 그립니다.
+        drawTiles(container, mapData, owners);
     });
 }
 
@@ -41,7 +44,9 @@ function drawTiles(container, mapData, owners) {
     for (let y = 0; y < mapData.height; y++) {
         for (let x = 0; x < mapData.width; x++) {
             const index = y * mapData.width + x;
-            const tileType = mapData.tiles[index];
+            // [수정] 타일 데이터가 객체이므로 type을 직접 참조합니다.
+            const tile = mapData.tiles[index];
+            const tileType = tile.type; 
             const tileInfo = mapData.legend[tileType];
             const ownerName = owners.get(index) || null;
             if (!tileInfo) continue;
@@ -52,9 +57,15 @@ function drawTiles(container, mapData, owners) {
             tileEl.title = `${tileInfo.name} (${x}, ${y})`;
             
             if (ownerName) {
-                tileEl.style.boxShadow = 'inset 0 0 0 2px #FFD700';
+                tileEl.style.boxShadow = 'inset 0 0 0 2px #FFD700'; // 소유지 테두리
             }
 
+            // [추가] 더블클릭 시 상세 토지 뷰로 이동
+            tileEl.addEventListener('dblclick', () => {
+                location.hash = `#/land/${mapData.id}/${x}/${y}`;
+            });
+
+            // 클릭 시 정보 표시 (기존과 동일)
             tileEl.addEventListener('click', () => {
                 let farmHtml = `<li><strong>농사 가능:</strong> ${tileInfo.can_farm ? '✔' : '❌'}</li>`;
                 if (tileInfo.season_bonus) {
@@ -81,7 +92,7 @@ function drawTiles(container, mapData, owners) {
                     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
                         <div>
                             <div style="font-weight: bold; font-size: 16px;">${esc(tileInfo.name)}</div>
-                            <div class="text-dim" style="font-size: 12px;">좌표: (${x}, ${y})</div>
+                            <div class="text-dim" style="font-size: 12px;">좌표: (${x}, ${y}) / 더블클릭: 상세정보</div>
                         </div>
                         <div class="chip" style="font-size:12px;">소유자: ${ownerName ? esc(ownerName) : '없음'}</div>
                     </div>
@@ -112,11 +123,12 @@ export async function showWorldMap() {
     
     const worldsData = await fetchWorlds();
     const availableWorlds = worldsData?.worlds || [];
+    // 'ahnoria'도 맵 데이터가 있으므로 필터에 추가
     const mapWorlds = availableWorlds.filter(w => ['gionkir', 'ahnoria'].includes(w.id));
 
     root.innerHTML = `
         <style>
-          .world-map-grid { display: grid; border: 1px solid #333; overflow: auto; max-width: 100%; }
+          .world-map-grid { display: grid; border: 1px solid #333; overflow: auto; max-width: 100%; touch-action: pan-x pan-y; }
           .map-tile { width: 32px; height: 32px; font-size: 0; cursor: pointer; position: relative; }
           .map-tile:hover { outline: 2px solid yellow; z-index: 1; }
           .map-info-card {
@@ -148,6 +160,8 @@ export async function showWorldMap() {
     
     root.querySelectorAll('[data-map-id]').forEach(btn => {
         btn.addEventListener('click', () => {
+            root.querySelectorAll('[data-map-id]').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
             const mapId = btn.dataset.mapId;
             mapContainer.innerHTML = '<div class="spin-center"></div>';
             document.getElementById('map-info').style.display = 'none';
@@ -156,7 +170,12 @@ export async function showWorldMap() {
     });
 
     if (mapWorlds.length > 0) {
-        renderMap(mapContainer, `${mapWorlds[0].id}_main`);
+        // 기본으로 첫 번째 맵을 로드하고 버튼을 활성화 상태로 만듭니다.
+        const firstBtn = root.querySelector('[data-map-id]');
+        if(firstBtn) {
+            firstBtn.classList.add('active');
+            renderMap(mapContainer, `${mapWorlds[0].id}_main`);
+        }
     } else {
         mapContainer.innerHTML = '표시할 맵이 없습니다.';
     }
