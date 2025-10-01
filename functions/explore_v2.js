@@ -670,10 +670,21 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         // [PATCH] 플레이어 피해 동적 상한 (난이도/등급 + 시작HP 40% 캡)
         let playerHpChange = Math.round(Number(aiResult.playerHpChange) || 0);
 
-        // 회복량 너프: 최대 2로 제한
+        // [변경] 회복 규칙 강화: 레전드 난이도는 회복 불가, 그 외는 확률적으로만 허용. 최대 +1.
+        const healProb = { easy: 60, normal: 40, hard: 25, vhard: 10, legend: 0 }; // %
+        const rollHeal = Math.floor(Math.random() * 100) + 1;
+        const canHeal = (healProb[diff] ?? 0) >= rollHeal;
+
         if (playerHpChange > 0) {
-            playerHpChange = Math.min(playerHpChange, 2);
+          // 레전드는 무조건 금지, 그 외 난이도도 확률 실패 시 0
+          if (diff === 'legend' || !canHeal) {
+            playerHpChange = 0;
+          } else {
+            // 전체 회복 상한을 기존 2 → 1로 하향
+            playerHpChange = Math.min(playerHpChange, 1);
+          }
         }
+
 
         const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3 }[diff] ?? 1);
         const toPlayerTier = (tier === 'boss') ? 1 : 0;
