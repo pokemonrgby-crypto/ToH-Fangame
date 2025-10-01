@@ -26,15 +26,15 @@
     "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s", "s"
   ],
   "legend": {
-    "s": { "name": "바다", "color": "#4A6E93", "desc": "깊고 푸른 바다입니다.", "can_farm": false, "obtainable_items": ["소금", "작은 물고기"], "movement_speed_modifier": 0.1 },
-    "l": { "name": "호수", "color": "#76A2C2", "desc": "잔잔한 호수입니다.", "can_farm": false, "obtainable_items": ["민물고기", "조약돌"], "movement_speed_modifier": 0.3 },
-    "M": { "name": "산", "color": "#6F6860", "desc": "험준한 산악 지형입니다.", "can_farm": false, "obtainable_items": ["철광석", "날카로운 돌"], "movement_speed_modifier": 0.5 },
-    "m": { "name": "광산", "color": "#4E4843", "desc": "광물이 매장되어 있을 것 같은 광산 입구입니다.", "can_farm": false, "obtainable_items": ["석탄", "철광석", "구리광석", "희귀 보석(낮은 확률)"], "movement_speed_modifier": 0.8 },
-    "f": { "name": "숲", "color": "#5A7F5E", "desc": "나무가 빽빽한 숲입니다.", "can_farm": false, "obtainable_items": ["목재", "약초", "열매"], "movement_speed_modifier": 0.7 },
-    "n": { "name": "일반 토양", "color": "#9B8A6B", "desc": "특별한 것 없는 평범한 땅입니다.", "can_farm": true, "season_bonus": { "autumn": "수확량 소폭 증가" }, "movement_speed_modifier": 1.0 },
-    "b": { "name": "비옥한 토양", "color": "#7E6B4E", "desc": "농작물이 잘 자랄 것 같은 비옥한 땅입니다.", "can_farm": true, "season_bonus": { "spring": "성장 속도 증가", "autumn": "수확량 대폭 증가" }, "movement_speed_modifier": 1.0 },
-    "d": { "name": "척박한 토양", "color": "#BBAE91", "desc": "메마르고 척박해 보이는 땅입니다.", "can_farm": false, "season_bonus": { "summer": "가뭄 위험" }, "movement_speed_modifier": 0.9 },
-    "r": { "name": "길", "color": "#C9B58F", "desc": "사람들이 다져놓은 길입니다.", "can_farm": false, "movement_speed_modifier": 1.2 },
-    "R": { "name": "주요 도로", "color": "#DBCBA0", "desc": "잘 닦인 주요 도로입니다.", "can_farm": false, "movement_speed_modifier": 1.5 }
+    "s": { "name": "바다", "color": "#4A6E93", "desc": "깊고 푸른 바다입니다.", "can_farm": false, "buildable": false, "build_conditions": "건설 불가", "obtainable_items": ["소금", "작은 물고기"], "movement_speed_modifier": 0.1 },
+    "l": { "name": "호수", "color": "#76A2C2", "desc": "잔잔한 호수입니다.", "can_farm": false, "buildable": false, "build_conditions": "수상 건축 기술 필요", "obtainable_items": ["민물고기", "조약돌"], "movement_speed_modifier": 0.3 },
+    "M": { "name": "산", "color": "#6F6860", "desc": "험준한 산악 지형입니다.", "can_farm": false, "buildable": true, "build_conditions": "고산 지대 건축 기술 및 평탄화 작업 필요", "obtainable_items": ["철광석", "날카로운 돌"], "movement_speed_modifier": 0.5 },
+    "m": { "name": "광산", "color": "#4E4843", "desc": "광물이 매장되어 있을 것 같은 광산 입구입니다.", "can_farm": false, "buildable": true, "build_conditions": "전문 채굴 시설만 건설 가능", "obtainable_items": ["석탄", "철광석", "구리광석", "희귀 보석(낮은 확률)"], "movement_speed_modifier": 0.8 },
+    "f": { "name": "숲", "color": "#5A7F5E", "desc": "나무가 빽빽한 숲입니다.", "can_farm": false, "buildable": true, "build_conditions": "벌목 및 개간 작업 필요", "obtainable_items": ["목재", "약초", "열매"], "movement_speed_modifier": 0.7 },
+    "n": { "name": "일반 토양", "color": "#9B8A6B", "desc": "특별한 것 없는 평범한 땅입니다.", "can_farm": true, "buildable": true, "build_conditions": "특별한 조건 없음", "season_bonus": { "autumn": "수확량 소폭 증가" }, "movement_speed_modifier": 1.0 },
+    "b": { "name": "비옥한 토양", "color": "#7E6B4E", "desc": "농작물이 잘 자랄 것 같은 비옥한 땅입니다.", "can_farm": true, "buildable": true, "build_conditions": "농업 관련 건물에 보너스", "season_bonus": { "spring": "성장 속도 증가", "autumn": "수확량 대폭 증가" }, "movement_speed_modifier": 1.0 },
+    "d": { "name": "척박한 토양", "color": "#BBAE91", "desc": "메마르고 척박해 보이는 땅입니다.", "can_farm": false, "buildable": true, "build_conditions": "토지 개량 작업 필요", "season_bonus": { "summer": "가뭄 위험" }, "movement_speed_modifier": 0.9 },
+    "r": { "name": "길", "color": "#C9B58F", "desc": "사람들이 다져놓은 길입니다.", "can_farm": false, "buildable": false, "build_conditions": "건설 불가 (공공 도로)", "movement_speed_modifier": 1.2 },
+    "R": { "name": "주요 도로", "color": "#DBCBA0", "desc": "잘 닦인 주요 도로입니다.", "can_farm": false, "buildable": false, "build_conditions": "건설 불가 (공공 도로)", "movement_speed_modifier": 1.5 }
   }
 }
