@@ -274,6 +274,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         startedAt: Timestamp.now(),
         stamina_start: staminaStart,
         stamina: staminaStart,
+        combat_hp: staminaStart,
         turn: 0,
         status: 'ongoing',
         summary3: '',
@@ -419,7 +420,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const turnBonusRatio = (run.turn || 0) * 0.2;
       const finalHp = Math.max(1, Math.round(baseHp * (1 + turnBonusRatio)));
 
-
+      const initialCombatHp = (typeof run.combat_hp === 'number') ? run.combat_hp : run.stamina;
       const battleInfo = {
         enemy: {
           name: enemyBase.name || `${tier} 등급의 적`,
@@ -429,7 +430,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           hp: finalHp,
           maxHp: finalHp,
         },
-        playerHp: run.stamina,
+        playerHp: initialCombatHp,
         turn: 0,
         log: [narrativeLog]
       };
@@ -445,7 +446,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           deltaStamina: 0
         }),
         prerolls: pend.nextPrerolls || run.prerolls, // [핵심 수정 2-1] 전투 진입 시에도 preroll 업데이트
-
+        combat_hp: initialCombatHp,
         updatedAt: Timestamp.now()
       });
       const fresh = await runRef.get();
@@ -544,9 +545,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
         const battle = run.pending_battle;
         if (!battle) throw new HttpsError('failed-precondition', '진행중인 전투 없음');
-        // 레거시 호환: 전투HP 없으면 스태미나로 초기화
         if (typeof battle.playerHp !== 'number') {
-          battle.playerHp = run.stamina;
+          battle.playerHp = (typeof run.combat_hp === 'number') ? run.combat_hp : run.stamina;
         }
 
 
@@ -787,6 +787,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                       reason: 'stamina_timeout',
                       endedAt: Timestamp.now(),
                       stamina: 0,
+                      combat_hp: 0,
                       prerolls: nextPrerolls,
                       events: FieldValue.arrayUnion(
                         { t: Date.now(), kind:'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
@@ -799,6 +800,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                       pending_battle: null,
                       stamina: staminaAfterWin,
                       prerolls: nextPrerolls,
+                      combat_hp: newPlayerHp,
                       events: FieldValue.arrayUnion(
                         { t: Date.now(), kind:'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
                         { t: Date.now(), kind:'combat-win',  note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, exp }
@@ -854,6 +856,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                   pending_battle: battle,
                   stamina: staminaAfterDrain,
                   prerolls: nextPrerolls,
+                  combat_hp: newPlayerHp,
                 };
                 if (drained) {
                   updates.events = FieldValue.arrayUnion({ t: Date.now(), kind: 'stamina-drain', note: '전투 10턴 경과: 스태미나 -1' });
@@ -892,6 +895,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const updates = {
       pending_battle: null,
       stamina: newStamina,
+      combat_hp: battle.playerHp, // 현재 전투HP를 런 스코프에 저장(다음 전투 시작 시 사용)
       turn: FieldValue.increment(1),
       events: FieldValue.arrayUnion({ t: Date.now(), note, kind: 'combat-retreat', deltaStamina: -penalty })
     };
