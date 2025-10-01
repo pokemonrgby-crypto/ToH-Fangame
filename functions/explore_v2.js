@@ -543,7 +543,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
         if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
         const battle = run.pending_battle;
-        if(!battle) throw new HttpsError('failed-precondition','진행중인 전투 없음');
+        if (!battle) throw new HttpsError('failed-precondition', '진행중인 전투 없음');
+        // 레거시 호환: 전투HP 없으면 스태미나로 초기화
+        if (typeof battle.playerHp !== 'number') {
+          battle.playerHp = run.stamina;
+        }
+
 
         const charId = String(run.charRef||'').replace(/^chars\//,'');
         const charRef = charCollectionRef.doc(charId);
@@ -577,9 +582,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         if (actionType === 'interact' && (run?.pending_battle?.enemy?.tier === 'boss')) {
             throw new HttpsError('failed-precondition', '보스에게는 상호작용을 사용할 수 없어');
         }
+        const staminaAfterCost = Math.max(0, (run.stamina || 0) - staminaCost);
 
-        if (battle.playerHp < staminaCost) {
-            throw new HttpsError('failed-precondition', '스킬을 사용하기 위한 스태미나가 부족합니다.');
+        if ((run.stamina || 0) < staminaCost) {
+          throw new HttpsError('failed-precondition', '스킬을 사용하기 위한 스태미나가 부족합니다.');
         }
 
         const tier = run?.pending_battle?.enemy?.tier || 'normal';
@@ -643,7 +649,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const userPrompt = [
           '## 전투 컨텍스트',
           `- 장소 난이도: ${run.difficulty}`,
-          `- 플레이어: ${character.name} (현재 HP: ${battle.playerHp - staminaCost})`,
+          `- 플레이어: ${character.name} (현재 HP: ${battle.playerHp})`,
           `- 적: ${battle.enemy.name} (등급: ${battle.enemy.tier}, 현재 HP: ${battle.enemy.hp})`,
           `- 적 보유 스킬:\n${enemySkillsText || '(없음)'}`,
           '',
@@ -667,24 +673,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           aiResult = await callGemini({ apiKey: GEMINI_API_KEY.value(), systemText: systemPrompt, userText: userPrompt, logger, modelName: fallback }) || {};
         }
 
-        // [PATCH] 플레이어 피해 동적 상한 (난이도/등급 + 시작HP 40% 캡)
-        let playerHpChange = Math.round(Number(aiResult.playerHpChange) || 0);
-
-        // [변경] 회복 규칙 강화: 레전드 난이도는 회복 불가, 그 외는 확률적으로만 허용. 최대 +1.
-        const healProb = { easy: 60, normal: 40, hard: 25, vhard: 10, legend: 0 }; // %
-        const rollHeal = Math.floor(Math.random() * 100) + 1;
-        const canHeal = (healProb[diff] ?? 0) >= rollHeal;
-
-        if (playerHpChange > 0) {
-          // 레전드는 무조건 금지, 그 외 난이도도 확률 실패 시 0
-          if (diff === 'legend' || !canHeal) {
-            playerHpChange = 0;
-          } else {
-            // 전체 회복 상한을 기존 2 → 1로 하향
-            playerHpChange = Math.min(playerHpChange, 1);
-          }
-        }
-
 
         const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3 }[diff] ?? 1);
         const toPlayerTier = (tier === 'boss') ? 1 : 0;
@@ -693,9 +681,21 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         // 시작 스태미나(기본 HP)의 40%를 초과할 수 없게 캡
         const toPlayerHpCap = Math.max(1, Math.ceil((run.stamina_start || STAMINA_BASE || 10) * 0.40));
         const maxToPlayer = Math.min(toPlayerMaxByTable, toPlayerHpCap);
+        let playerHpChange = Math.round(Number(aiResult.playerHpChange) || 0);
+
 
         // 최종 클램프
-        playerHpChange = Math.max(-maxToPlayer, Math.min(+maxToPlayer, playerHpChange));
+        // [변경] 전투 회복 완화: 피해(음수)와 회복(양수) 별도 캡
+        // - 피해(음수): 기존 동적 상한 maxToPlayer 유지
+        // - 회복(양수): 현재 전투HP 부족분의 50% (최소 +1)
+        const missingHp = Math.max(0, (run.stamina_start || STAMINA_BASE || 10) - (battle.playerHp || 0));
+        const healCap = Math.max(1, Math.ceil(missingHp * 0.5));
+        if (playerHpChange >= 0) {
+          playerHpChange = Math.min(playerHpChange, healCap);
+        } else {
+          playerHpChange = Math.max(playerHpChange, -maxToPlayer);
+        }
+
 
         const rawEnemyDelta = Math.round(Number(aiResult.enemyHpChange) || 0);
         // [PATCH] 적 피해 상한 = (표상한 vs 적 최대HP의 30%) 중 작은 값
@@ -704,7 +704,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const enemyHpChange = Math.max(-maxToEnemy, Math.min(0, rawEnemyDelta));
 
         const maxStamina = run.stamina_start || STAMINA_BASE || 10;
-        const newPlayerHp = Math.max(0, Math.min(maxStamina, battle.playerHp - staminaCost + playerHpChange));
+        const newPlayerHp = Math.max(0, Math.min(maxStamina, battle.playerHp + playerHpChange));
         const newEnemyHp = Math.max(0, battle.enemy.hp + enemyHpChange);
 
           battle.playerHp = newPlayerHp;
@@ -776,17 +776,43 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                       tx.update(userRef, { items_all: FieldValue.arrayUnion(newItem) });
                   }
 
-                  tx.update(runRef, {
+                  // 승리 턴에도 10턴 주기 드레인 적용
+                  const drainedWin = (battle.turn % 10 === 0) ? 1 : 0;
+                  const staminaAfterWin = Math.max(0, staminaAfterCost - drainedWin);
+
+                  if (staminaAfterWin <= 0) {
+                    tx.update(runRef, {
                       pending_battle: null,
-                      stamina: newPlayerHp,
+                      status: 'ended',
+                      reason: 'stamina_timeout',
+                      endedAt: Timestamp.now(),
+                      stamina: 0,
+                      prerolls: nextPrerolls,
+                      events: FieldValue.arrayUnion(
+                        { t: Date.now(), kind:'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
+                        { t: Date.now(), kind:'combat-win',  note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, exp },
+                        { t: Date.now(), kind:'exhaust',     note: '전투 중 스태미나가 바닥나 모험이 종료되었습니다. (10턴 페널티/스킬 소모 반영)' }
+                      ),
+                    });
+                  } else {
+                    const updatesWin = {
+                      pending_battle: null,
+                      stamina: staminaAfterWin,
+                      prerolls: nextPrerolls,
                       events: FieldValue.arrayUnion(
                         { t: Date.now(), kind:'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
                         { t: Date.now(), kind:'combat-win',  note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, exp }
                       ),
-                      prerolls: nextPrerolls,
-
-
-                  });
+                    };
+                    if (drainedWin) {
+                      updatesWin.events = FieldValue.arrayUnion(
+                        { t: Date.now(), kind:'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
+                        { t: Date.now(), kind:'combat-win',  note: `${battle.enemy.name}을(를) 처치했다! (경험치 +${exp})`, exp },
+                        { t: Date.now(), kind:'stamina-drain', note: '전투 10턴 경과: 스태미나 -1' }
+                      );
+                    }
+                    tx.update(runRef, updatesWin);
+                  }
 
                } else { // 패배 또는 무승부
                   battleResult.outcome = 'loss';
@@ -805,7 +831,36 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
               }
           } else { // 전투 계속
-              tx.update(runRef, { pending_battle: battle, stamina: newPlayerHp, prerolls: nextPrerolls });
+              // [변경] 전투는 10턴마다 스태미나 1 감소. 전투HP와 스태미나 분리 유지.
+              const drained = (battle.turn % 10 === 0) ? 1 : 0;
+              const staminaAfterDrain = Math.max(0, staminaAfterCost - drained);
+
+
+              if (staminaAfterDrain <= 0) {
+                tx.update(runRef, {
+                  status: 'ended',
+                  reason: 'stamina_timeout',
+                  endedAt: Timestamp.now(),
+                  pending_battle: null,
+                  stamina: 0,
+                  prerolls: nextPrerolls,
+                  events: FieldValue.arrayUnion(
+                    { t: Date.now(), kind: 'combat-log',  note: (battle.log || []).join('\n'), lines: (battle.log || []).length },
+                    { t: Date.now(), kind: 'exhaust', note: '전투 중 스태미나가 바닥나 모험이 종료되었습니다. (10턴 페널티)' }
+                  ),
+                });
+              } else {
+                const updates = {
+                  pending_battle: battle,
+                  stamina: staminaAfterDrain,
+                  prerolls: nextPrerolls,
+                };
+                if (drained) {
+                  updates.events = FieldValue.arrayUnion({ t: Date.now(), kind: 'stamina-drain', note: '전투 10턴 경과: 스태미나 -1' });
+                }
+                tx.update(runRef, updates);
+              }
+
           }
 
           return battleResult;
