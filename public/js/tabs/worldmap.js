@@ -9,36 +9,30 @@ function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;
 
 // 월드맵 UI를 그리는 메인 함수
 async function renderMap(container, mapId) {
-    // 1. 정적 맵 데이터(지형, 범례 등)를 JSON 파일에서 불러옵니다.
     const mapData = await getMapData(mapId);
     if (!mapData) {
         container.innerHTML = '맵 데이터를 불러오지 못했습니다.';
         return;
     }
 
-    // 2. 동적 데이터(소유자 정보)를 Firestore에서 실시간으로 가져옵니다.
     const owners = new Map();
     const ownershipQuery = fx.query(fx.collection(db, 'land_ownership'), fx.where('mapId', '==', mapId));
     
-    // onSnapshot을 사용해 소유권 변경을 실시간으로 감지합니다.
     fx.onSnapshot(ownershipQuery, (snapshot) => {
         snapshot.docs.forEach(doc => {
             const data = doc.data();
             const tileIndex = data.y * mapData.width + data.x;
-            owners.set(tileIndex, data.ownerName || data.owner_uid); // ownerName 필드를 우선 사용
+            owners.set(tileIndex, data.ownerName || data.owner_uid);
         });
-        
-        // 소유자 정보가 업데이트되면 맵을 다시 그립니다.
         drawTiles(container, mapData, owners);
     }, (error) => {
         console.error("소유자 정보 실시간 수신 실패:", error);
     });
 }
 
-// 타일을 실제로 화면에 그리는 함수 (분리)
 function drawTiles(container, mapData, owners) {
     container.style.gridTemplateColumns = `repeat(${mapData.width}, 32px)`;
-    container.innerHTML = ''; // 이전 맵 지우기
+    container.innerHTML = '';
 
     const mapInfo = document.getElementById('map-info');
 
@@ -47,7 +41,7 @@ function drawTiles(container, mapData, owners) {
             const index = y * mapData.width + x;
             const tileType = mapData.tiles[index];
             const tileInfo = mapData.legend[tileType];
-            const ownerName = owners.get(index) || null; // Map에서 소유자 정보 조회
+            const ownerName = owners.get(index) || null;
             if (!tileInfo) continue;
 
             const tileEl = document.createElement('div');
@@ -55,23 +49,31 @@ function drawTiles(container, mapData, owners) {
             tileEl.style.backgroundColor = tileInfo.color;
             tileEl.title = `${tileInfo.name} (${x}, ${y})`;
             
-            // 소유자가 있으면 테두리로 표시
             if (ownerName) {
                 tileEl.style.boxShadow = 'inset 0 0 0 2px #FFD700';
             }
 
             tileEl.addEventListener('click', () => {
-                let detailsHtml = `
-                    <li><strong>농사 가능:</strong> ${tileInfo.can_farm ? '✔' : '❌'}</li>
-                    <li><strong>이동 속도:</strong> ${tileInfo.movement_speed_modifier * 100}%</li>
-                `;
-                if (tileInfo.obtainable_items && tileInfo.obtainable_items.length > 0) {
-                    detailsHtml += `<li><strong>획득 가능:</strong> ${tileInfo.obtainable_items.join(', ')}</li>`;
-                }
+                let farmHtml = `<li><strong>농사 가능:</strong> ${tileInfo.can_farm ? '✔' : '❌'}</li>`;
                 if (tileInfo.season_bonus) {
                     const bonuses = Object.entries(tileInfo.season_bonus).map(([s, d]) => `${s}: ${d}`).join(', ');
-                    detailsHtml += `<li><strong>계절 효과:</strong> ${bonuses}</li>`;
+                    farmHtml += `<li><strong>계절 효과:</strong> ${bonuses}</li>`;
                 }
+
+                let buildHtml = `<li><strong>건설 가능:</strong> ${tileInfo.buildable ? '✔' : '❌'}</li>`;
+                if (tileInfo.build_conditions) {
+                    buildHtml += `<li><strong>건설 조건:</strong> ${esc(tileInfo.build_conditions)}</li>`;
+                }
+                
+                let resourceHtml = '';
+                if (tileInfo.obtainable_items && tileInfo.obtainable_items.length > 0) {
+                    resourceHtml = `<hr style="border-color: #333; margin: 12px 0;">
+                                    <div class="kv-label" style="font-size:13px; margin-bottom:4px;">획득 가능 자원</div>
+                                    <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">
+                                        <li>${tileInfo.obtainable_items.join(', ')}</li>
+                                    </ul>`;
+                }
+
 
                 mapInfo.style.display = 'block';
                 mapInfo.innerHTML = `
@@ -83,17 +85,22 @@ function drawTiles(container, mapData, owners) {
                         <div class="chip" style="font-size:12px;">소유자: ${ownerName ? esc(ownerName) : '없음'}</div>
                     </div>
                     <div style="margin-top: 8px; font-size:14px;">${esc(tileInfo.desc)}</div>
+
                     <hr style="border-color: #333; margin: 12px 0;">
-                    <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">
-                        ${detailsHtml}
-                    </ul>
+                    <div class="kv-label" style="font-size:13px; margin-bottom:4px;">건설 정보</div>
+                    <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">${buildHtml}</ul>
+                    
+                    <hr style="border-color: #333; margin: 12px 0;">
+                    <div class="kv-label" style="font-size:13px; margin-bottom:4px;">농사 정보</div>
+                    <ul style="margin:0; padding-left: 20px; font-size: 13px; color: #ccc; line-height: 1.6;">${farmHtml}</ul>
+
+                    ${resourceHtml}
                 `;
             });
             container.appendChild(tileEl);
         }
     }
 }
-
 
 export async function showWorldMap() {
     const root = document.getElementById('view');
