@@ -24,12 +24,14 @@ async function renderMap(container, mapId) {
             const tileIndex = data.y * mapData.width + data.x;
             owners.set(tileIndex, data.ownerName || data.owner_uid);
         });
+        
         drawTiles(container, mapData, owners);
     }, (error) => {
         console.error("소유자 정보 실시간 수신 실패:", error);
     });
 }
 
+// 타일을 실제로 화면에 그리는 함수
 function drawTiles(container, mapData, owners) {
     container.style.gridTemplateColumns = `repeat(${mapData.width}, 32px)`;
     container.innerHTML = '';
@@ -73,7 +75,6 @@ function drawTiles(container, mapData, owners) {
                                         <li>${tileInfo.obtainable_items.join(', ')}</li>
                                     </ul>`;
                 }
-
 
                 mapInfo.style.display = 'block';
                 mapInfo.innerHTML = `
@@ -131,7 +132,7 @@ export async function showWorldMap() {
           }
         </style>
         <section class="container narrow">
-          <div class="card p12">
+          <div class="card p12" style="padding-bottom: 250px;">
             <h3 style="margin-top:0">부동산 정보</h3>
             <div class="row" style="gap:8px; margin-bottom:12px;">
                 <div class="kv-label">지역 선택:</div>
