@@ -352,7 +352,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         }
       })();
 
-       const numEvents = Math.floor(Math.random() * 3); // 0~2회
+      const numEvents = 12 + Math.floor(Math.random() * 13); // 12~24회 (약 1~2시간당 1회)
       const majorEvents = [];
       for (let i = 0; i < numEvents; i++) {
         const triggerMinute = Math.floor(Math.random() * ((24 * 60) - 10));
