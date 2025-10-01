@@ -54,14 +54,14 @@ module.exports = (admin) => {
     
     // 3. plotId가 있으면, 해당 이름의 사전 제작 파일을 먼저 찾습니다.
     if (plotId) {
-        // [수정] 파일 경로를 functions 폴더 내부로 변경
-        const plotPath = `./assets/mapdata/${mapId.split('_')[0]}/plots/${plotId}.json`;
+        // [수정] 파일 경로를 functions 폴더 내부로 변경하고, path.join을 사용하여 안정적으로 경로를 만듭니다.
+        const plotPath = path.join(__dirname, 'assets', 'mapdata', mapId.split('_')[0], 'plots', `${plotId}.json`);
         try {
-            const plotData = await fs.readFile(path.join(__dirname, plotPath), 'utf8');
+            const plotData = await fs.readFile(plotPath, 'utf8');
             microGrid = JSON.parse(plotData).pattern;
-            logger.info(`Loaded pre-designed plot '${plotId}' for ${mapId} (${x},${y})`);
+            logger.info(`Loaded pre-designed plot '${plotId}' for ${mapId} (${x},${y}) from ${plotPath}`);
         } catch (error) {
-            logger.warn(`Pre-designed plot '${plotId}' not found, falling back to procedural generation.`);
+            logger.warn(`Pre-designed plot '${plotId}' not found at ${plotPath}, falling back to procedural generation.`, error);
         }
     }
 
