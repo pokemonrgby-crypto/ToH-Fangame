@@ -257,9 +257,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   }
 
   // ===== AI로 방향/강도 뽑기 (강도는 설정 범위로 clamp) =====
+  // [수정] subjectDescription 파라미터 추가
   async function aiPickImpact({ premise, subjectName, worldName, subjectDescription }) {
     const s = await getSettings();
-    const systemPrompt = `당신은 세계관의 사건을 분석하여 방향, 강도, 그리고 예고용 제목을 결정하는 AI입니다.
+    const systemPrompt = `당신은 'Tale of Heros' 세계관의 사건을 분석하여 방향, 강도, 그리고 예고용 제목을 결정하는 AI입니다.
 반드시 지정된 JSON 형식으로만 응답해야 하며, 다른 설명이나 마크다운은 절대 포함해서는 안 됩니다.
 
 [응답 형식]
@@ -331,16 +332,16 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const planRef = db.collection('stock_events').doc(`${doc.id}_${today}`);
 
       const worldInfo = (worldsData.worlds || []).find(w => w.id === stock.world_id)
-        || { id: stock.world_id, name: stock.world_name || stock.world_id || '', intro: '알려지지 않은 세계' };
+        || { id: stock.world_id, name: stock.world_name || stock.world_id || '', intro: '알려지지 않은 세계', detail: { lore_long: '' } };
 
       const idea = await (async () => {
         try {
-          // [수정] aiPickImpact 호출 시 stock.description 추가
+          // [수정] aiPickImpact 호출 시 stock.description과 worldInfo.detail.lore_long을 함께 전달
           const ai = await aiPickImpact({
             premise: `${stock.name} 관련 기업 소식 생성`,
             subjectName: stock.name,
             worldName: worldInfo.name,
-            subjectDescription: stock.description // <-- 이 줄이 추가되었습니다.
+            subjectDescription: `${stock.description}\n\n[배경 세계관 상세 설정]\n${worldInfo.detail?.lore_long || worldInfo.detail?.lore || ''}`
           });
           return ai;
         } catch (e) {
@@ -349,7 +350,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
         }
       })();
 
-      const numEvents = Math.floor(Math.random() * 3); // 0~2회
+       const numEvents = Math.floor(Math.random() * 3); // 0~2회
       const majorEvents = [];
       for (let i = 0; i < numEvents; i++) {
         const triggerMinute = Math.floor(Math.random() * ((24 * 60) - 10));
@@ -392,7 +393,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
     }
   });
-
+  
   // ==================================================================
   // 2) 1분 단위 가격 업데이트 (기업(개별 종목) 사건 반영)
   // ==================================================================
@@ -409,6 +410,10 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       return currentMinute >= t;
     };
 
+    // [추가] 함수 시작 시점에 세계관 정보를 미리 불러옵니다.
+    const worldsSnap = await db.collection('configs').doc('worlds').get();
+    const worldsData = worldsSnap.exists ? worldsSnap.data() : {};
+
     const stocksSnap = await db.collection('stocks').where('status', '==', 'listed').get();
 
     for (const stockDoc of stocksSnap.docs) {
@@ -417,6 +422,12 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
       const stockRef = stockDoc.ref;
       const planDocRef = db.collection('stock_events').doc(`${stockRef.id}_${today}`);
+      
+      // [추가] 현재 주식의 세계관 정보를 찾습니다.
+      const stockDataForLoop = stockDoc.data();
+      const worldInfoForLoop = (worldsData.worlds || []).find(w => w.id === stockDataForLoop.world_id) 
+        || { id: stockDataForLoop.world_id, name: stockDataForLoop.world_name || stockDataForLoop.world_id || '', detail: { lore_long: '' } };
+
 
       await db.runTransaction(async (tx) => {
         const [stockSnap, planSnap] = await Promise.all([tx.get(stockRef), tx.get(planDocRef)]);
@@ -557,25 +568,24 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       }
 
       // 메일: 결과
-     for (const job of postResultJobs) {
+      for (const job of postResultJobs) {
         try {
-          // [수정] 시스템 프롬프트를 훨씬 더 구체적이고 몰입감 있게 변경합니다.
+          // [수정] 시스템 프롬프트에 세계관 상세 정보 주입
           const systemPrompt = `당신은 'Tale of Heros' 세계관의 경제 뉴스 채널 'TNN(Tale News Network)' 소속의 노련한 경제 분석가입니다.
 모든 분석과 기사는 해당 세계관에 몰입하여, 마치 그 세상의 주민인 것처럼 작성해야 합니다.
 
+[배경 세계관: ${worldInfoForLoop.name}]
+${worldInfoForLoop.detail?.lore_long || worldInfoForLoop.detail?.lore || worldInfoForLoop.intro}
+
 [규칙]
 1.  절대로 '게임', '플레이어', '콘텐츠', '업데이트', '개발팀', '버그', '패치' 등 현실 세계의 게임 용어를 사용해서는 안 됩니다.
-    (X) "신규 콘텐츠 업데이트로 인해 재료 아이템의 수요가 급증했습니다."
-    (O) "최근 [지역 이름]에서 발견된 고대 유물 군락으로 인해, 탐험가들 사이에서 발굴 장비의 수요가 급증하고 있습니다."
 2.  결과는 반드시 다음 JSON 형식만을 사용해야 하며, 다른 설명은 절대 포함하지 마십시오.
     {
       "title_after": "사건의 결과를 요약하는 흥미로운 기사 제목 (40자 이내)",
       "body_after": "사건의 원인과 시장에 미친 영향을 분석하는 본문 (2~4문장의 단락)"
     }`;
-
-          // [수정] 유저 프롬프트의 용어를 약간 더 몰입감 있게 변경합니다. (선택 사항)
           const userPrompt = `사건 개요: ${job.premise}
-사전 예측: ${job.expected}
+예상: ${job.expected}
 실제 결과: ${job.actual}`;
           const resultRaw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
           const newsObj = safeJson(resultRaw, {});
