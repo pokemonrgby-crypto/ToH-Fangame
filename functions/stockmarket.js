@@ -257,23 +257,27 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
   }
 
   // ===== AI로 방향/강도 뽑기 (강도는 설정 범위로 clamp) =====
-  async function aiPickImpact({ premise, subjectName, worldName }) {
+  async function aiPickImpact({ premise, subjectName, worldName, subjectDescription }) {
     const s = await getSettings();
-    const systemPrompt = `역할: 사건의 방향과 강도를 결정하는 간단한 JSON만 반환한다. 마크다운/설명 금지.
-형식:
+    const systemPrompt = `당신은 세계관의 사건을 분석하여 방향, 강도, 그리고 예고용 제목을 결정하는 AI입니다.
+반드시 지정된 JSON 형식으로만 응답해야 하며, 다른 설명이나 마크다운은 절대 포함해서는 안 됩니다.
+
+[응답 형식]
 {
   "direction": "positive" | "negative",
   "magnitude": "tiny" | "small" | "medium" | "large" | "massive",
-  "title_before": "예고용 한국어 제목(<=40자)"
+  "title_before": "사건을 암시하는 흥미로운 예고용 제목 (한국어, 40자 이내)"
 }`;
-    const userPrompt = `사건 전말: ${premise}
-대상: ${subjectName ?? '해당 세계/기업'}
-세계: ${worldName ?? ''}
+    
+    // [수정] userPrompt에 '사건 대상 설명' 추가
+    const userPrompt = `## 분석 대상 정보
+- **세계관:** ${worldName ?? '알려지지 않음'}
+- **사건 대상:** ${subjectName ?? '해당 세계/기업'}
+- **사건 대상 설명:** ${subjectDescription ?? '알려지지 않음'}
+- **사건 개요:** ${premise}
 
-규칙:
-- 반드시 위 형식의 JSON만 출력.
-- direction은 둘 중 하나.
-- magnitude는 tiny/small/medium/large/massive 중 하나.`;
+## 지시사항
+위 정보를 바탕으로, 이 사건이 대상에게 미칠 영향의 방향(direction)과 강도(magnitude), 그리고 이 사건을 암시하는 예고용 제목(title_before)을 결정하여 JSON 형식으로 출력하십시오.`;
 
     const raw = await callGemini('gemini-2.5-flash', systemPrompt, userPrompt);
     const obj = safeJson(raw, {});
@@ -331,10 +335,12 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
       const idea = await (async () => {
         try {
+          // [수정] aiPickImpact 호출 시 stock.description 추가
           const ai = await aiPickImpact({
             premise: `${stock.name} 관련 기업 소식 생성`,
             subjectName: stock.name,
-            worldName: worldInfo.name
+            worldName: worldInfo.name,
+            subjectDescription: stock.description // <-- 이 줄이 추가되었습니다.
           });
           return ai;
         } catch (e) {
@@ -1089,10 +1095,25 @@ const nudgeBluechipsDaily = onSchedule({
     const today = dayStamp();
     const planRef = db.collection('stock_events').doc(`${stock_id}_${today}`);
 
+    // 주식 정보를 DB에서 조회하여 세계관 이름과 설명을 가져옵니다.
+    const stockSnap = await db.doc(`stocks/${stock_id}`).get();
+    if (!stockSnap.exists) {
+      throw new HttpsError('not-found', '해당 주식을 찾을 수 없습니다.');
+    }
+    const stock = stockSnap.data() || {};
+    const worldName = stock.world_name || stock.world_id || '알 수 없는 세계';
+    const description = stock.description || '알려지지 않음'; // [추가]
+
     // 강도도 AI에게 맡기되 settings 범위로 clamp
     let ai = { magnitude:'medium', title_before:'임시 제목' };
     try {
-      const tmp = await aiPickImpact({ premise, subjectName: stock_id });
+      // [수정] aiPickImpact 함수에 worldName과 description을 전달합니다.
+      const tmp = await aiPickImpact({ 
+        premise, 
+        subjectName: stock.name || stock_id, 
+        worldName,
+        subjectDescription: description // <-- 이 줄이 추가되었습니다.
+      });
       ai.magnitude = tmp.magnitude; ai.title_before = tmp.title_before;
     } catch {}
 
@@ -1107,6 +1128,7 @@ const nudgeBluechipsDaily = onSchedule({
     await planRef.set({ major_events: FieldValue.arrayUnion(newEvent) }, { merge: true });
     return { ok: true, event: newEvent };
   });
+
 
   const adminDelistAllAndRefund = onCall({ region: 'us-central1', timeoutSeconds: 540 }, async (req) => {
     const uid = req.auth?.uid;
