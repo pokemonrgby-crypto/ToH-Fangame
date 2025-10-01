@@ -25,7 +25,9 @@ export const routes = {
   '#/logs': () => import('./tabs/logs.js').then(m => (m.showLogs || m.default)()),
   '#/mail': () => import('./tabs/mail.js').then(m => (m.showMailbox || m.default)()),
   '#/manage': () => import('./tabs/manage.js').then(m => (m.showManage || m.default)()),
+  // [수정] 월드맵과 랜드 상세 라우트를 추가합니다.
   '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
+  '#/land': () => import('./tabs/land_detail.js').then(m => m.showLandDetail()),
 };
 
 export function highlightTab() {
@@ -33,8 +35,9 @@ export function highlightTab() {
   const mainRoute = '#/' + hash.split('/')[1];
   let tabName = mainRoute.substring(2);
 
-  if (tabName === 'economy' || tabName === 'market') {
-    tabName = 'plaza'; // 하단 바에서는 '광장' 아이콘을 활성화
+  // 'economy' 또는 'market' 탭에 있을 때 하단 바의 '광장' 아이콘을 활성화합니다.
+  if (['economy', 'market', 'worldmap', 'land'].includes(tabName)) {
+    tabName = 'plaza';
   }
 
   document.querySelectorAll('.bottombar a').forEach(a => {
@@ -43,13 +46,20 @@ export function highlightTab() {
 }
 
 export function router() {
+  // 기존 뷰의 클린업 함수가 있다면 호출 (메모리 누수 방지)
+  const view = document.getElementById('view');
+  if (view && view.__cleanup) {
+    try { view.__cleanup(); } catch(e) { console.error('View cleanup failed:', e); }
+    delete view.__cleanup;
+  }
   document.querySelector('.fixed-actions')?.remove();
+  
   const hash = location.hash || '#/home';
   
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
@@ -69,6 +79,7 @@ export function router() {
   }
 }
 
+// 앱 시작 시 한 번만 호출
 export function routeOnce() { 
   router(); 
 }
