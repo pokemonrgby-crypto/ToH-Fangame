@@ -12,7 +12,8 @@ module.exports = (admin) => {
   const loadMicroLegend = async () => {
     if (microLegend) return microLegend;
     try {
-        const legendPath = path.join(__dirname, '../public/assets/micro_legend.json');
+        // [수정] 파일 경로를 functions 폴더 내부로 변경
+        const legendPath = path.join(__dirname, './assets/micro_legend.json');
         const data = await fs.readFile(legendPath, 'utf8');
         microLegend = JSON.parse(data);
         return microLegend;
@@ -53,7 +54,8 @@ module.exports = (admin) => {
     
     // 3. plotId가 있으면, 해당 이름의 사전 제작 파일을 먼저 찾습니다.
     if (plotId) {
-        const plotPath = `../public/assets/mapdata/${mapId.split('_')[0]}/plots/${plotId}.json`;
+        // [수정] 파일 경로를 functions 폴더 내부로 변경
+        const plotPath = `./assets/mapdata/${mapId.split('_')[0]}/plots/${plotId}.json`;
         try {
             const plotData = await fs.readFile(path.join(__dirname, plotPath), 'utf8');
             microGrid = JSON.parse(plotData).pattern;
