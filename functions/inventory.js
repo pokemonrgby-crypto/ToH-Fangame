@@ -32,6 +32,87 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   }
 
 
+  // [수정] 프롬프트 아이템 사용 함수
+  const usePromptItem = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+    const { itemId, userPrompt } = req.data;
+    if (!itemId || !userPrompt) {
+      throw new HttpsError('invalid-argument', '아이템 ID와 프롬프트가 필요합니다.');
+    }
+    if (userPrompt.length > 300) {
+      throw new HttpsError('invalid-argument', '프롬프트는 300자 이내로 작성해주세요.');
+    }
+
+    const userRef = db.doc(`users/${uid}`);
+
+    return await db.runTransaction(async (tx) => {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+      
+      const items = userSnap.data()?.items_all || [];
+      const itemIndex = items.findIndex(it => it.id === itemId);
+
+      if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
+      
+      const item = items[itemIndex];
+      if (item.isPromptUse !== true) {
+        throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
+      }
+
+      // ▼▼▼ [핵심 수정] ▼▼▼
+      // 아이템에 지정된 promptId를 사용하고, 없으면 기본값('prompt_item_system')을 사용합니다.
+      const promptId = item.promptId || 'prompt_item_system';
+      
+      const promptsSnap = await tx.get(db.doc('configs/prompts'));
+      const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.[promptId] : '';
+      if (!systemPrompt) {
+        throw new HttpsError('internal', `'${promptId}' ID에 해당하는 시스템 프롬프트를 찾을 수 없습니다.`);
+      }
+      // ▲▲▲ [핵심 수정] ▲▲▲
+      
+      const aiUserPrompt = JSON.stringify({
+        baseItem: item,
+        userRequest: userPrompt
+      });
+
+      let generatedItem;
+      try {
+        const aiResponseRaw = await _callGemini(systemPrompt, aiUserPrompt);
+        const parsedResponse = JSON.parse(aiResponseRaw);
+
+        if (!parsedResponse.name || !parsedResponse.rarity || !parsedResponse.description) {
+            throw new Error('AI가 유효한 아이템 데이터를 생성하지 않았습니다.');
+        }
+        
+        generatedItem = {
+            id: `item_gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: String(parsedResponse.name),
+            rarity: String(parsedResponse.rarity),
+            description: String(parsedResponse.description),
+            isConsumable: parsedResponse.isConsumable === true,
+            uses: Number(parsedResponse.uses) || 1,
+            ...parsedResponse.properties,
+            createdByPrompt: true
+        };
+
+      } catch (e) {
+        logger.error(`[usePromptItem] AI item generation failed for user ${uid}, item ${itemId}:`, e);
+        throw new HttpsError('internal', `AI 아이템 생성에 실패했습니다: ${e.message}`);
+      }
+      
+      items.splice(itemIndex, 1);
+      items.push(generatedItem);
+
+      tx.update(userRef, { items_all: items });
+
+      logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
+      return { ok: true, newItem: generatedItem };
+    });
+  });
+
+
 
 // [신규] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
 // [최종 수정] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
@@ -213,5 +294,6 @@ function normalizeAppraisalResult(generated, baseItem) {
   return {
     toggleItemLock,
     appraiseItem, // 새로 추가된 함수 export
+    usePromptItem,
   };
 };
