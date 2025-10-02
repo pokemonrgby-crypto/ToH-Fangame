@@ -30,16 +30,33 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
     return text;
   }
+  
+  // 검증을 위해 functions/assets/items.json 파일을 로드하는 헬퍼
+  let allItemsCache = null;
+  const loadAllItems = async () => {
+      if (allItemsCache) return allItemsCache;
+      try {
+          const itemsPath = path.join(__dirname, './assets/items.json');
+          const data = await fs.readFile(itemsPath, 'utf8');
+          allItemsCache = JSON.parse(data);
+          return allItemsCache;
+      } catch (error) {
+          logger.error("Failed to load items.json for validation", error);
+          return {};
+      }
+  };
 
-
-  // [수정] 프롬프트 아이템 사용 함수
+  // [전체 교체] 프롬프트 아이템 사용 함수 (AI 호출 + 강력한 서버 검증)
   const usePromptItem = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const { itemId, newItemData } = req.data;
-    if (!itemId || !newItemData) {
-        throw new HttpsError('invalid-argument', '아이템 ID와 생성할 아이템 데이터가 필요합니다.');
+    const { itemId, userPrompt } = req.data;
+    if (!itemId || !userPrompt) {
+      throw new HttpsError('invalid-argument', '아이템 ID와 프롬프트가 필요합니다.');
+    }
+    if (userPrompt.length > 300) {
+      throw new HttpsError('invalid-argument', '프롬프트는 300자 이내로 작성해주세요.');
     }
 
     const allItems = await loadAllItems();
@@ -48,66 +65,83 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const userRef = db.doc(`users/${uid}`);
 
     return await db.runTransaction(async (tx) => {
-        const userSnap = await tx.get(userRef);
-        if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+      
+      const items = userSnap.data()?.items_all || [];
+      const itemIndex = items.findIndex(it => it.id === itemId);
 
-        const items = userSnap.data()?.items_all || [];
-        const itemIndex = items.findIndex(it => it.id === itemId);
+      if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
+      
+      const baseItem = items[itemIndex];
+      if (baseItem.isPromptUse !== true) {
+        throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
+      }
 
-        if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
+      const promptId = baseItem.promptId || 'custom_seed_system';
+      const promptsSnap = await tx.get(db.doc('configs/prompts'));
+      const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.[promptId] : '';
+      if (!systemPrompt) {
+        throw new HttpsError('internal', `'${promptId}' ID에 해당하는 시스템 프롬프트를 찾을 수 없습니다.`);
+      }
+      
+      const aiUserPrompt = JSON.stringify({
+        baseItem: baseItem,
+        userRequest: userPrompt
+      });
 
-        const baseItem = items[itemIndex];
-        if (baseItem.isPromptUse !== true) {
-            throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
-        }
-
-        // --- 입력 데이터 검증 ---
+      let generatedItem;
+      try {
+        const aiResponseRaw = await _callGemini(systemPrompt, aiUserPrompt);
+        const parsedResponse = JSON.parse(aiResponseRaw);
+        
+        // --- AI 응답 데이터 검증 ---
         const rarity = baseItem.rarity || 'normal';
         const rules = {
-            normal: { growthTime: [10, 60], aestheticValue: [10, 50], harvestRanks: [1, 2] },
-            rare:   { growthTime: [60, 300], aestheticValue: [20, 150], harvestRanks: [1, 2, 3] },
-            epic:   { growthTime: [300, 1440], aestheticValue: [30, 400], harvestRanks: [2, 3, 4] },
-            legend: { growthTime: [720, 1440], aestheticValue: [40, 1000], harvestRanks: [3, 4, 5] },
-            myth:   { growthTime: [1080, 1440], aestheticValue: [100, 2500], harvestRanks: [4, 5, 6] },
-            aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000], harvestRanks: [5, 6] }
-        }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50], harvestRanks: [1,2] };
+            normal: { growthTime: [10, 60], aestheticValue: [10, 50] },
+            rare:   { growthTime: [60, 300], aestheticValue: [20, 150] },
+            epic:   { growthTime: [300, 1440], aestheticValue: [30, 400] },
+            legend: { growthTime: [720, 1440], aestheticValue: [40, 1000] },
+            myth:   { growthTime: [1080, 1440], aestheticValue: [100, 2500] },
+            aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000] }
+        }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50] };
 
-        const data = newItemData;
-        if (!data.name || data.name.length > 50) throw new HttpsError('invalid-argument', '이름이 유효하지 않습니다.');
-        if (!data.description || data.description.length > 500) throw new HttpsError('invalid-argument', '설명이 유효하지 않습니다.');
+        const data = parsedResponse;
+        if (!data.name || data.name.length > 50) throw new Error('AI가 생성한 이름이 유효하지 않습니다.');
+        if (!data.description || data.description.length > 500) throw new Error('AI가 생성한 설명이 유효하지 않습니다.');
 
         const growth = Number(data.growthTimeMinutes);
-        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new HttpsError('invalid-argument', `성장 시간은 ${rules.growthTime[0]}~${rules.growthTime[1]}분 사이여야 합니다.`);
+        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new Error(`AI가 생성한 성장 시간이 규칙에 맞지 않습니다. (범위: ${rules.growthTime[0]}~${rules.growthTime[1]})`);
         
         const aesthetic = Number(data.aestheticValue);
-        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new HttpsError('invalid-argument', `미관 점수는 ${rules.aestheticValue[0]}~${rules.aestheticValue[1]} 사이여야 합니다.`);
+        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new Error(`AI가 생성한 미관 점수가 규칙에 맞지 않습니다. (범위: ${rules.aestheticValue[0]}~${rules.aestheticValue[1]})`);
 
-        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new HttpsError('invalid-argument', '수확물은 1~3개여야 합니다.');
-        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new HttpsError('invalid-argument', '확정 수확물(확률 100%)은 반드시 1개여야 합니다.');
+        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new Error('AI가 생성한 수확물 테이블이 유효하지 않습니다. (1~3개 필요)');
+        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new Error('AI가 생성한 확정 수확물(확률 100%)이 1개가 아닙니다.');
 
         for (const h of data.harvest) {
             const harvestItemInfo = allItems[h.itemId];
-            if (!harvestItemInfo) throw new HttpsError('invalid-argument', `존재하지 않는 수확 아이템 ID: ${h.itemId}`);
+            if (!harvestItemInfo) throw new Error(`AI가 존재하지 않는 아이템 ID를 생성했습니다: ${h.itemId}`);
             
             const harvestRarity = harvestItemInfo.rarity;
             const harvestRank = RARITY_RANK[harvestRarity] || 0;
             const baseRank = RARITY_RANK[rarity] || 0;
 
-            if (h.probability === 1.0) { // 확정 드랍
-                if (harvestRank !== baseRank) throw new HttpsError('invalid-argument', `확정 수확물은 '${rarity}' 등급이어야 합니다.`);
-                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new HttpsError('invalid-argument', '확정 수확물의 수량(min/max)이 규칙에 맞지 않습니다.');
-            } else { // 추가 드랍
-                if (harvestRank > baseRank + 1) throw new HttpsError('invalid-argument', `추가 수확물은 기반 아이템보다 최대 한 등급 높은 아이템까지만 가능합니다.`);
+            if (h.probability === 1.0) {
+                if (harvestRank !== baseRank) throw new Error(`AI가 생성한 확정 수확물의 등급이 '${rarity}'가 아닙니다.`);
+                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new Error('AI가 생성한 확정 수확물의 수량이 규칙에 맞지 않습니다.');
+            } else {
+                if (harvestRank > baseRank + 1) throw new Error(`AI가 생성한 추가 수확물의 등급이 너무 높습니다.`);
                 if (harvestRank === baseRank + 1) {
-                    if (h.probability > 0.01) throw new HttpsError('invalid-argument', '한 등급 높은 아이템의 확률은 1%를 넘을 수 없습니다.');
-                    if (h.max > 1) throw new HttpsError('invalid-argument', '한 등급 높은 아이템의 최대 수확량은 1개여야 합니다.');
+                    if (h.probability > 0.01) throw new Error('AI가 생성한 한 등급 높은 아이템의 확률이 1%를 초과합니다.');
+                    if (h.max > 1) throw new Error('AI가 생성한 한 등급 높은 아이템의 최대 수확량이 1을 초과합니다.');
                 }
-                if (h.min !== 1 || h.max !== 1) throw new HttpsError('invalid-argument', '추가 수확물의 수량(min/max)은 반드시 1이어야 합니다.');
+                if (h.min !== 1 || h.max !== 1) throw new Error('AI가 생성한 추가 수확물의 수량은 1이어야 합니다.');
             }
         }
         
         // --- 검증 통과, 새 아이템 생성 ---
-        const generatedItem = {
+        generatedItem = {
             id: `item_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             name: data.name,
             rarity: rarity,
@@ -131,21 +165,24 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             createdByPrompt: true
         };
 
-        // 소모성 아이템 수량 차감 또는 제거
-        if (baseItem.uses > 1) {
-            items[itemIndex].uses -= 1;
-        } else {
-            items.splice(itemIndex, 1);
-        }
-        items.push(generatedItem);
+      } catch (e) {
+        logger.error(`[usePromptItem] AI item generation or validation failed for user ${uid}, item ${itemId}:`, e);
+        throw new HttpsError('internal', `AI 아이템 생성 또는 검증에 실패했습니다. 프롬프트를 수정하여 다시 시도해주세요. (오류: ${e.message})`);
+      }
+      
+      if (baseItem.uses > 1) {
+        items[itemIndex].uses -= 1;
+      } else {
+        items.splice(itemIndex, 1);
+      }
+      items.push(generatedItem);
 
-        tx.update(userRef, { items_all: items });
+      tx.update(userRef, { items_all: items });
 
-        logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
-        return { ok: true, newItem: generatedItem };
+      logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
+      return { ok: true, newItem: generatedItem };
     });
   });
-
 
 
 
