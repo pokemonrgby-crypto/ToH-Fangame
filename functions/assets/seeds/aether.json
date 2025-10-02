@@ -1,0 +1,30 @@
+[
+  {
+    "id": "seed_of_origin",
+    "name": "태초의 씨앗",
+    "price": 25000,
+    "description": "모든 생명이 시작되었다고 전해지는 '생명의 근원'에서 직접 채취한 씨앗. 무엇으로 자라날지, 어떤 가능성을 품고 있는지 아무도 알 수 없다.",
+    "rarity": "aether",
+    "growthTimeMinutes": 43200,
+    "isPerennial": false,
+    "placeable": true,
+    "aestheticValue": 10000,
+    "harvest": [
+      { "itemId": "essence_of_creation", "min": 1, "max": 1, "probability": 1.0 }
+    ]
+  },
+  {
+    "id": "fragment_of_nothingness",
+    "name": "무(無)의 파편",
+    "price": 30000,
+    "description": "모든 것이 사라진 공허에서 발견된 존재하지 않는 물질의 결정. 땅에 심으면 주변의 현실을 침식하며 자라나, 모든 것을 무로 되돌리는 힘을 응축한다.",
+    "rarity": "aether",
+    "growthTimeMinutes": 57600,
+    "isPerennial": false,
+    "placeable": true,
+    "aestheticValue": 12000,
+    "harvest": [
+      { "itemId": "oblivion_crystal", "min": 1, "max": 1, "probability": 1.0 }
+    ]
+  }
+]
