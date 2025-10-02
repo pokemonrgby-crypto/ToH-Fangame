@@ -44,6 +44,7 @@ module.exports = (admin) => {
   };
 
 
+  // [수정] 관리자용 씨앗 구매 함수 (중첩 로직 및 새 데이터 구조 적용)
   const buySeed = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자만 씨앗을 구매할 수 있습니다.');
@@ -88,20 +89,20 @@ module.exports = (admin) => {
                 isConsumable: true,
                 uses: nQty,
                 type: 'seed',
-                placeable: seedInfo.placeable ?? true, // 👈 [수정] 기본값 true 추가
+                placeable: seedInfo.placeable ?? true,
                 ...(seedInfo.mutation && { mutation: seedInfo.mutation }),
                 ...(seedInfo.isPromptUse && { isPromptUse: true, promptId: seedInfo.promptId }),
                 seedInfo: {
                     id: seedInfo.id,
-                    growthTimeMinutes: seedInfo.growthTimeMinutes,
-                    harvest: seedInfo.harvest,
-                    isPerennial: seedInfo.isPerennial,
+                    growthTimeMinutes: seedInfo.growthTimeMinutes ?? 30,      // 👈 [수정] 기본값 30 추가
+                    harvest: seedInfo.harvest ?? [],                          // 👈 [수정] 기본값 [] 추가
+                    isPerennial: seedInfo.isPerennial ?? false,               // 👈 [수정] 기본값 false 추가
                 },
                 properties: {
                     appraised: true,
                     category: 'gardening',
-                    placeable: seedInfo.placeable ?? true, // 👈 [수정] 기본값 true 추가
-                    aestheticValue: seedInfo.aestheticValue,
+                    placeable: seedInfo.placeable ?? true,
+                    aestheticValue: seedInfo.aestheticValue ?? 10,            // 👈 [수정] 기본값 10 추가
                 }
             };
             items.push(newSeedItem);
