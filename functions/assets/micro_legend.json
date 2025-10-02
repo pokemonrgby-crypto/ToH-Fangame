@@ -5,14 +5,17 @@
     "sr": { "name": "보도블럭", "color": "#A9A9A9", "buildable": true, "build_conditions": "상업 건물만 가능" },
     "r": { "name": "도로", "color": "#888", "buildable": false },
     "w": { "name": "물", "color": "#76A2C2", "buildable": false },
-    "t": { "name": "나무", "color": "#5A7F5E", "buildable": false, "clearable": true }
+    "t": { "name": "나무", "color": "#5A7F5E", "buildable": false, "clearable": true },
+    "mi": { "name": "광산 입구", "color": "#4E4843", "buildable": false },
+    "cv": { "name": "동굴", "color": "#333", "buildable": false },
+    "rk": { "name": "바위", "color": "#6F6860", "buildable": false }
   },
   "blueprints": {
     "n": { "name": "일반 토양", "base": "g", "composition": [{ "type": "d", "density": 0.3 }, { "type": "t", "density": 0.1 }] },
     "b": { "name": "비옥한 토양", "base": "d", "composition": [] },
-    "f": { "name": "숲", "base": "g", "composition": [{ "type": "t", "density": 0.8 }] },
-    "M": { "name": "산", "base": "d", "composition": [] },
-    "m": { "name": "광산", "base": "d", "composition": [] },
-    "d": { "name": "척박한 토양", "base": "d", "composition": [] }
+    "f": { "name": "숲", "base": "g", "composition": [{ "type": "t", "density": 0.7 }, { "type": "d", "density": 0.1 }] },
+    "M": { "name": "산", "base": "d", "composition": [{ "type": "rk", "density": 0.4 }] },
+    "m": { "name": "광산", "base": "cv", "composition": [{ "type": "rk", "density": 0.6 }] },
+    "d": { "name": "척박한 토양", "base": "d", "composition": [{ "type": "rk", "density": 0.15 }] }
   }
 }
