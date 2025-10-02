@@ -80,8 +80,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       // 1. 시스템 프롬프트 로드
       const promptsSnap = await tx.get(db.doc('configs/prompts'));
-      const systemPrompt = promptsSnap.exists() ? promptsSnap.data()?.[baseItem.promptId] : '';
+      // [수정] .exists()를 .exists로 변경
+      const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.[baseItem.promptId] : '';
       if (!systemPrompt) throw new HttpsError('internal', `시스템 프롬프트(${baseItem.promptId})를 찾을 수 없습니다.`);
+      
+      // (이하 코드 동일)
       
       // 2. AI 호출을 위한 입력 데이터 구성
       const aiUserInput = JSON.stringify({
