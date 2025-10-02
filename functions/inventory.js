@@ -1,4 +1,7 @@
 // /functions/inventory.js
+const fs = require('fs').promises;
+const path = require('path');
+
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
 
