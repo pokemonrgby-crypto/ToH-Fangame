@@ -231,6 +231,7 @@ function economyTpl() {
         <button class="manage-tab active" data-subtab="company">주식회사 관리</button>
         <button class="manage-tab" data-subtab="event">개별 사건 관리</button>
         <button class="manage-tab" data-subtab="world-event">세계관 사건 관리</button>
+        <button class="manage-tab" data-subtab="random-event">랜덤 사건 생성</button>
         <button class="manage-tab" data-subtab="emergency">일괄 폐지/가격상향</button>
     </div>
     <div id="economy-sub-content" class="manage-card" style="border-top-left-radius:0;"></div>
@@ -315,6 +316,41 @@ function economyEmergencyTpl() {
       </div>
     </div>
   `;
+}
+
+function economyRandomEventTpl() {
+  return `
+    <h5 style="margin-top:0;">랜덤 주식회사 사건 생성</h5>
+    <div class="manage-hint">버튼을 클릭하면 상장된 모든 주식회사 중 하나를 무작위로 선택하여, 긍정 또는 부정 사건을 즉시 생성하고 오늘 날짜의 이벤트 목록에 추가합니다.</div>
+    <div class="manage-col" style="margin-top: 12px;">
+      <div class="manage-row" style="justify-content:flex-end">
+        <button id="btn-create-random-event" class="btn primary">랜덤 사건 즉시 생성</button>
+      </div>
+    </div>
+  `;
+}
+
+async function bindRandomEventEvents() {
+    const btn = document.getElementById('btn-create-random-event');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+        if (!confirm('정말로 무작위 사건을 생성하시겠습니까? 이 작업은 즉시 반영됩니다.')) return;
+
+        btn.disabled = true;
+        btn.textContent = '생성 중...';
+        try {
+            const createRandomEventFn = httpsCallable(func, 'adminCreateRandomEvent');
+            const res = await createRandomEventFn();
+            const d = res?.data || {};
+            showToast(d.message || '랜덤 사건이 생성되었습니다.');
+        } catch (e) {
+            showToast(`실패: ${e.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '랜덤 사건 즉시 생성';
+        }
+    });
 }
 
 function economyWorldEventTpl() {
@@ -694,6 +730,9 @@ function bindEconomyEvents() {
         } else if (subTabId === 'world-event') {
             content.innerHTML = economyWorldEventTpl();
             bindWorldEventEvents();
+        } else if (subTabId === 'random-event') { // 이 부분을 추가합니다.
+            content.innerHTML = economyRandomEventTpl();
+            bindRandomEventEvents();
         }
     };
 
