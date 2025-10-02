@@ -1,0 +1,52 @@
+[
+  {
+    "id": "singing_crystal_seed",
+    "name": "노래하는 수정 씨앗",
+    "price": 500,
+    "description": "기원: 고대의 정령들이 바람의 노래를 담아 굳혔다는 수정의 파편. 땅에 심으면 수정 기둥으로 자라나며, 주변의 모든 소리를 아름다운 화음으로 바꾼다. 기둥이 완성되면 스스로 공명하며 노래하는 수정 파편을 뱉어낸다.",
+    "rarity": "legend",
+    "growthTimeMinutes": 4320,
+    "isPerennial": true,
+    "placeable": true,
+    "aestheticValue": 500,
+    "harvest": [
+      { "itemId": "singing_crystal_shard", "min": 1, "max": 2, "probability": 1.0 },
+      { "itemId": "aether_core_fragment", "min": 1, "max": 1, "probability": 0.001 }
+    ],
+    "mutation": {
+      "probability": 0.005,
+      "mysteriousSeed": {
+        "name": "태초의 합창 씨앗",
+        "basePrompt": "정령들의 노래뿐만 아니라 세계의 창조의 메아리까지 머금은 수정 씨앗. 단순한 파편이 아닌, 살아있는 정령을 탄생시킬지도 모른다."
+      }
+    }
+  },
+  {
+    "id": "golden_apple_seed",
+    "name": "황금사과 씨앗",
+    "price": 750,
+    "description": "신들의 정원에서만 열린다는 전설적인 황금사과의 씨앗. 한 입 베어 물면 젊음을 되찾는다고 전해진다.",
+    "rarity": "legend",
+    "growthTimeMinutes": 7200,
+    "isPerennial": false,
+    "placeable": true,
+    "aestheticValue": 800,
+    "harvest": [
+      { "itemId": "golden_apple", "min": 1, "max": 1, "probability": 0.9 }
+    ]
+  },
+  {
+    "id": "world_tree_sapling_fragment",
+    "name": "세계수 묘목의 파편",
+    "price": 1200,
+    "description": "모든 생명의 근원인 세계수의 작은 가지. 땅에 심으면 주변의 마나를 정화하고 작은 세계수의 형상으로 자라난다.",
+    "rarity": "legend",
+    "growthTimeMinutes": 10080,
+    "isPerennial": true,
+    "placeable": true,
+    "aestheticValue": 1500,
+    "harvest": [
+      { "itemId": "dew_of_world_tree", "min": 1, "max": 3, "probability": 1.0 }
+    ]
+  }
+]
