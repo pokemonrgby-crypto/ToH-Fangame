@@ -1,5 +1,5 @@
 // /public/js/tabs/land_detail.js
-import { func, auth } from '../api/firebase.js';
+import { func, auth, db, fx } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { isAdminCached, ensureAdmin } from '../api/admin.js';
 import { buyMicroPlot, sellMicroPlot } from '../api/land.js';
@@ -37,21 +37,25 @@ async function getMicroLegend() {
     }
 }
 
-// [신규] 클라이언트 측 가격 계산 함수
-function calculateLandPrice(tileType, microTileType, legend) {
+function calculateLandPrice(tileType, microTileType, legend, floatingPopulation) {
     const basePrice = { s: 500, l: 700, M: 2000, m: 3000, f: 1200, n: 1000, b: 1500, d: 800, r: 2500, R: 5000 }[tileType] || 1000;
     const microInfo = legend.micro_tile_legend[microTileType] || {};
     const microMultiplier = microInfo.buildable ? 1.2 : 0.8;
-    return Math.floor(basePrice * microMultiplier);
+    const populationBonus = Math.floor(basePrice * (floatingPopulation / 100)); // 유동인구 1명당 1% 가격 보너스
+    return Math.floor(basePrice * microMultiplier) + populationBonus;
 }
 
 
-// [신규] 마이크로 플롯 상세 정보 및 거래 모달
-async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin }) {
+async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin, floatingPopulation }) {
   ensureModalCss();
-
-  const price = calculateLandPrice(landInfo.tile.type, tileInfo.type, await getMicroLegend());
+  const legend = await getMicroLegend();
+  const price = calculateLandPrice(landInfo.tile.type, tileInfo.type, legend, floatingPopulation);
   const isOwner = ownerData?.owner_uid === auth.currentUser.uid;
+  const macroTileInfo = landInfo.tile;
+
+  // 최종 건설/농사 가능 여부 판단
+  const canBuild = (macroTileInfo.buildable !== false) && (tileInfo.buildable !== false);
+  const canFarm = (macroTileInfo.can_farm === true) && (tileInfo.can_farm !== false);
 
   const back = document.createElement('div');
   back.className = 'modal-back';
@@ -69,6 +73,10 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
         <div class="row" style="justify-content:space-between;"><span>소유자</span> <b>${ownerData ? esc(ownerData.ownerName) : '없음'}</b></div>
         <div class="row" style="justify-content:space-between; margin-top:8px;"><span>예상 가격</span> <b>🪙 ${price.toLocaleString()}</b></div>
         ${ownerData ? `<div class="row" style="justify-content:space-between; margin-top:8px;"><span>판매 시 환급액 (80%)</span> <b>🪙 ${Math.floor(price * 0.8).toLocaleString()}</b></div>` : ''}
+        <hr style="margin:12px 0; border-color: #273247;">
+        <div class="row" style="justify-content:space-between;"><span>건설 가능</span> <b>${canBuild ? '✔ 가능' : '❌ 불가능'}</b></div>
+        <div class="row" style="justify-content:space-between; margin-top:8px;"><span>농사 가능</span> <b>${canFarm ? '✔ 가능' : '❌ 불가능'}</b></div>
+        <div class="row" style="justify-content:space-between; margin-top:8px;"><span>유동 인구</span> <b>~${floatingPopulation} 명/시간</b></div>
       </div>
       
       <div id="modal-actions" style="margin-top:16px; display:flex; justify-content:flex-end; gap:8px;"></div>
@@ -83,6 +91,16 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
     const actionsContainer = back.querySelector('#modal-actions');
     if (ownerData) {
       if (isOwner) {
+        // [신규] 토지 관리 버튼
+        const manageBtn = document.createElement('button');
+        manageBtn.className = 'btn';
+        manageBtn.textContent = '토지 관리';
+        manageBtn.onclick = () => {
+          location.hash = `#/farm/${landInfo.mapId}/${landInfo.x}/${landInfo.y}/${microX}/${microY}`;
+          closeModal();
+        };
+        actionsContainer.appendChild(manageBtn);
+
         const sellBtn = document.createElement('button');
         sellBtn.className = 'btn danger';
         sellBtn.textContent = '판매하기';
@@ -92,7 +110,7 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
               await sellMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY });
               showToast('토지를 판매했습니다.');
               closeModal();
-              showLandDetail(); // 화면 새로고침
+              showLandDetail();
             } catch (e) { showToast(`판매 실패: ${e.message}`); }
           }
         };
@@ -108,7 +126,7 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
             await buyMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY, tileType: landInfo.tile.type, microTileType: tileInfo.type });
             showToast('토지를 구매했습니다.');
             closeModal();
-            showLandDetail(); // 화면 새로고침
+            showLandDetail();
           } catch (e) { showToast(`구매 실패: ${e.message}`); }
         }
       };
@@ -189,7 +207,7 @@ export async function showLandDetail() {
         const tileInfo = { type: microTileType, ...(legend[microTileType] || {}) };
         const ownerData = data.owners?.[`${microY}_${microX}`] || null;
         
-        showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin });
+        showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin, floatingPopulation: data.floatingPopulation });
       });
     });
 
