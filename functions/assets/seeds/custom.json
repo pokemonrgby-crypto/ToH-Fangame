@@ -5,6 +5,7 @@
     "price": 20,
     "description": "사용자의 프롬프트를 기반으로 새로운 Normal 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "normal",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_normal"
   },
@@ -14,6 +15,7 @@
     "price": 100,
     "description": "사용자의 프롬프트를 기반으로 새로운 Normal 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "normal",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_normal_perennial"
   },
@@ -23,6 +25,7 @@
     "price": 120,
     "description": "사용자의 프롬프트를 기반으로 새로운 Rare 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "rare",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_rare"
   },
@@ -32,6 +35,7 @@
     "price": 600,
     "description": "사용자의 프롬프트를 기반으로 새로운 Rare 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "rare",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_rare_perennial"
   },
@@ -41,6 +45,7 @@
     "price": 500,
     "description": "사용자의 프롬프트를 기반으로 새로운 Epic 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "epic",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_epic"
   },
@@ -50,6 +55,7 @@
     "price": 3000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Epic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "epic",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_epic_perennial"
   },
@@ -59,6 +65,7 @@
     "price": 1200,
     "description": "사용자의 프롬프트를 기반으로 새로운 Legendary 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "legend",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_legend"
   },
@@ -68,6 +75,7 @@
     "price": 6000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Legendary 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "legend",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_legend_perennial"
   },
@@ -77,6 +85,7 @@
     "price": 2000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Mythic 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "myth",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_myth"
   },
@@ -86,6 +95,7 @@
     "price": 10000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Mythic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "myth",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_myth_perennial"
   },
@@ -95,6 +105,7 @@
     "price": 3000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Aether 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "aether",
+    "isPerennial": false,
     "isPromptUse": true,
     "promptId": "custom_seed_system_aether"
   },
@@ -104,6 +115,7 @@
     "price": 15000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Aether 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "aether",
+    "isPerennial": true,
     "isPromptUse": true,
     "promptId": "custom_seed_system_aether_perennial"
   }
