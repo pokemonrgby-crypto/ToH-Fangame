@@ -49,17 +49,20 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       }
   };
 
-  // [전체 교체] 프롬프트 아이템 사용 함수 (AI 호출 + 강력한 서버 검증)
+  // [핵심 수정] 프롬프트 아이템 사용 함수 (사용자 입력 기반 + 강력한 서버 검증)
   const usePromptItem = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const { itemId, userPrompt } = req.data;
-    if (!itemId || !userPrompt) {
-      throw new HttpsError('invalid-argument', '아이템 ID와 프롬프트가 필요합니다.');
+    // 프론트에서 `newItemData` 객체를 직접 받습니다.
+    const { itemId, newItemData } = req.data;
+    if (!itemId || !newItemData) {
+      throw new HttpsError('invalid-argument', '아이템 ID와 생성할 씨앗 데이터가 필요합니다.');
     }
-    if (userPrompt.length > 300) {
-      throw new HttpsError('invalid-argument', '프롬프트는 300자 이내로 작성해주세요.');
+    
+    // 간단한 입력값 길이 검사
+    if ((newItemData.name || '').length > 50 || (newItemData.description || '').length > 500) {
+        throw new HttpsError('invalid-argument', '이름 또는 설명이 너무 깁니다.');
     }
 
     const allItems = await loadAllItems();
@@ -81,24 +84,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
       }
 
-      const promptId = baseItem.promptId || 'custom_seed_system';
-      const promptsSnap = await tx.get(db.doc('configs/prompts'));
-      const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.[promptId] : '';
-      if (!systemPrompt) {
-        throw new HttpsError('internal', `'${promptId}' ID에 해당하는 시스템 프롬프트를 찾을 수 없습니다.`);
-      }
-      
-      const aiUserPrompt = JSON.stringify({
-        baseItem: baseItem,
-        userRequest: userPrompt
-      });
-
       let generatedItem;
       try {
-        const aiResponseRaw = await _callGemini(systemPrompt, aiUserPrompt);
-        const parsedResponse = JSON.parse(aiResponseRaw);
-        
-        // --- AI 응답 데이터 검증 ---
+        // --- 사용자 입력 데이터 검증 (기존 AI 응답 검증 로직 재사용) ---
         const rarity = baseItem.rarity || 'normal';
         const rules = {
             normal: { growthTime: [10, 60], aestheticValue: [10, 50] },
@@ -109,37 +97,37 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000] }
         }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50] };
 
-        const data = parsedResponse;
-        if (!data.name || data.name.length > 50) throw new Error('AI가 생성한 이름이 유효하지 않습니다.');
-        if (!data.description || data.description.length > 500) throw new Error('AI가 생성한 설명이 유효하지 않습니다.');
+        const data = newItemData; // AI 응답 대신 사용자 데이터를 직접 사용
+        if (!data.name || data.name.length > 50) throw new Error('입력한 이름이 유효하지 않습니다.');
+        if (!data.description || data.description.length > 500) throw new Error('입력한 설명이 유효하지 않습니다.');
 
         const growth = Number(data.growthTimeMinutes);
-        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new Error(`AI가 생성한 성장 시간이 규칙에 맞지 않습니다. (범위: ${rules.growthTime[0]}~${rules.growthTime[1]})`);
+        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new Error(`성장 시간이 규칙에 맞지 않습니다. (허용: ${rules.growthTime[0]}~${rules.growthTime[1]})`);
         
         const aesthetic = Number(data.aestheticValue);
-        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new Error(`AI가 생성한 미관 점수가 규칙에 맞지 않습니다. (범위: ${rules.aestheticValue[0]}~${rules.aestheticValue[1]})`);
+        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new Error(`미관 점수가 규칙에 맞지 않습니다. (허용: ${rules.aestheticValue[0]}~${rules.aestheticValue[1]})`);
 
-        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new Error('AI가 생성한 수확물 테이블이 유효하지 않습니다. (1~3개 필요)');
-        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new Error('AI가 생성한 확정 수확물(확률 100%)이 1개가 아닙니다.');
+        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new Error('수확물 테이블이 유효하지 않습니다. (1~3개 필요)');
+        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new Error('확정 수확물(확률 100%)은 반드시 1개여야 합니다.');
 
         for (const h of data.harvest) {
             const harvestItemInfo = allItems[h.itemId];
-            if (!harvestItemInfo) throw new Error(`AI가 존재하지 않는 아이템 ID를 생성했습니다: ${h.itemId}`);
+            if (!harvestItemInfo) throw new Error(`존재하지 않는 아이템 ID를 수확물로 설정했습니다: ${h.itemId}`);
             
             const harvestRarity = harvestItemInfo.rarity;
             const harvestRank = RARITY_RANK[harvestRarity] || 0;
             const baseRank = RARITY_RANK[rarity] || 0;
 
             if (h.probability === 1.0) {
-                if (harvestRank !== baseRank) throw new Error(`AI가 생성한 확정 수확물의 등급이 '${rarity}'가 아닙니다.`);
-                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new Error('AI가 생성한 확정 수확물의 수량이 규칙에 맞지 않습니다.');
+                if (harvestRank !== baseRank) throw new Error(`확정 수확물의 등급은 씨앗 등급과 동일한 '${rarity}'여야 합니다.`);
+                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new Error('확정 수확물의 수량 규칙이 맞지 않습니다 (min: 1, max: 1~5).');
             } else {
-                if (harvestRank > baseRank + 1) throw new Error(`AI가 생성한 추가 수확물의 등급이 너무 높습니다.`);
+                if (harvestRank > baseRank + 1) throw new Error(`추가 수확물의 등급이 너무 높습니다.`);
                 if (harvestRank === baseRank + 1) {
-                    if (h.probability > 0.01) throw new Error('AI가 생성한 한 등급 높은 아이템의 확률이 1%를 초과합니다.');
-                    if (h.max > 1) throw new Error('AI가 생성한 한 등급 높은 아이템의 최대 수확량이 1을 초과합니다.');
+                    if (h.probability > 0.01) throw new Error('한 등급 높은 아이템의 확률은 1%를 초과할 수 없습니다.');
+                    if (h.max > 1) throw new Error('한 등급 높은 아이템의 최대 수확량은 1을 초과할 수 없습니다.');
                 }
-                if (h.min !== 1 || h.max !== 1) throw new Error('AI가 생성한 추가 수확물의 수량은 1이어야 합니다.');
+                if (h.min !== 1 || h.max !== 1) throw new Error('추가 수확물의 수량은 1이어야 합니다 (min: 1, max: 1).');
             }
         }
         
@@ -169,15 +157,18 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         };
 
       } catch (e) {
-        logger.error(`[usePromptItem] AI item generation or validation failed for user ${uid}, item ${itemId}:`, e);
-        throw new HttpsError('internal', `AI 아이템 생성 또는 검증에 실패했습니다. 프롬프트를 수정하여 다시 시도해주세요. (오류: ${e.message})`);
+        logger.error(`[usePromptItem] Custom item validation failed for user ${uid}, item ${itemId}:`, e);
+        // 사용자에게 검증 실패 원인을 명확히 전달
+        throw new HttpsError('invalid-argument', `아이템 생성 규칙 검증 실패: ${e.message}`);
       }
       
+      // 사용한 커스텀 씨앗 아이템 차감 또는 제거
       if (baseItem.uses > 1) {
         items[itemIndex].uses -= 1;
       } else {
         items.splice(itemIndex, 1);
       }
+      // 새로 생성된 아이템 인벤토리에 추가
       items.push(generatedItem);
 
       tx.update(userRef, { items_all: items });
