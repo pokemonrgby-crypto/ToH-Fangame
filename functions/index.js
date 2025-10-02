@@ -34,7 +34,7 @@ exports.adminCreateManualEvent = stockmarket.adminCreateManualEvent;
 exports.processWorldEvents     = stockmarket.processWorldEvents;
 exports.adminDelistAllAndRefund = stockmarket.adminDelistAllAndRefund;
 exports.nudgeBluechipsDaily     = stockmarket.nudgeBluechipsDaily;
-
+exports.adminCreateRandomEvent = stockmarket.adminCreateRandomEvent;
 
 // === [탐험 난이도/룰 테이블 & 헬퍼] ===
 const EXPLORE_CONFIG = {
