@@ -49,27 +49,21 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       }
   };
 
-  // [핵심 수정] 프롬프트 아이템 사용 함수 (사용자 입력 기반 + 강력한 서버 검증)
+  // [핵심 수정] 프롬프트 아이템 사용 함수 (사용자 텍스트 프롬프트 기반)
   const usePromptItem = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    // 프론트에서 `newItemData` 객체를 직접 받습니다.
-    const { itemId, newItemData } = req.data;
-    if (!itemId || !newItemData) {
-      throw new HttpsError('invalid-argument', '아이템 ID와 생성할 씨앗 데이터가 필요합니다.');
+    const { itemId, userPrompt } = req.data;
+    if (!itemId || !userPrompt) {
+      throw new HttpsError('invalid-argument', '아이템 ID와 사용자 프롬프트가 필요합니다.');
     }
-    
-    // 간단한 입력값 길이 검사
-    if ((newItemData.name || '').length > 50 || (newItemData.description || '').length > 500) {
-        throw new HttpsError('invalid-argument', '이름 또는 설명이 너무 깁니다.');
+    if (String(userPrompt).length > 300) {
+        throw new HttpsError('invalid-argument', '프롬프트가 너무 깁니다 (최대 300자).');
     }
-
-    const allItems = await loadAllItems();
-    const RARITY_RANK = { normal: 1, rare: 2, epic: 3, legend: 4, myth: 5, aether: 6 };
 
     const userRef = db.doc(`users/${uid}`);
-
+    
     return await db.runTransaction(async (tx) => {
       const userSnap = await tx.get(userRef);
       if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
@@ -80,182 +74,179 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
       
       const baseItem = items[itemIndex];
-      if (baseItem.isPromptUse !== true) {
+      if (baseItem.isPromptUse !== true || !baseItem.promptId) {
         throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
       }
 
-      let generatedItem;
-      try {
-        // --- 사용자 입력 데이터 검증 (기존 AI 응답 검증 로직 재사용) ---
-        const rarity = baseItem.rarity || 'normal';
-        const rules = {
-            normal: { growthTime: [10, 60], aestheticValue: [10, 50] },
-            rare:   { growthTime: [60, 300], aestheticValue: [20, 150] },
-            epic:   { growthTime: [300, 1440], aestheticValue: [30, 400] },
-            legend: { growthTime: [720, 1440], aestheticValue: [40, 1000] },
-            myth:   { growthTime: [1080, 1440], aestheticValue: [100, 2500] },
-            aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000] }
-        }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50] };
-
-        const data = newItemData; // AI 응답 대신 사용자 데이터를 직접 사용
-        if (!data.name || data.name.length > 50) throw new Error('입력한 이름이 유효하지 않습니다.');
-        if (!data.description || data.description.length > 500) throw new Error('입력한 설명이 유효하지 않습니다.');
-
-        const growth = Number(data.growthTimeMinutes);
-        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new Error(`성장 시간이 규칙에 맞지 않습니다. (허용: ${rules.growthTime[0]}~${rules.growthTime[1]})`);
-        
-        const aesthetic = Number(data.aestheticValue);
-        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new Error(`미관 점수가 규칙에 맞지 않습니다. (허용: ${rules.aestheticValue[0]}~${rules.aestheticValue[1]})`);
-
-        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new Error('수확물 테이블이 유효하지 않습니다. (1~3개 필요)');
-        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new Error('확정 수확물(확률 100%)은 반드시 1개여야 합니다.');
-
-        for (const h of data.harvest) {
-            const harvestItemInfo = allItems[h.itemId];
-            if (!harvestItemInfo) throw new Error(`존재하지 않는 아이템 ID를 수확물로 설정했습니다: ${h.itemId}`);
-            
-            const harvestRarity = harvestItemInfo.rarity;
-            const harvestRank = RARITY_RANK[harvestRarity] || 0;
-            const baseRank = RARITY_RANK[rarity] || 0;
-
-            if (h.probability === 1.0) {
-                if (harvestRank !== baseRank) throw new Error(`확정 수확물의 등급은 씨앗 등급과 동일한 '${rarity}'여야 합니다.`);
-                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new Error('확정 수확물의 수량 규칙이 맞지 않습니다 (min: 1, max: 1~5).');
-            } else {
-                if (harvestRank > baseRank + 1) throw new Error(`추가 수확물의 등급이 너무 높습니다.`);
-                if (harvestRank === baseRank + 1) {
-                    if (h.probability > 0.01) throw new Error('한 등급 높은 아이템의 확률은 1%를 초과할 수 없습니다.');
-                    if (h.max > 1) throw new Error('한 등급 높은 아이템의 최대 수확량은 1을 초과할 수 없습니다.');
-                }
-                if (h.min !== 1 || h.max !== 1) throw new Error('추가 수확물의 수량은 1이어야 합니다 (min: 1, max: 1).');
-            }
-        }
-        
-        // --- 검증 통과, 새 아이템 생성 ---
-        generatedItem = {
-            id: `item_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: data.name,
-            rarity: rarity,
-            description: data.description,
-            isConsumable: true,
-            uses: 1,
-            type: 'seed',
-            placeable: true,
-            seedInfo: {
-                id: `custom_${Date.now()}`,
-                growthTimeMinutes: growth,
-                isPerennial: baseItem.isPerennial === true,
-                harvest: data.harvest
-            },
-            properties: {
-                appraised: true,
-                category: 'gardening',
-                placeable: true,
-                aestheticValue: aesthetic,
-            },
-            createdByPrompt: true
-        };
-
-      } catch (e) {
-        logger.error(`[usePromptItem] Custom item validation failed for user ${uid}, item ${itemId}:`, e);
-        // 사용자에게 검증 실패 원인을 명확히 전달
-        throw new HttpsError('invalid-argument', `아이템 생성 규칙 검증 실패: ${e.message}`);
-      }
+      // 1. 시스템 프롬프트 로드
+      const promptsSnap = await tx.get(db.doc('configs/prompts'));
+      const systemPrompt = promptsSnap.exists() ? promptsSnap.data()?.[baseItem.promptId] : '';
+      if (!systemPrompt) throw new HttpsError('internal', `시스템 프롬프트(${baseItem.promptId})를 찾을 수 없습니다.`);
       
-      // 사용한 커스텀 씨앗 아이템 차감 또는 제거
+      // 2. AI 호출을 위한 입력 데이터 구성
+      const aiUserInput = JSON.stringify({
+        baseItem: {
+          rarity: baseItem.rarity,
+          isPerennial: baseItem.isPerennial === true
+        },
+        userRequest: userPrompt
+      }, null, 2);
+
+      // 3. AI 호출하여 새로운 씨앗 JSON 생성
+      const aiResponseRaw = await _callGemini(systemPrompt, aiUserInput);
+      const generatedSeedData = JSON.parse(aiResponseRaw);
+      
+      // 4. AI가 생성한 새로운 수확물 아이템(newItem)을 DB에 저장
+      const finalHarvest = [];
+      const newCustomItems = [];
+
+      for (const harvestEntry of generatedSeedData.harvest) {
+        if (harvestEntry.newItem) {
+          const newItem = harvestEntry.newItem;
+          const newItemRef = db.collection('custom_items').doc();
+          
+          const customItemData = {
+            id: newItemRef.id,
+            name: String(newItem.name).slice(0, 50),
+            description: String(newItem.description).slice(0, 500),
+            rarity: String(newItem.rarity || baseItem.rarity),
+            type: 'material', // 기본 타입
+            createdBy: uid,
+            createdAt: FieldValue.serverTimestamp()
+          };
+          
+          tx.set(newItemRef, customItemData);
+          newCustomItems.push(customItemData); // 로그용으로 저장
+
+          finalHarvest.push({
+            itemId: newItemRef.id,
+            min: harvestEntry.min,
+            max: harvestEntry.max,
+            probability: harvestEntry.probability
+          });
+        } else {
+          // 기존 아이템 참조는 그대로 추가
+          finalHarvest.push(harvestEntry);
+        }
+      }
+
+      // 5. 최종 씨앗 아이템 객체 생성
+      const newSeedItem = {
+        id: `item_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+        name: generatedSeedData.name,
+        rarity: baseItem.rarity, // 등급은 원본 아이템을 따름
+        description: generatedSeedData.description,
+        isConsumable: true,
+        uses: 1,
+        type: 'seed',
+        placeable: true,
+        seedInfo: {
+            id: `custom_${Date.now()}`,
+            growthTimeMinutes: generatedSeedData.growthTimeMinutes,
+            isPerennial: baseItem.isPerennial === true,
+            harvest: finalHarvest
+        },
+        properties: {
+            appraised: true,
+            category: 'gardening',
+            placeable: true,
+            aestheticValue: generatedSeedData.aestheticValue,
+        },
+        createdByPrompt: true,
+        originalPrompt: userPrompt
+      };
+
+      // 6. 인벤토리 업데이트 (사용한 씨앗 차감, 새로 만든 씨앗 추가)
       if (baseItem.uses > 1) {
         items[itemIndex].uses -= 1;
       } else {
         items.splice(itemIndex, 1);
       }
-      // 새로 생성된 아이템 인벤토리에 추가
-      items.push(generatedItem);
+      items.push(newSeedItem);
 
       tx.update(userRef, { items_all: items });
 
-      logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
-      return { ok: true, newItem: generatedItem };
+      logger.info(`Item ${itemId} used by ${uid}. New seed ${newSeedItem.id} created. New custom items:`, { items: newCustomItems.map(it=>it.id) });
+      return { ok: true, newItem: newSeedItem };
     });
   });
 
 
+  // (기존 appraiseItem, toggleItemLock 함수는 그대로 유지)
+  
+  // [최종 수정] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
+  function normalizeAppraisalResult(generated, baseItem) {
+    const G = generated || {};
+    const B = baseItem || {};
+    const R = (B.rarity || 'normal').toLowerCase();
 
+    const result = { appraised: true };
 
-// [신규] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
-// [최종 수정] AI가 생성한 감정 결과를 안전하게 정규화하는 함수
-function normalizeAppraisalResult(generated, baseItem) {
-  const G = generated || {};
-  const B = baseItem || {};
-  const R = (B.rarity || 'normal').toLowerCase();
+    // 1. (기존과 동일)
+    const validCategories = ["equipment", "consumable", "material", "furniture", "decoration", "etc"];
+    const validSubCategories = [
+      "weapon", "armor", "shield", "clothing", "boots", "gloves", "accessory",
+      "potion", "food", "scroll", "bomb", "tome", "ore", "herb", "leather",
+      "cloth", "gem", "monsterPart", "essence", "chair", "table", "bed",
+      "storage", "painting", "sculpture", "rug", "lighting", "plant",
+      "key", "quest", "collectible", "junk"
+    ];
 
-  const result = { appraised: true };
+    if (typeof G.category === 'string' && validCategories.includes(G.category)) {
+      result.category = G.category;
+    }
+    if (typeof G.subCategory === 'string' && validSubCategories.includes(G.subCategory)) {
+      result.subCategory = G.subCategory;
+    }
 
-  // 1. (기존과 동일)
-  const validCategories = ["equipment", "consumable", "material", "furniture", "decoration", "etc"];
-  const validSubCategories = [
-    "weapon", "armor", "shield", "clothing", "boots", "gloves", "accessory",
-    "potion", "food", "scroll", "bomb", "tome", "ore", "herb", "leather",
-    "cloth", "gem", "monsterPart", "essence", "chair", "table", "bed",
-    "storage", "painting", "sculpture", "rug", "lighting", "plant",
-    "key", "quest", "collectible", "junk"
-  ];
+    // 2. (기존과 동일)
+    result.equipable = G.equipable === true;
+    result.placeable = G.placeable === true;
 
-  if (typeof G.category === 'string' && validCategories.includes(G.category)) {
-    result.category = G.category;
-  }
-  if (typeof G.subCategory === 'string' && validSubCategories.includes(G.subCategory)) {
-    result.subCategory = G.subCategory;
-  }
-
-  // 2. (기존과 동일)
-  result.equipable = G.equipable === true;
-  result.placeable = G.placeable === true;
-
-  // 3. aestheticValue 계산 조건 (기존과 동일)
-  if (result.placeable || 
-      result.category === "furniture" || 
-      result.category === "decoration" ||
-      result.subCategory === "clothing" ||
-      result.subCategory === "accessory") {
-    const ranges = {
-      normal: { min: 10, max: 50 },
-      rare:   { min: 20, max: 150 },
-      epic:   { min: 30, max: 400 },
-      legend: { min: 40, max: 1000 },
-      myth:   { min: 100, max: 2500 },
-      aether: { min: 250, max: 5000 },
-    };
-    const range = ranges[R] || ranges.normal;
-    let value = Math.max(range.min, Math.min(range.max, Math.floor(Number(G.aestheticValue) || range.min)));
-
-    // [수정] 보너스 규칙 적용 조건에 의상/장신구 추가
-    if (result.category === "furniture" || 
+    // 3. aestheticValue 계산 조건 (기존과 동일)
+    if (result.placeable || 
+        result.category === "furniture" || 
         result.category === "decoration" ||
         result.subCategory === "clothing" ||
         result.subCategory === "accessory") {
-      const bonusRatio = 0.3 + Math.random() * 0.7; // 30% ~ 100%
-      value = Math.floor(value * (1 + bonusRatio));
-    }
-    result.aestheticValue = value;
-  }
+      const ranges = {
+        normal: { min: 10, max: 50 },
+        rare:   { min: 20, max: 150 },
+        epic:   { min: 30, max: 400 },
+        legend: { min: 40, max: 1000 },
+        myth:   { min: 100, max: 2500 },
+        aether: { min: 250, max: 5000 },
+      };
+      const range = ranges[R] || ranges.normal;
+      let value = Math.max(range.min, Math.min(range.max, Math.floor(Number(G.aestheticValue) || range.min)));
 
-  // 4. (기존과 동일)
-  if (Array.isArray(G.effects)) {
-    result.effects = G.effects.slice(0, 2).map(eff => {
-      if (typeof eff === 'object' && eff !== null) {
-        return {
-          trigger: String(eff.trigger || '').slice(0, 50),
-          description: String(eff.description || '').slice(0, 200)
-        };
+      // [수정] 보너스 규칙 적용 조건에 의상/장신구 추가
+      if (result.category === "furniture" || 
+          result.category === "decoration" ||
+          result.subCategory === "clothing" ||
+          result.subCategory === "accessory") {
+        const bonusRatio = 0.3 + Math.random() * 0.7; // 30% ~ 100%
+        value = Math.floor(value * (1 + bonusRatio));
       }
-      return { description: String(eff || '').slice(0, 200) };
-    }).filter(e => e.description);
+      result.aestheticValue = value;
+    }
+
+    // 4. (기존과 동일)
+    if (Array.isArray(G.effects)) {
+      result.effects = G.effects.slice(0, 2).map(eff => {
+        if (typeof eff === 'object' && eff !== null) {
+          return {
+            trigger: String(eff.trigger || '').slice(0, 50),
+            description: String(eff.description || '').slice(0, 200)
+          };
+        }
+        return { description: String(eff || '').slice(0, 200) };
+      }).filter(e => e.description);
+    }
+
+    return result;
   }
-
-  return result;
-}
-  
-
+    
   /**
    * 아이템 감정 (Appraise Item) 함수
    */
@@ -294,21 +285,21 @@ function normalizeAppraisalResult(generated, baseItem) {
 
       // AI 호출
       const aiResponseRaw = await _callGemini(systemPrompt, userPrompt);
-    const generatedProperties = JSON.parse(aiResponseRaw);
+      const generatedProperties = JSON.parse(aiResponseRaw);
 
-    // [수정] 감정 결과를 그대로 저장하는 대신, 정규화 함수를 통과시킵니다.
-    const finalProperties = normalizeAppraisalResult(generatedProperties, item);
+      // [수정] 감정 결과를 그대로 저장하는 대신, 정규화 함수를 통과시킵니다.
+      const finalProperties = normalizeAppraisalResult(generatedProperties, item);
 
-    // 감정 결과(properties)를 아이템에 추가
-    items[itemIndex].properties = finalProperties;
+      // 감정 결과(properties)를 아이템에 추가
+      items[itemIndex].properties = finalProperties;
 
-    // Firestore 문서 업데이트
-    tx.update(userRef, { items_all: items });
+      // Firestore 문서 업데이트
+      tx.update(userRef, { items_all: items });
 
-    logger.info(`Item ${itemId} for user ${uid} has been appraised.`);
-    return { ok: true, item: items[itemIndex] };
+      logger.info(`Item ${itemId} for user ${uid} has been appraised.`);
+      return { ok: true, item: items[itemIndex] };
+    });
   });
-});
 
   /**
    * 사용자의 인벤토리에서 특정 아이템의 isLocked 상태를 토글합니다.
