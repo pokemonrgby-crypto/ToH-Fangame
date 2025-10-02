@@ -1,87 +1,120 @@
 [
-    {
-        "id": "sunpetal_flower",
-        "name": "태양꽃잎 씨앗",
-        "price": 5,
-        "description": "햇빛을 좋아하는 화사한 꽃의 씨앗. 기르기 쉽다.",
-        "rarity": "normal",
-        "growthTimeMinutes": 20,
-        "isPerennial": false,
-        "placeable": true,
-        "aestheticValue": 5,
-        "harvest": [
-            { "itemId": "sunpetal", "min": 2, "max": 5, "probability": 1.0 }
-        ],
-        "mutation": {
-            "probability": 0.005,
-            "mysteriousSeed": {
-                "name": "신비한 [태양꽃잎] 씨앗",
-                "basePrompt": "태양의 기운을 과도하게 받아 변이한 태양꽃잎의 씨앗. 평범한 꽃잎 대신 작열하는 불꽃을 피워낼지도 모른다."
-            }
-        }
-    },
-    {
-        "id": "mystic_herb",
-        "name": "신비한 약초 씨앗",
-        "price": 15,
-        "description": "은은한 빛을 내는 약초의 씨앗. 특별한 효능이 있을 것 같다.",
-        "rarity": "rare",
-        "growthTimeMinutes": 60,
-        "isPerennial": false,
-        "placeable": true,
-        "aestheticValue": 15,
-        "harvest": [
-            { "itemId": "raw_mystic_herb", "min": 1, "max": 3, "probability": 1.0 },
-            { "itemId": "glowing_petal", "min": 1, "max": 1, "probability": 0.05 }
-        ],
-        "mutation": {
-            "probability": 0.01,
-            "mysteriousSeed": {
-                "name": "신비한 [약초] 씨앗",
-                "basePrompt": "신비한 약초의 유전자가 불안정하게 변이하여 태어난 씨앗. 주변 환경과 재배자의 의지에 따라 예측할 수 없는 형태로 자라난다. 푸른 빛을 내뿜는 약초의 특성이 강화되거나, 완전히 새로운 약효를 가질 수 있다."
-            }
-        }
-    },
-    {
-        "id": "moon_glow_mushroom_spore",
-        "name": "달빛 버섯 포자",
-        "price": 25,
-        "description": "어둡고 습한 곳에서만 자라는 버섯의 포자. 다 자란 버섯은 밤에 빛을 낸다.",
-        "rarity": "rare",
-        "growthTimeMinutes": 180,
-        "isPerennial": true,
-        "placeable": true,
-        "aestheticValue": 20,
-        "harvest": [
-            { "itemId": "moon_glow_mushroom", "min": 1, "max": 2, "probability": 0.8 }
-        ],
-        "mutation": {
-            "probability": 0.02,
-            "mysteriousSeed": {
-                "name": "신비한 [버섯] 포자",
-                "basePrompt": "달빛을 너무 많이 받아 특별한 변이를 일으킨 버섯 포자. 단순한 빛을 넘어, 환상을 보여주거나 그림자를 조종하는 능력을 가질지도 모른다."
-            }
-        }
-    },
-    {
-        "id": "ironwood_sapling",
-        "name": "강철나무 묘목",
-        "price": 100,
-        "description": "다 자라면 단단한 목재를 계속 얻을 수 있는 나무의 묘목.",
-        "rarity": "epic",
-        "growthTimeMinutes": 1440,
-        "isPerennial": true,
-        "placeable": true,
-        "aestheticValue": 50,
-        "harvest": [
-            { "itemId": "ironwood_log", "min": 1, "max": 2, "probability": 1.0 }
-        ],
-        "mutation": {
-            "probability": 0.001,
-            "mysteriousSeed": {
-                "name": "신비한 [강철나무] 묘목",
-                "basePrompt": "고대 금속의 정수를 흡수하며 자라난 강철나무의 변이종. 단순한 원목이 아니라 제련되지 않은 금속 광맥을 품고 있을 수 있다."
-            }
-        }
+  { "id": "wheat_seed", "name": "밀 씨앗", "price": 2, "description": "가장 기본적인 곡물인 밀의 씨앗. 재배하기 쉽다.", "rarity": "normal", "growthTimeMinutes": 15, "isPerennial": false, "placeable": true, "aestheticValue": 2, "harvest": [{ "itemId": "wheat", "min": 3, "max": 6, "probability": 1.0 }] },
+  { "id": "rice_seedling", "name": "벼 모종", "price": 3, "description": "물을 좋아하는 쌀의 모종. 든든한 밥이 된다.", "rarity": "normal", "growthTimeMinutes": 25, "isPerennial": false, "placeable": true, "aestheticValue": 3, "harvest": [{ "itemId": "rice", "min": 2, "max": 5, "probability": 1.0 }] },
+  { "id": "potato_seed", "name": "씨감자", "description": "어디서든 잘 자라는 강인한 생명력의 감자. 수확 시 낮은 확률로 씨감자를 다시 얻을 수 있다.", "rarity": "normal", "price": 4, "growthTimeMinutes": 30, "isPerennial": false, "placeable": true, "aestheticValue": 2, "harvest": [{ "itemId": "potato", "min": 2, "max": 4, "probability": 1.0 }, { "itemId": "potato_seed", "min": 1, "max": 1, "probability": 0.15 }] },
+  { "id": "carrot_seed", "name": "당근 씨앗", "price": 3, "description": "주황빛이 매력적인 달콤한 뿌리채소의 씨앗.", "rarity": "normal", "growthTimeMinutes": 20, "isPerennial": false, "placeable": true, "aestheticValue": 3, "harvest": [{ "itemId": "carrot", "min": 2, "max": 5, "probability": 1.0 }] },
+  { "id": "strawberry_seed", "name": "딸기 씨앗", "price": 8, "description": "새콤달콤한 작은 보석, 딸기의 씨앗.", "rarity": "normal", "growthTimeMinutes": 60, "isPerennial": true, "placeable": true, "aestheticValue": 8, "harvest": [{ "itemId": "strawberry", "min": 4, "max": 8, "probability": 1.0 }] },
+  { "id": "corn_seed", "name": "옥수수 씨앗", "price": 6, "description": "황금빛 알갱이가 가득한 옥수수의 씨앗.", "rarity": "normal", "growthTimeMinutes": 50, "isPerennial": false, "placeable": true, "aestheticValue": 5, "harvest": [{ "itemId": "corn", "min": 1, "max": 3, "probability": 1.0 }] },
+  { "id": "tomato_seed", "name": "토마토 씨앗", "price": 5, "description": "붉고 과즙이 풍부한 토마토의 씨앗.", "rarity": "normal", "growthTimeMinutes": 45, "isPerennial": false, "placeable": true, "aestheticValue": 5, "harvest": [{ "itemId": "tomato", "min": 3, "max": 6, "probability": 1.0 }] },
+  { "id": "cabbage_seed", "name": "양배추 씨앗", "price": 5, "description": "아삭한 식감이 일품인 양배추의 씨앗.", "rarity": "normal", "growthTimeMinutes": 40, "isPerennial": false, "placeable": true, "aestheticValue": 4, "harvest": [{ "itemId": "cabbage", "min": 1, "max": 2, "probability": 1.0 }] },
+  { "id": "onion_seed", "name": "양파 씨앗", "price": 4, "description": "요리의 풍미를 더해주는 양파의 씨앗.", "rarity": "normal", "growthTimeMinutes": 35, "isPerennial": false, "placeable": true, "aestheticValue": 3, "harvest": [{ "itemId": "onion", "min": 2, "max": 4, "probability": 1.0 }] },
+  { "id": "grape_sapling", "name": "포도 묘목", "price": 40, "description": "달콤한 포도송이가 열리는 덩굴 식물의 묘목.", "rarity": "normal", "growthTimeMinutes": 180, "isPerennial": true, "placeable": true, "aestheticValue": 15, "harvest": [{ "itemId": "grape", "min": 3, "max": 7, "probability": 1.0 }] },
+  { "id": "pumpkin_seed", "name": "호박 씨앗", "price": 10, "description": "가을 축제의 상징, 커다란 호박의 씨앗.", "rarity": "normal", "growthTimeMinutes": 90, "isPerennial": false, "placeable": true, "aestheticValue": 12, "harvest": [{ "itemId": "pumpkin", "min": 1, "max": 1, "probability": 1.0 }] },
+  { "id": "bell_pepper_seed", "name": "파프리카 씨앗", "price": 7, "description": "형형색색의 아름다운 파프리카 씨앗.", "rarity": "normal", "growthTimeMinutes": 55, "isPerennial": false, "placeable": true, "aestheticValue": 6, "harvest": [{ "itemId": "bell_pepper", "min": 2, "max": 5, "probability": 1.0 }] },
+  { "id": "lettuce_seed", "name": "양상추 씨앗", "price": 2, "description": "신선한 샐러드를 위한 양상추 씨앗.", "rarity": "normal", "growthTimeMinutes": 10, "isPerennial": false, "placeable": true, "aestheticValue": 2, "harvest": [{ "itemId": "lettuce", "min": 1, "max": 2, "probability": 1.0 }] },
+  { "id": "chili_pepper_seed", "name": "고추 씨앗", "price": 6, "description": "매운맛을 좋아하는 이들을 위한 고추 씨앗.", "rarity": "normal", "growthTimeMinutes": 70, "isPerennial": true, "placeable": true, "aestheticValue": 5, "harvest": [{ "itemId": "chili_pepper", "min": 5, "max": 12, "probability": 1.0 }] },
+  { "id": "garlic_clove", "name": "마늘 쪽", "description": "요리에 강한 향을 더하는 마늘. 한 쪽을 심으면 통마늘이 된다.", "rarity": "normal", "price": 3, "growthTimeMinutes": 30, "isPerennial": false, "placeable": false, "aestheticValue": 1, "harvest": [{ "itemId": "garlic", "min": 1, "max": 2, "probability": 1.0 }] },
+  { "id": "ginger_rhizome", "name": "생강 뿌리", "description": "독특한 향의 생강 뿌리. 약재로도 쓰인다.", "rarity": "normal", "price": 5, "growthTimeMinutes": 40, "isPerennial": false, "placeable": false, "aestheticValue": 1, "harvest": [{ "itemId": "ginger", "min": 1, "max": 3, "probability": 1.0 }] },
+  { "id": "orange_sapling", "name": "오렌지나무 묘목", "price": 60, "description": "상큼한 오렌지가 열리는 나무의 묘목.", "rarity": "normal", "growthTimeMinutes": 1500, "isPerennial": true, "placeable": true, "aestheticValue": 35, "harvest": [{ "itemId": "orange", "min": 4, "max": 9, "probability": 1.0 }] },
+  { "id": "pear_sapling", "name": "배나무 묘목", "price": 55, "description": "시원하고 아삭한 배가 열리는 나무의 묘목.", "rarity": "normal", "growthTimeMinutes": 1480, "isPerennial": true, "placeable": true, "aestheticValue": 32, "harvest": [{ "itemId": "pear", "min": 4, "max": 8, "probability": 1.0 }] },
+  { "id": "plum_sapling", "name": "자두나무 묘목", "price": 45, "description": "새콤달콤한 자두가 열리는 나무의 묘목.", "rarity": "normal", "growthTimeMinutes": 1300, "isPerennial": true, "placeable": true, "aestheticValue": 28, "harvest": [{ "itemId": "plum", "min": 6, "max": 12, "probability": 1.0 }] },
+  { "id": "watermelon_seed", "name": "수박 씨앗", "price": 20, "description": "여름의 상징인 커다랗고 시원한 수박의 씨앗.", "rarity": "rare", "growthTimeMinutes": 120, "isPerennial": false, "placeable": true, "aestheticValue": 15, "harvest": [{ "itemId": "watermelon", "min": 1, "max": 1, "probability": 1.0 }] },
+  { "id": "blueberry_bush", "name": "블루베리 덤불", "price": 35, "description": "작고 동그란 블루베리가 열리는 덤불.", "rarity": "rare", "growthTimeMinutes": 240, "isPerennial": true, "placeable": true, "aestheticValue": 20, "harvest": [{ "itemId": "blueberry", "min": 10, "max": 25, "probability": 1.0 }] },
+  { "id": "raspberry_bush", "name": "라즈베리 덤불", "price": 35, "description": "새콤한 라즈베리가 열리는 가시 돋친 덤불.", "rarity": "rare", "growthTimeMinutes": 220, "isPerennial": true, "placeable": true, "aestheticValue": 20, "harvest": [{ "itemId": "raspberry", "min": 8, "max": 20, "probability": 1.0 }] },
+  { "id": "blackberry_bush", "name": "블랙베리 덤불", "price": 38, "description": "검고 진한 맛의 블랙베리가 열리는 덤불.", "rarity": "rare", "growthTimeMinutes": 260, "isPerennial": true, "placeable": true, "aestheticValue": 22, "harvest": [{ "itemId": "blackberry", "min": 8, "max": 18, "probability": 1.0 }] },
+  { "id": "lemon_sapling", "name": "레몬나무 묘목", "price": 70, "description": "생각만 해도 침이 고이는 신 레몬이 열리는 나무.", "rarity": "rare", "growthTimeMinutes": 1600, "isPerennial": true, "placeable": true, "aestheticValue": 38, "harvest": [{ "itemId": "lemon", "min": 3, "max": 7, "probability": 1.0 }] },
+  { "id": "peach_sapling", "name": "복숭아나무 묘목", "price": 80, "description": "부드럽고 달콤한 향기가 나는 복숭아 나무.", "rarity": "rare", "growthTimeMinutes": 1800, "isPerennial": true, "placeable": true, "aestheticValue": 45, "harvest": [{ "itemId": "peach", "min": 3, "max": 6, "probability": 1.0 }] },
+  { "id": "sunpetal_flower_seed", "name": "태양꽃잎 씨앗", "price": 5, "description": "햇빛을 좋아하는 화사한 꽃의 씨앗. 기르기 쉽다.", "rarity": "normal", "growthTimeMinutes": 20, "isPerennial": false, "placeable": true, "aestheticValue": 5, "harvest": [{ "itemId": "sunpetal", "min": 2, "max": 5, "probability": 1.0 }], "mutation": { "probability": 0.005, "mysteriousSeed": { "name": "신비한 [태양꽃잎] 씨앗", "basePrompt": "태양의 기운을 과도하게 받아 변이한 태양꽃잎의 씨앗. 평범한 꽃잎 대신 작열하는 불꽃을 피워낼지도 모른다." }}},
+  { "id": "mystic_herb_seed", "name": "신비한 약초 씨앗", "price": 15, "description": "은은한 빛을 내는 약초의 씨앗. 특별한 효능이 있을 것 같다.", "rarity": "rare", "growthTimeMinutes": 60, "isPerennial": false, "placeable": true, "aestheticValue": 15, "harvest": [{ "itemId": "raw_mystic_herb", "min": 1, "max": 3, "probability": 1.0 }, { "itemId": "glowing_petal", "min": 1, "max": 1, "probability": 0.05 }], "mutation": { "probability": 0.01, "mysteriousSeed": { "name": "신비한 [약초] 씨앗", "basePrompt": "신비한 약초의 유전자가 불안정하게 변이하여 태어난 씨앗. 주변 환경과 재배자의 의지에 따라 예측할 수 없는 형태로 자라난다. 푸른 빛을 내뿜는 약초의 특성이 강화되거나, 완전히 새로운 약효를 가질 수 있다." }}},
+  { "id": "moon_glow_mushroom_spore", "name": "달빛 버섯 포자", "price": 25, "description": "어둡고 습한 곳에서만 자라는 버섯의 포자. 다 자란 버섯은 밤에 빛을 낸다.", "rarity": "rare", "growthTimeMinutes": 180, "isPerennial": true, "placeable": true, "aestheticValue": 20, "harvest": [{ "itemId": "moon_glow_mushroom", "min": 1, "max": 2, "probability": 0.8 }], "mutation": { "probability": 0.02, "mysteriousSeed": { "name": "신비한 [버섯] 포자", "basePrompt": "달빛을 너무 많이 받아 특별한 변이를 일으킨 버섯 포자. 단순한 빛을 넘어, 환상을 보여주거나 그림자를 조종하는 능력을 가질지도 모른다." }}},
+  { "id": "ironwood_sapling", "name": "강철나무 묘목", "price": 100, "description": "다 자라면 단단한 목재를 계속 얻을 수 있는 나무의 묘목.", "rarity": "epic", "growthTimeMinutes": 1440, "isPerennial": true, "placeable": true, "aestheticValue": 50, "harvest": [{ "itemId": "ironwood_log", "min": 1, "max": 2, "probability": 1.0 }], "mutation": { "probability": 0.001, "mysteriousSeed": { "name": "신비한 [강철나무] 묘목", "basePrompt": "고대 금속의 정수를 흡수하며 자라난 강철나무의 변이종. 단순한 원목이 아니라 제련되지 않은 금속 광맥을 품고 있을 수 있다." }}},
+  { "id": "shadow_veil_seed", "name": "그림자 장막 씨앗", "price": 120, "description": "밤의 정수를 머금고 자라는 식물의 씨앗. 잎사귀는 칠흑 같은 어둠을 품고 있다.", "rarity": "epic", "growthTimeMinutes": 720, "isPerennial": false, "placeable": true, "aestheticValue": 60, "harvest": [{ "itemId": "shadow_veil_leaf", "min": 1, "max": 3, "probability": 1.0 }] },
+  { "id": "starlight_blossom_seed", "name": "별빛 과즙 꽃씨", "price": 250, "description": "밤하늘의 별빛을 양분으로 삼는 신비로운 꽃. 그 꿀은 하늘의 맛이 난다고 한다.", "rarity": "epic", "growthTimeMinutes": 1200, "isPerennial": true, "placeable": true, "aestheticValue": 150, "harvest": [{ "itemId": "starlight_nectar", "min": 1, "max": 2, "probability": 0.7 }, { "itemId": "glowing_petal", "min": 1, "max": 2, "probability": 0.2 }] },
+  { "id": "dragon_tongue_seed", "name": "용언초 씨앗", "price": 40, "description": "용암 지대의 열기 속에서만 싹을 틔우는 고추. 그 매운맛은 불을 내뿜는 용의 혀와 같다.", "rarity": "rare", "growthTimeMinutes": 240, "isPerennial": true, "placeable": true, "aestheticValue": 22, "harvest": [{ "itemId": "dragon_tongue_chili", "min": 3, "max": 7, "probability": 1.0 }] },
+  { "id": "whisperwood_sapling", "name": "속삭임나무 묘목", "price": 180, "description": "바람이 불 때마다 숲의 비밀을 속삭인다는 나무. 목재는 소리를 기억하는 성질이 있다.", "rarity": "epic", "growthTimeMinutes": 2880, "isPerennial": true, "placeable": true, "aestheticValue": 100, "harvest": [{ "itemId": "whisperwood_log", "min": 1, "max": 3, "probability": 1.0 }] },
+  { "id": "giggle_mushroom_spore", "name": "웃음버섯 포자", "price": 30, "description": "한 번 맛보면 웃음을 멈출 수 없게 만드는 기묘한 버섯의 포자.", "rarity": "rare", "growthTimeMinutes": 150, "isPerennial": false, "placeable": true, "aestheticValue": 18, "harvest": [{ "itemId": "giggle_mushroom", "min": 2, "max": 5, "probability": 1.0 }] },
+  { "id": "chrono_daisy_seed", "name": "시간의 데이지 씨앗", "price": 300, "description": "꽃잎에 시간의 흐름을 담고 있는 희귀한 데이지. 만개했을 때 가장 강력한 힘을 발휘한다.", "rarity": "epic", "growthTimeMinutes": 2000, "isPerennial": false, "placeable": true, "aestheticValue": 120, "harvest": [{ "itemId": "chrono_daisy", "min": 1, "max": 1, "probability": 1.0 }] },
+  { "id": "golem_heart_seed", "name": "골렘의 심장 씨앗", "price": 400, "description": "땅의 기운을 모아 단단한 바위 같은 열매를 맺는다. 열매는 살아있는 것처럼 미약하게 맥동한다.", "rarity": "epic", "growthTimeMinutes": 3200, "isPerennial": true, "placeable": true, "aestheticValue": 180, "harvest": [{ "itemId": "golem_heart_rock", "min": 1, "max": 1, "probability": 0.9 }] },
+  {
+    "id": "singing_crystal_seed",
+    "name": "노래하는 수정 씨앗",
+    "price": 1500,
+    "description": "기원: 고대의 정령들이 바람의 노래를 담아 굳혔다는 수정의 파편. 땅에 심으면 수정 기둥으로 자라나며, 주변의 모든 소리를 아름다운 화음으로 바꾼다. 기둥이 완성되면 스스로 공명하며 노래하는 수정 파편을 뱉어낸다.",
+    "rarity": "legend",
+    "growthTimeMinutes": 4320,
+    "isPerennial": true,
+    "placeable": true,
+    "aestheticValue": 500,
+    "harvest": [
+      { "itemId": "singing_crystal_shard", "min": 1, "max": 2, "probability": 1.0 },
+      { "itemId": "aether_core_fragment", "min": 1, "max": 1, "probability": 0.001 }
+    ],
+    "mutation": {
+      "probability": 0.005,
+      "mysteriousSeed": {
+        "name": "태초의 합창 씨앗",
+        "basePrompt": "정령들의 노래뿐만 아니라 세계의 창조의 메아리까지 머금은 수정 씨앗. 단순한 파편이 아닌, 살아있는 정령을 탄생시킬지도 모른다."
+      }
     }
+  },
+  {
+    "id": "seed_of_the_phoenix",
+    "name": "불사조의 잿더미 씨앗",
+    "price": 10000,
+    "description": "기원: 생명의 순환이 끝나는 곳에서 스스로를 불태워 재가 된 불사조의 심장. 이 재는 단순한 유해가 아니라, 새로운 생명의 가능성을 품은 씨앗이다. 잿더미를 심고 지극한 정성으로 돌보면, 잿더미 속에서 불사조의 눈물과 함께 생명의 정수가 깃든 불꽃 깃털이 피어난다. 재배자의 영혼이 순수하다면, 아주 희박한 확률로 아기 불사조가 부화한다는 전설이 있다.",
+    "rarity": "myth",
+    "growthTimeMinutes": 10080,
+    "isPerennial": false,
+    "placeable": true,
+    "aestheticValue": 2000,
+    "harvest": [
+      { "itemId": "phoenix_tear", "min": 1, "max": 1, "probability": 1.0 },
+      { "itemId": "phoenix_feather", "min": 1, "max": 3, "probability": 0.5 },
+      { "itemId": "aether_core_fragment", "min": 1, "max": 1, "probability": 0.01 }
+    ],
+    "mutation": {
+      "probability": 0.001,
+      "mysteriousSeed": {
+        "name": "윤회의 불꽃 씨앗",
+        "basePrompt": "단순한 부활을 넘어, 과거와 미래의 모든 불사조의 기억을 품고 있는 잿더미 씨앗. 심판의 불꽃 그 자체를 피워내거나, 시간을 거스르는 힘을 가진 유물을 남길 수 있다."
+      }
+    }
+  },
+  {
+    "id": "scale_of_world_serpent_sapling",
+    "name": "세계뱀의 비늘 묘목",
+    "price": 12000,
+    "description": "기원: 세계를 휘감고 있는 거대한 뱀 '요르문간드'가 흘린 비늘 조각에서 싹이 튼 묘목. 이 나무는 현실의 법칙을 왜곡하는 단단한 껍질을 만들어내며 자란다. 완전히 자란 나무에서는 모든 저항을 무시하는 절대 방어의 재료인 '세계수의 비늘'을 얻을 수 있다.",
+    "rarity": "myth",
+    "growthTimeMinutes": 15000,
+    "isPerennial": true,
+    "placeable": true,
+    "aestheticValue": 2200,
+    "harvest": [
+      { "itemId": "world_serpent_scale", "min": 1, "max": 1, "probability": 0.8 },
+      { "itemId": "aether_core_fragment", "min": 1, "max": 1, "probability": 0.012 }
+    ]
+  },
+  {
+    "id": "yggdrasil_branch",
+    "name": "위그드라실의 가지",
+    "price": 20000,
+    "description": "기원: 모든 세계를 연결하는 신성한 나무 '위그드라실'에서 부러진 작은 가지. 이 가지를 땅에 심으면, 잠시 동안 그 자리에 차원의 문이 열리며 세계수의 뿌리 일부가 드러난다. 이 뿌리는 다른 차원으로 통하는 길을 만들거나, 시공간을 다루는 강력한 유물의 핵심 재료가 된다.",
+    "rarity": "myth",
+    "growthTimeMinutes": 20160,
+    "isPerennial": false,
+    "placeable": true,
+    "aestheticValue": 3000,
+    "harvest": [
+      { "itemId": "root_of_yggdrasil", "min": 1, "max": 1, "probability": 1.0 },
+      { "itemId": "aether_core_fragment", "min": 1, "max": 2, "probability": 0.02 }
+    ],
+    "mutation": {
+      "probability": 0.0005,
+      "mysteriousSeed": {
+        "name": "아홉 세계의 씨앗",
+        "basePrompt": "위그드라실의 가지가 아홉 세계의 정수를 모두 흡수하여 변이한 씨앗. 단순한 뿌리가 아닌, 새로운 소세계를 창조할 수 있는 힘의 근원을 피워낸다."
+      }
+    }
+  }
 ]
