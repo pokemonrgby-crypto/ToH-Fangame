@@ -19,6 +19,7 @@ const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logge
 const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const landFns = require('./land')(admin);
+const farmFns = require('./farm')(admin);
 
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
@@ -729,6 +730,8 @@ const mailFns = require('./mail')(admin, { onCall, HttpsError, logger, GEMINI_AP
 Object.assign(exports, mailFns);
 // === END PATCH ===
 Object.assign(exports, landFns);
+
+Object.assign(exports, farmFns);
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
