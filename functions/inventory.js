@@ -13,7 +13,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       logger.error('GEMINI_API_KEY is not set.');
       throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
     }
-    const model = 'gemini-1.5-flash';
+    const model = 'gemini-2.5-flash';
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = {
       systemInstruction: { role: 'system', parts: [{ text: systemText }] },
