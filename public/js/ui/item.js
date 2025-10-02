@@ -139,7 +139,6 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     back.dataset.kind = 'item-detail';
     back.style.zIndex = '10001';
 
-    // [수정] 위에서 만든 getSeedInfoHtml 함수를 여기서 호출합니다.
     const seedHtml = await getSeedInfoHtml(item);
 
     back.innerHTML = `
@@ -169,28 +168,24 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
+    
+    // [전체 교체] '사용하기' 버튼 로직: seedCreatorModal 호출
     if (item.isPromptUse === true && typeof onUpdate === 'function') {
         const btnUse = document.createElement('button');
         btnUse.className = 'btn primary';
         btnUse.textContent = '✨ 사용하기';
         btnUse.onclick = async () => {
-            const userPrompt = await promptModal({
-                title: `${item.name} 사용`,
-                hint: '아이템을 어떻게 변형할지, 혹은 어떤 씨앗으로 변이시킬지 자유롭게 작성해주세요.',
-                placeholder: '예) 푸른색 보석이 박힌 날렵한 단검, 밤하늘을 담은 듯한 신비로운 씨앗...',
-                maxLen: 300
-            });
+            const newItemData = await seedCreatorModal({ baseItem: item });
 
-            if (userPrompt === null) return; // 사용자가 취소
+            if (newItemData === null) return; // 사용자가 취소
 
             btnUse.disabled = true;
             btnUse.textContent = '생성 중...';
             try {
-                const result = await usePromptItem(item.id, userPrompt);
+                const result = await usePromptItem(item.id, newItemData);
                 if (result.ok) {
                     showToast(`'${result.newItem.name}' 아이템을 획득했습니다!`);
                     closeModal();
-                    // onUpdate 콜백이 있으면 인벤토리 UI를 새로고침하도록 호출
                     if (typeof context.onUpdate === 'function') {
                         context.onUpdate();
                     }
