@@ -1,0 +1,32 @@
+[
+    {
+        "id": "mystic_herb",
+        "name": "신비한 약초 씨앗",
+        "price": 15,
+        "description": "은은한 빛을 내는 약초의 씨앗. 특별한 효능이 있을 것 같다.",
+        "rarity": "rare",
+        "growthTimeMinutes": 60,
+        "harvest": [{ "itemId": "raw_mystic_herb", "min": 1, "max": 3 }],
+        "isPerennial": false
+    },
+    {
+        "id": "sunpetal_flower",
+        "name": "태양꽃잎 씨앗",
+        "price": 5,
+        "description": "햇빛을 좋아하는 화사한 꽃의 씨앗.",
+        "rarity": "normal",
+        "growthTimeMinutes": 20,
+        "harvest": [{ "itemId": "sunpetal", "min": 2, "max": 5 }],
+        "isPerennial": false
+    },
+    {
+        "id": "ironwood_sapling",
+        "name": "강철나무 묘목",
+        "price": 100,
+        "description": "다 자라면 단단한 목재를 계속 얻을 수 있는 나무의 묘목.",
+        "rarity": "epic",
+        "growthTimeMinutes": 1440,
+        "harvest": [{ "itemId": "ironwood_log", "min": 1, "max": 2 }],
+        "isPerennial": true
+    }
+]
