@@ -89,7 +89,6 @@ module.exports = (admin) => {
                 uses: nQty,
                 type: 'seed', // [핵심] 아이템 타입을 'seed'로 명시
                 placeable: seedInfo.placeable, // [수정] 배치 가능 여부 추가
-                aestheticValue: seedInfo.aestheticValue, // [수정] 미관 점수 추가
                 ...(seedInfo.mutation && { mutation: seedInfo.mutation }), // [수정] 돌연변이 정보가 있으면 추가
                 seedInfo: { // [핵심] 농사 관련 정보는 별도 객체에 저장
                     id: seedInfo.id,
@@ -101,6 +100,7 @@ module.exports = (admin) => {
                     appraised: true,
                     category: 'gardening',
                     placeable: seedInfo.placeable,
+                    aestheticValue: seedInfo.aestheticValue, // [수정] 미관 점수를 properties 안으로 이동
                 }
             };
             items.push(newSeedItem);
