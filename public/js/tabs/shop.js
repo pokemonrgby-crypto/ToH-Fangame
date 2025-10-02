@@ -1,5 +1,6 @@
 // /public/js/tabs/shop.js
 import { showToast } from '../ui/toast.js';
+// [오류 수정] 각 함수를 올바른 파일에서 가져오도록 import 문을 분리했습니다.
 import { showItemDetailModal } from '../ui/item.js';
 import { rarityStyle, ensureItemCss, esc } from '../ui/utils.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
@@ -13,30 +14,42 @@ let seedsData = []; // 씨앗 데이터 캐시
 
 async function loadSeedsData() {
     if (seedsData.length > 0) return seedsData;
-    // 씨앗 데이터가 등급별로 분리되었으므로, 이제 각 파일을 모두 가져와야 합니다.
-    // 여기서는 간단하게 기존 `seeds.json`을 그대로 사용하고, 
-    // 백엔드에서는 분리된 파일을 읽도록 수정했으므로 클라이언트는 수정할 필요가 없습니다.
     try {
-        const response = await fetch('/assets/seeds.json');
-        if (!response.ok) throw new Error('seeds.json not found');
-        seedsData = await response.json();
+        // [수정] 등급별로 분리된 씨앗 파일을 모두 가져와 합칩니다.
+        const rarities = ['normal', 'rare', 'epic', 'legendary', 'mythic', 'aether'];
+        const allSeeds = [];
+        for (const rarity of rarities) {
+            // public/assets/seeds/ 디렉토리에서 파일을 가져옵니다.
+            const response = await fetch(`/assets/seeds/${rarity}.json`);
+            if (response.ok) {
+                const data = await response.json();
+                allSeeds.push(...data);
+            } else {
+                // 파일이 없어도 오류를 발생시키지 않고 경고만 출력합니다.
+                console.warn(`Could not load seeds for rarity: ${rarity}`);
+            }
+        }
+        seedsData = allSeeds;
         return seedsData;
     } catch (error) {
         console.error("Failed to load seeds data:", error);
+        seedsData = []; // 오류 발생 시 캐시를 비웁니다.
         return [];
     }
 }
 
-// [수정] 메인 렌더링 함수: 요청하신대로 UI 구조 변경
+
+// 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
 export async function renderShop(container) {
     const hash = location.hash || '';
-    const isBuy = hash.includes('/buy');
+    const isBuy = hash.includes('/buy') || !hash.includes('/sell'); // [수정] 기본 탭을 구매로
     const isSell = hash.includes('/sell');
-    const isFarm = hash.includes('/farm'); // 농사 탭 식별
+    const isFarm = hash.includes('/farm');
     
+    // '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
     const subtabsHTML = `
         <div class="subtabs" style="margin-top: 12px; padding: 0 8px;">
-            <a href="#/economy/shop/buy" class="sub ${isBuy || isFarm ? 'active' : ''}" style="text-decoration:none;">구매</a>
+            <a href="#/economy/shop/buy" class="sub ${isBuy ? 'active' : ''}" style="text-decoration:none;">구매</a>
             <a href="#/economy/shop/sell" class="sub ${isSell ? 'active' : ''}" style="text-decoration:none;">판매</a>
             <a href="#/economy/shop/daily" class="sub" style="text-decoration:none; color: var(--muted);">일일상점(준비중)</a>
         </div>
@@ -45,6 +58,7 @@ export async function renderShop(container) {
 
     const contentRoot = container.querySelector('#shop-content');
     
+    // 해시에 따라 적절한 렌더링 함수를 호출합니다.
     if (isSell) {
         await renderShop_Sell(contentRoot);
     } else { // 기본적으로 '구매' 관련 탭들을 표시
@@ -54,9 +68,10 @@ export async function renderShop(container) {
 
 // [신규] 구매 탭 UI 렌더링 함수
 async function renderShop_Buy(root, { isFarm }) {
+    // [수정] isFarm 변수를 사용하여 '농사' 탭의 활성화 여부를 결정합니다.
     const buySubtabsHTML = `
         <div class="subtabs" style="padding: 0 8px; margin-bottom: 12px;">
-            <a href="#/economy/shop/buy/general" class="sub" style="text-decoration:none; color: var(--muted);">일반</a>
+            <a href="#/economy/shop/buy" class="sub ${!isFarm ? 'active' : ''}" style="text-decoration:none; color: var(--muted);">일반</a>
             <a href="#/economy/shop/buy/farm" class="sub ${isFarm ? 'active' : ''}" style="text-decoration:none;">농사</a>
         </div>
         <div id="buy-content"></div>
