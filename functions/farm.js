@@ -21,17 +21,24 @@ module.exports = (admin) => {
     } catch (_) { return false; }
   }
   
-  // [신규] 씨앗 데이터 로더
+  // [수정] 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더
   let _seedsDataCache = null;
   const loadSeedsData = async () => {
       if (_seedsDataCache) return _seedsDataCache;
       try {
-          const seedsPath = path.join(__dirname, './assets/seeds.json');
-          const data = await fs.readFile(seedsPath, 'utf8');
-          _seedsDataCache = JSON.parse(data);
+          const seedsDir = path.join(__dirname, './assets/seeds');
+          const files = await fs.readdir(seedsDir);
+          const allSeeds = [];
+          for (const file of files) {
+              if (file.endsWith('.json')) {
+                  const data = await fs.readFile(path.join(seedsDir, file), 'utf8');
+                  allSeeds.push(...JSON.parse(data));
+              }
+          }
+          _seedsDataCache = allSeeds;
           return _seedsDataCache;
       } catch (error) {
-          logger.error("Failed to load seeds.json", error);
+          logger.error("Failed to load seeds data from directory", error);
           return [];
       }
   };
