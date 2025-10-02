@@ -1,12 +1,14 @@
 // /public/js/tabs/shop.js
 import { showToast } from '../ui/toast.js';
-import { rarityStyle, ensureItemCss, esc, showItemDetailModal } from '../ui/item.js'; // [수정] char.js -> ui/item.js
+// [오류 수정] 각 함수를 올바른 파일에서 가져오도록 import 문을 분리했습니다.
+import { showItemDetailModal } from '../ui/item.js';
+import { rarityStyle, ensureItemCss, esc } from '../ui/utils.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
 import { func, auth } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { isAdminCached } from '../api/admin.js';
 import { buySeed } from '../api/farm.js';
-import { getUserInventory } from '../api/user.js'; // [추가] getUserInventory 임포트
+import { getUserInventory } from '../api/user.js';
 
 let seedsData = []; // 씨앗 데이터 캐시
 
@@ -23,13 +25,13 @@ async function loadSeedsData() {
     }
 }
 
-// [수정] 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
+// 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
 export async function renderShop(container) {
     const hash = location.hash || '';
     const isSell = hash.includes('/sell');
     const isFarm = hash.includes('/farm');
     
-    // [수정] '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
+    // '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
     const subtabsHTML = `
         <div class="subtabs" style="margin-top: 12px; padding: 0 8px;">
             <a href="#/economy/shop/buy" class="sub" style="text-decoration:none; color: var(--muted);">구매(준비중)</a>
@@ -42,17 +44,18 @@ export async function renderShop(container) {
 
     const contentRoot = container.querySelector('#shop-content');
     
-    // [수정] 해시에 따라 적절한 렌더링 함수를 호출합니다.
+    // 해시에 따라 적절한 렌더링 함수를 호출합니다.
     if (isFarm) {
         await renderShop_Farm(contentRoot);
     } else if (isSell) {
         await renderShop_Sell(contentRoot);
     } else {
-        contentRoot.innerHTML = `<div class="kv-card text-dim">준비 중인 상점입니다.</div>`;
+        // 기본적으로 '판매' 탭을 표시하도록 설정
+        await renderShop_Sell(contentRoot);
     }
 }
 
-// [신규] 농사 탭 UI 렌더링 함수
+// 농사 탭 UI 렌더링 함수
 async function renderShop_Farm(root) {
     ensureItemCss();
     const seeds = await loadSeedsData();
@@ -105,9 +108,7 @@ async function renderShop_Farm(root) {
     }
 }
 
-
-// ANCHOR: renderShop_Sell 함수는 이전과 동일합니다.
-// (이 부분은 수정할 필요 없이 그대로 두시면 됩니다)
+// 아이템 판매 탭 UI 렌더링 함수 (기존과 동일)
 async function renderShop_Sell(root) {
   ensureItemCss();
 
