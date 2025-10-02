@@ -88,6 +88,9 @@ module.exports = (admin) => {
                 isConsumable: true,
                 uses: nQty,
                 type: 'seed', // [핵심] 아이템 타입을 'seed'로 명시
+                placeable: seedInfo.placeable, // [수정] 배치 가능 여부 추가
+                aestheticValue: seedInfo.aestheticValue, // [수정] 미관 점수 추가
+                ...(seedInfo.mutation && { mutation: seedInfo.mutation }), // [수정] 돌연변이 정보가 있으면 추가
                 seedInfo: { // [핵심] 농사 관련 정보는 별도 객체에 저장
                     id: seedInfo.id,
                     growthTimeMinutes: seedInfo.growthTimeMinutes,
@@ -97,7 +100,7 @@ module.exports = (admin) => {
                 properties: { // [핵심] 감정 기능 충돌 방지를 위해 미리 '감정 완료' 상태로 설정
                     appraised: true,
                     category: 'gardening',
-                    placeable: true,
+                    placeable: seedInfo.placeable,
                 }
             };
             items.push(newSeedItem);
