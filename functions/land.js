@@ -23,9 +23,19 @@ module.exports = (admin) => {
     }
   };
 
-  // Blueprint에 따라 10x10 그리드를 절차적으로 생성하는 함수
-  const generateMicroGrid = (blueprint) => {
-    const base = blueprint.base || 'g'; // 기본 타일 (예: 잔디)
+  // [추가] 좌표를 기반으로 일관된 랜덤 값을 생성하는 함수
+  const createSeededRandom = (seed) => {
+    let state = seed;
+    return () => {
+      state = (state * 9301 + 49297) % 233280;
+      return state / 233280;
+    };
+  };
+
+  // [수정] Blueprint에 따라 10x10 그리드를 '결정론적으로' 생성하는 함수
+  const generateMicroGrid = (blueprint, seed) => {
+    const random = createSeededRandom(seed); // 시드 기반 랜덤 함수 사용
+    const base = blueprint.base || 'g';
     const grid = Array(100).fill(base);
     const composition = blueprint.composition || [];
 
@@ -33,12 +43,14 @@ module.exports = (admin) => {
         const { type, density } = comp;
         const count = Math.floor(100 * density);
         for (let i = 0; i < count; i++) {
-            const randomIndex = Math.floor(Math.random() * 100);
+            // 동일한 시드에서는 항상 같은 위치에 타일이 배치됨
+            const randomIndex = Math.floor(random() * 100);
             grid[randomIndex] = type;
         }
     });
     return grid;
   };
+
 
   const getLandDetail = onCall({ region: 'us-central1' }, async (req) => {
     // 1. 요청에서 필요한 정보 추출
@@ -54,7 +66,6 @@ module.exports = (admin) => {
     
     // 3. plotId가 있으면, 해당 이름의 사전 제작 파일을 먼저 찾습니다.
     if (plotId) {
-        // [수정] 파일 경로를 functions 폴더 내부로 변경하고, path.join을 사용하여 안정적으로 경로를 만듭니다.
         const plotPath = path.join(__dirname, 'assets', 'mapdata', mapId.split('_')[0], 'plots', `${plotId}.json`);
         try {
             const plotData = await fs.readFile(plotPath, 'utf8');
@@ -68,18 +79,24 @@ module.exports = (admin) => {
     // 4. 사전 제작 파일이 없었거나 plotId가 원래 없었으면, 절차적으로 생성합니다.
     if (!microGrid) {
         if (!tileType) {
-            // plotId도 없고 tileType도 없으면 생성 불가
             logger.error(`Cannot generate grid for ${mapId}(${x},${y}) without plotId or tileType.`);
-            microGrid = Array(100).fill('g'); // 비상용 잔디밭
+            microGrid = Array(100).fill('g');
         } else {
             const legend = await loadMicroLegend();
             const blueprint = legend.blueprints[tileType];
             if (blueprint) {
-                microGrid = generateMicroGrid(blueprint);
+                // [수정] 맵 ID와 좌표를 기반으로 고유한 시드를 생성
+                const seedString = `${mapId}_${x}_${y}`;
+                let seed = 0;
+                for (let i = 0; i < seedString.length; i++) {
+                    seed = (seed * 31 + seedString.charCodeAt(i)) | 0;
+                }
+                // [수정] 시드를 사용하여 결정론적 그리드 생성
+                microGrid = generateMicroGrid(blueprint, seed);
                 logger.info(`Procedurally generated grid for tileType '${tileType}' at ${mapId}(${x},${y})`);
             } else {
                 logger.warn(`No blueprint found for tileType '${tileType}'. Falling back to default.`);
-                microGrid = Array(100).fill('g'); // Fallback
+                microGrid = Array(100).fill('g');
             }
         }
     }
@@ -93,8 +110,6 @@ module.exports = (admin) => {
     // 6. 클라이언트에 모든 정보 반환
     return { ok: true, mapId, x, y, floatingPopulation, microGrid, owners };
   });
-
-  // 다른 함수들이 있다면 여기에 추가...
 
   return { getLandDetail };
 };
