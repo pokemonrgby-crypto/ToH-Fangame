@@ -1,32 +1,113 @@
 // /public/js/tabs/shop.js
-
-// (기존 import 문들)
 import { showToast } from '../ui/toast.js';
-import { getUserInventory } from '../api/user.js';
-import { rarityStyle, ensureItemCss, esc, showItemDetailModal } from './char.js';
+import { rarityStyle, ensureItemCss, esc, showItemDetailModal } from '../ui/item.js'; // [수정] char.js -> ui/item.js
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
-// [수정] Firebase Functions 사용을 위한 import 추가
-import { func } from '../api/firebase.js';
+import { func, auth } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
+import { isAdminCached } from '../api/admin.js';
+import { buySeed } from '../api/farm.js';
+import { getUserInventory } from '../api/user.js'; // [추가] getUserInventory 임포트
 
+let seedsData = []; // 씨앗 데이터 캐시
 
-// (renderShop 함수는 기존과 동일)
+async function loadSeedsData() {
+    if (seedsData.length > 0) return seedsData;
+    try {
+        const response = await fetch('/assets/seeds.json');
+        if (!response.ok) throw new Error('seeds.json not found');
+        seedsData = await response.json();
+        return seedsData;
+    } catch (error) {
+        console.error("Failed to load seeds data:", error);
+        return [];
+    }
+}
+
+// [수정] 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
 export async function renderShop(container) {
+    const hash = location.hash || '';
+    const isSell = hash.includes('/sell');
+    const isFarm = hash.includes('/farm');
+    
+    // [수정] '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
     const subtabsHTML = `
         <div class="subtabs" style="margin-top: 12px; padding: 0 8px;">
             <a href="#/economy/shop/buy" class="sub" style="text-decoration:none; color: var(--muted);">구매(준비중)</a>
-            <a href="#/economy/shop/sell" class="sub active" style="text-decoration:none;">판매</a>
+            <a href="#/economy/shop/sell" class="sub ${isSell ? 'active' : ''}" style="text-decoration:none;">판매</a>
+            <a href="#/economy/shop/farm" class="sub ${isFarm ? 'active' : ''}" style="text-decoration:none;">농사</a>
             <a href="#/economy/shop/daily" class="sub" style="text-decoration:none; color: var(--muted);">일일상점(준비중)</a>
         </div>
     `;
     container.innerHTML = subtabsHTML + `<div id="shop-content" style="margin-top: 8px;"></div>`;
 
     const contentRoot = container.querySelector('#shop-content');
-    await renderShop_Sell(contentRoot);
+    
+    // [수정] 해시에 따라 적절한 렌더링 함수를 호출합니다.
+    if (isFarm) {
+        await renderShop_Farm(contentRoot);
+    } else if (isSell) {
+        await renderShop_Sell(contentRoot);
+    } else {
+        contentRoot.innerHTML = `<div class="kv-card text-dim">준비 중인 상점입니다.</div>`;
+    }
+}
+
+// [신규] 농사 탭 UI 렌더링 함수
+async function renderShop_Farm(root) {
+    ensureItemCss();
+    const seeds = await loadSeedsData();
+    const isAdmin = isAdminCached();
+
+    root.innerHTML = `
+        <div class="kv-card" style="margin-bottom:12px;">
+            <div style="font-weight:900;">씨앗 상점</div>
+            <div class="text-dim" style="font-size:12px;">농사에 필요한 씨앗이나 묘목을 구매할 수 있습니다. (현재 관리자 전용)</div>
+        </div>
+        <div class="grid3" style="gap:12px;">
+            ${seeds.map(seed => {
+                const style = rarityStyle(seed.rarity);
+                return `
+                    <div class="kv-card item-card" style="padding:10px; border-left: 3px solid ${style.border}; background: ${style.bg};">
+                        <div class="row" style="justify-content:space-between; align-items:flex-start;">
+                            <div style="font-weight:700; color:${style.text};">${esc(seed.name)}</div>
+                            <div class="chip">🪙 ${seed.price}</div>
+                        </div>
+                        <div class="text-dim" style="font-size:12px; margin-top:6px; min-height: 3em;">${esc(seed.description)}</div>
+                        <div class="row" style="justify-content:flex-end; margin-top:8px;">
+                            ${isAdmin ? `<button class="btn small btn-buy-seed" data-seed-id="${esc(seed.id)}">구매</button>` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('')}
+        </div>
+    `;
+
+    if (isAdmin) {
+        root.querySelectorAll('.btn-buy-seed').forEach(btn => {
+            btn.onclick = async () => {
+                const seedId = btn.dataset.seedId;
+                const quantity = parseInt(prompt("구매할 수량을 입력하세요:", "1"), 10);
+                if (!quantity || quantity <= 0) return;
+
+                btn.disabled = true;
+                btn.textContent = '구매중...';
+                try {
+                    await buySeed({ seedId, quantity });
+                    showToast(`${seedId} 씨앗 ${quantity}개를 구매했습니다.`);
+                } catch (e) {
+                    showToast(`구매 실패: ${e.message}`);
+                } finally {
+                    btn.disabled = false;
+                    btn.textContent = '구매';
+                }
+            };
+        });
+    }
 }
 
 
-// ANCHOR: renderShop_Sell 함수 수정
+// ANCHOR: renderShop_Sell 함수는 이전과 동일합니다.
+// (이 부분은 수정할 필요 없이 그대로 두시면 됩니다)
 async function renderShop_Sell(root) {
   ensureItemCss();
 
@@ -42,7 +123,6 @@ async function renderShop_Sell(root) {
     const tier = isConsumable ? prices.consumable : prices.non_consumable;
     const basePrice = tier[(item.rarity || 'normal').toLowerCase()] || 0;
     
-    // [수정] 미관 점수 보너스 추가
     const aestheticBonus = Math.floor(0.02 * (item.properties?.aestheticValue || 0));
 
     return basePrice + aestheticBonus;
@@ -100,7 +180,7 @@ async function renderShop_Sell(root) {
             ${list.map(item=>{
               const isAether   = (String(item.rarity||'').toLowerCase()==='aether');
               const isSelected = selectedIds.has(item.id);
-              const isLocked = item.isLocked === true; // [수정] 잠금 상태 확인
+              const isLocked = item.isLocked === true;
               const leftBorder = isAether ? '' : `border-left:3px solid ${isSelected ? '#4aa3ff' : style.border};`;
               return `
                 <button class="kv-card item-card item-sell-card ${isSelected?'selected':''} ${isAether?'rarity-aether':''}"
@@ -141,7 +221,7 @@ async function renderShop_Sell(root) {
 
     root.querySelectorAll('.item-sell-card').forEach(card=>{
       card.addEventListener('click', ()=>{
-        if (card.disabled) { // [수정] 비활성화된 카드는 토스트 메시지만 표시
+        if (card.disabled) {
           showToast('잠긴 아이템은 판매할 수 없습니다.');
           return;
         }
@@ -156,7 +236,6 @@ async function renderShop_Sell(root) {
     root.querySelectorAll('.btn-bulk-sell').forEach(btn=>{
       btn.addEventListener('click', ()=>{
         const r = btn.getAttribute('data-rarity');
-        // [수정] 잠기지 않은 아이템만 대상으로 일괄 선택
         const targets = (inventory||[]).filter(it => 
           !it.isLocked &&
           (String(it.rarity||'normal').toLowerCase()===r) &&
@@ -243,4 +322,3 @@ async function renderShop_Sell(root) {
 
   loadInventory();
 }
-// ANCHOR_END
