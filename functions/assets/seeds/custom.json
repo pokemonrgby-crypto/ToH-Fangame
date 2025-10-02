@@ -11,7 +11,7 @@
   {
     "id": "custom_seed_normal_perennial",
     "name": "커스텀 씨앗 (Normal, 다년생)",
-    "price": 1000,
+    "price": 100,
     "description": "사용자의 프롬프트를 기반으로 새로운 Normal 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "normal",
     "isPromptUse": true,
@@ -29,7 +29,7 @@
   {
     "id": "custom_seed_rare_perennial",
     "name": "커스텀 씨앗 (Rare, 다년생)",
-    "price": 6000,
+    "price": 600,
     "description": "사용자의 프롬프트를 기반으로 새로운 Rare 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "rare",
     "isPromptUse": true,
@@ -47,7 +47,7 @@
   {
     "id": "custom_seed_epic_perennial",
     "name": "커스텀 씨앗 (Epic, 다년생)",
-    "price": 32500,
+    "price": 3250,
     "description": "사용자의 프롬프트를 기반으로 새로운 Epic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "epic",
     "isPromptUse": true,
@@ -65,7 +65,7 @@
   {
     "id": "custom_seed_legend_perennial",
     "name": "커스텀 씨앗 (Legendary, 다년생)",
-    "price": 85000,
+    "price": 8500,
     "description": "사용자의 프롬프트를 기반으로 새로운 Legendary 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "legend",
     "isPromptUse": true,
@@ -83,7 +83,7 @@
   {
     "id": "custom_seed_myth_perennial",
     "name": "커스텀 씨앗 (Mythic, 다년생)",
-    "price": 150000,
+    "price": 15000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Mythic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "myth",
     "isPromptUse": true,
@@ -101,7 +101,7 @@
   {
     "id": "custom_seed_aether_perennial",
     "name": "커스텀 씨앗 (Aether, 다년생)",
-    "price": 232500,
+    "price": 23250,
     "description": "사용자의 프롬프트를 기반으로 새로운 Aether 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "aether",
     "isPromptUse": true,
