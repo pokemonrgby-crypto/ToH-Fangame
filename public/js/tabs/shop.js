@@ -11,21 +11,19 @@ import { buySeed } from '../api/farm.js';
 import { getUserInventory } from '../api/user.js';
 
 let seedsData = []; // 씨앗 데이터 캐시
+let customSeedsData = []; // 커스텀 씨앗 데이터 캐시
 
 async function loadSeedsData() {
     if (seedsData.length > 0) return seedsData;
     try {
-        // [수정] 등급별로 분리된 씨앗 파일을 모두 가져와 합칩니다.
         const rarities = ['normal', 'rare', 'epic', 'legendary', 'mythic', 'aether'];
         const allSeeds = [];
         for (const rarity of rarities) {
-            // public/assets/seeds/ 디렉토리에서 파일을 가져옵니다.
             const response = await fetch(`/assets/seeds/${rarity}.json`);
             if (response.ok) {
                 const data = await response.json();
                 allSeeds.push(...data);
             } else {
-                // 파일이 없어도 오류를 발생시키지 않고 경고만 출력합니다.
                 console.warn(`Could not load seeds for rarity: ${rarity}`);
             }
         }
@@ -33,7 +31,21 @@ async function loadSeedsData() {
         return seedsData;
     } catch (error) {
         console.error("Failed to load seeds data:", error);
-        seedsData = []; // 오류 발생 시 캐시를 비웁니다.
+        seedsData = [];
+        return [];
+    }
+}
+
+async function loadCustomSeedsData() {
+    if (customSeedsData.length > 0) return customSeedsData;
+    try {
+        const response = await fetch('/assets/seeds/custom.json');
+        if (!response.ok) throw new Error('custom.json not found');
+        customSeedsData = await response.json();
+        return customSeedsData;
+    } catch (error) {
+        console.error("Failed to load custom seeds data:", error);
+        customSeedsData = [];
         return [];
     }
 }
@@ -42,11 +54,11 @@ async function loadSeedsData() {
 // 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
 export async function renderShop(container) {
     const hash = location.hash || '';
-    const isBuy = hash.includes('/buy') || !hash.includes('/sell'); // [수정] 기본 탭을 구매로
+    const isBuy = hash.includes('/buy') || !hash.includes('/sell');
     const isSell = hash.includes('/sell');
     const isFarm = hash.includes('/farm');
-    
-    // '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
+    const isCustom = hash.includes('/custom'); // [추가] 커스텀 탭 확인
+
     const subtabsHTML = `
         <div class="subtabs" style="margin-top: 12px; padding: 0 8px;">
             <a href="#/economy/shop/buy" class="sub ${isBuy ? 'active' : ''}" style="text-decoration:none;">구매</a>
@@ -58,21 +70,20 @@ export async function renderShop(container) {
 
     const contentRoot = container.querySelector('#shop-content');
     
-    // 해시에 따라 적절한 렌더링 함수를 호출합니다.
     if (isSell) {
         await renderShop_Sell(contentRoot);
-    } else { // 기본적으로 '구매' 관련 탭들을 표시
-        await renderShop_Buy(contentRoot, { isFarm });
+    } else {
+        await renderShop_Buy(contentRoot, { isFarm, isCustom });
     }
 }
 
 // [신규] 구매 탭 UI 렌더링 함수
-async function renderShop_Buy(root, { isFarm }) {
-    // [수정] isFarm 변수를 사용하여 '농사' 탭의 활성화 여부를 결정합니다.
+async function renderShop_Buy(root, { isFarm, isCustom }) {
     const buySubtabsHTML = `
         <div class="subtabs" style="padding: 0 8px; margin-bottom: 12px;">
-            <a href="#/economy/shop/buy" class="sub ${!isFarm ? 'active' : ''}" style="text-decoration:none; color: var(--muted);">일반</a>
+            <a href="#/economy/shop/buy" class="sub ${!isFarm && !isCustom ? 'active' : ''}" style="text-decoration:none; color: var(--muted);">일반</a>
             <a href="#/economy/shop/buy/farm" class="sub ${isFarm ? 'active' : ''}" style="text-decoration:none;">농사</a>
+            <a href="#/economy/shop/buy/custom" class="sub ${isCustom ? 'active' : ''}" style="text-decoration:none;">커스텀</a>
         </div>
         <div id="buy-content"></div>
     `;
@@ -82,10 +93,63 @@ async function renderShop_Buy(root, { isFarm }) {
 
     if (isFarm) {
         await renderShop_Farm(buyContentRoot);
+    } else if (isCustom) {
+        await renderShop_Custom(buyContentRoot);
     } else {
-        // 기본 '구매' 탭 (현재 준비중)
         buyContentRoot.innerHTML = `<div class="kv-card text-dim">일반 아이템 구매는 준비 중입니다.</div>`;
     }
+}
+async function renderShop_Custom(root) {
+  ensureItemCss();
+  const seeds = await loadCustomSeedsData();
+  const isAdmin = isAdminCached();
+
+  root.innerHTML = `
+      <div class="kv-card" style="margin-bottom:12px;">
+          <div style="font-weight:900;">커스텀 씨앗 상점</div>
+          <div class="text-dim" style="font-size:12px;">AI를 이용해 나만의 씨앗을 만들 수 있는 특별한 아이템입니다. (현재 관리자 전용)</div>
+      </div>
+      <div class="grid3" style="gap:12px;">
+          ${seeds.map(seed => {
+              const style = rarityStyle(seed.rarity);
+              return `
+                  <div class="kv-card item-card" style="padding:10px; border-left: 3px solid ${style.border}; background: ${style.bg};">
+                      <div class="row" style="justify-content:space-between; align-items:flex-start;">
+                          <div style="font-weight:700; color:${style.text};">${esc(seed.name)}</div>
+                          <div class="chip">🪙 ${seed.price}</div>
+                      </div>
+                      <div class="text-dim" style="font-size:12px; margin-top:6px; min-height: 3em;">${esc(seed.description)}</div>
+                      <div class="row" style="justify-content:flex-end; margin-top:8px;">
+                          ${isAdmin ? `<button class="btn small btn-buy-seed" data-seed-id="${esc(seed.id)}">구매</button>` : ''}
+                      </div>
+                  </div>
+              `;
+          }).join('')}
+      </div>
+  `;
+
+  if (isAdmin) {
+      root.querySelectorAll('.btn-buy-seed').forEach(btn => {
+          btn.onclick = async () => {
+              const seedId = btn.dataset.seedId;
+              const quantity = parseInt(prompt("구매할 수량을 입력하세요:", "1"), 10);
+              if (!quantity || quantity <= 0) return;
+
+              btn.disabled = true;
+              btn.textContent = '구매중...';
+              try {
+                  // 커스텀 씨앗도 기존 buySeed 함수를 통해 구매 처리합니다.
+                  await buySeed({ seedId, quantity });
+                  showToast(`${seedId} ${quantity}개를 구매했습니다.`);
+              } catch (e) {
+                  showToast(`구매 실패: ${e.message}`);
+              } finally {
+                  btn.disabled = false;
+                  btn.textContent = '구매';
+              }
+          };
+      });
+  }
 }
 
 // 농사 탭 UI 렌더링 함수 (기존과 동일)
