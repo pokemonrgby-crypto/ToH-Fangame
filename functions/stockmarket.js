@@ -1239,6 +1239,75 @@ const nudgeBluechipsDaily = onSchedule({
     return { ok: true, stocks: stockCount, users: userCount.size, paid: totalPaid, failedRefunds };
   });
 
+
+
+  const adminCreateRandomEvent = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!await _isAdmin(uid)) {
+      throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
+    }
+
+    // 1. 모든 상장된 주식 목록 가져오기
+    const stocksSnap = await db.collection('stocks').where('status', '==', 'listed').get();
+    if (stocksSnap.empty) {
+      throw new HttpsError('not-found', '상장된 주식이 없습니다.');
+    }
+    const stocks = stocksSnap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+
+    // 2. 무작위로 주식 하나 선택
+    const stock = stocks[Math.floor(Math.random() * stocks.length)];
+    const stockId = stock.id;
+
+    // 3. 무작위로 긍정/부정 효과 결정
+    const potential_impact = Math.random() < 0.5 ? 'positive' : 'negative';
+    const premise = `${stock.name}에 대한 무작위 돌발 사건`;
+    
+    // 현재 KST 기준 시/분 계산
+    const now = toKST(new Date());
+    const trigger_minute = now.getHours() * 60 + now.getMinutes();
+    const today = dayStamp(now);
+    
+    logger.info(`[adminCreateRandomEvent] Generating random event for ${stock.name}: ${potential_impact}`);
+    
+    const planRef = db.collection('stock_events').doc(`${stockId}_${today}`);
+
+    const worldName = stock.world_name || stock.world_id || '알 수 없는 세계';
+    const description = stock.description || '알려지지 않음';
+
+    let ai = { magnitude: 'small', title_before: '돌발 소식' };
+    try {
+      const tmp = await aiPickImpact({
+        premise,
+        subjectName: stock.name || stockId,
+        worldName,
+        subjectDescription: description,
+      });
+      ai.magnitude = tmp.magnitude;
+      ai.title_before = tmp.title_before;
+    } catch(e) {
+        logger.error(`[adminCreateRandomEvent] AI Impact generation failed for ${stock.name}`, e);
+    }
+
+    const newEvent = {
+      premise: premise,
+      title_before: ai.title_before,
+      potential_impact: potential_impact,
+      magnitude: ai.magnitude,
+      actual_outcome: Math.random() < 0.85 ? potential_impact : (potential_impact === 'positive' ? 'negative' : 'positive'),
+      trigger_minute: trigger_minute,
+      forecast_sent: false,
+      processed: false,
+      is_manual: true,
+      is_random: true, // 랜덤 생성 플래그
+    };
+    
+    await planRef.set({ major_events: FieldValue.arrayUnion(newEvent) }, { merge: true });
+    
+    return { ok: true, message: `'${stock.name}'에 대한 ${potential_impact} 사건이 생성되었습니다. (영향: ${ai.magnitude})` };
+  });
+
+  
+
   return {
     // ... (기존 stockmarket.js의 다른 export 함수들)
     planDailyStockEvents,
@@ -1254,5 +1323,6 @@ const nudgeBluechipsDaily = onSchedule({
     adminCreateManualEvent,
     nudgeBluechipsDaily,
     adminDelistAllAndRefund,
+    adminCreateRandomEvent,
   };
 };
