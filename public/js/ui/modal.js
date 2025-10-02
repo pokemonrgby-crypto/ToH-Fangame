@@ -1,4 +1,4 @@
-// /public/js/ui/modal.js
+// /public/js/ui/modal.js (전체 교체)
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -42,6 +42,7 @@ export function ensureModalCss(){
  * @returns {Promise<boolean>} - 확인(true), 취소(false)
  */
 export function confirmModal(opts){
+  ensureModalCss(); // [추가] CSS가 주입되었는지 확인
   return new Promise(res=>{
     const back = document.createElement('div');
     back.className = 'modal-back';
@@ -62,5 +63,65 @@ export function confirmModal(opts){
     back.querySelector('[data-x]').onclick = ()=> close(false);
     back.querySelector('[data-ok]').onclick = ()=> close(true);
     document.body.appendChild(back);
+  });
+}
+
+/**
+ * [신규] 텍스트 입력을 받는 프롬프트 모달을 띄우고 Promise를 반환합니다.
+ * @param {object} opts - {title, placeholder, hint, maxLen, okText, cancelText}
+ * @returns {Promise<string|null>} - 확인(입력값), 취소(null)
+ */
+export function promptModal(opts = {}) {
+  ensureModalCss();
+  return new Promise(resolve => {
+    const { title = '입력', placeholder = '', hint = '', maxLen = 300, okText = '확인', cancelText = '취소' } = opts;
+
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML = `
+      <div class="modal-card" style="max-width: 520px;">
+        <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(title)}</div>
+        ${hint ? `<div class="text-dim" style="font-size:13px; margin-bottom:10px;">${esc(hint)}</div>` : ''}
+        <textarea id="prompt-text" class="input" style="min-height: 120px; border-radius: 8px; padding: 8px;" maxlength="${maxLen}" placeholder="${esc(placeholder)}"></textarea>
+        <div class="row" style="justify-content:space-between; align-items:center; margin-top:8px;">
+          <div id="prompt-count" class="text-dim" style="font-size:12px;">0 / ${maxLen}</div>
+          <div class="row" style="gap:8px;">
+            <button class="btn ghost" id="prompt-cancel">${esc(cancelText)}</button>
+            <button class="btn primary" id="prompt-ok">${esc(okText)}</button>
+          </div>
+        </div>
+        <div id="prompt-warn" style="color:#ef4444; font-size:12px; margin-top:6px; text-align:right; display:none;"></div>
+      </div>
+    `;
+
+    const txt = back.querySelector('#prompt-text');
+    const ok = back.querySelector('#prompt-ok');
+    const cancel = back.querySelector('#prompt-cancel');
+    const count = back.querySelector('#prompt-count');
+    const warn = back.querySelector('#prompt-warn');
+
+    const update = () => {
+      const len = txt.value.length;
+      count.textContent = `${len} / ${maxLen}`;
+      const bad = len === 0 || len > maxLen;
+      ok.disabled = bad;
+      warn.style.display = bad ? 'block' : 'none';
+      if (len === 0) warn.textContent = '내용을 입력해주세요.';
+      else if (len > maxLen) warn.textContent = `최대 ${maxLen}자까지 입력할 수 있습니다.`;
+    };
+
+    txt.oninput = update;
+    cancel.onclick = () => { close(null); };
+    ok.onclick = () => {
+      const v = txt.value.trim();
+      if (!v || v.length > maxLen) { update(); return; }
+      close(v);
+    };
+
+    const close = (val) => { back.remove(); resolve(val); };
+    back.addEventListener('click', e => { if (e.target === back) close(null); });
+    
+    document.body.appendChild(back);
+    setTimeout(() => { txt.focus(); update(); }, 50);
   });
 }
