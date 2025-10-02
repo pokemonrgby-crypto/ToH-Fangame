@@ -1,6 +1,8 @@
-// /functions/farm.js (신규 파일)
+// /functions/farm.js
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
+const fs = require('fs').promises;
+const path = require('path');
 
 module.exports = (admin) => {
   const db = admin.firestore();
@@ -18,50 +20,92 @@ module.exports = (admin) => {
       return !!(user?.email && allowEmails.includes(user.email));
     } catch (_) { return false; }
   }
+  
+  // [신규] 씨앗 데이터 로더
+  let _seedsDataCache = null;
+  const loadSeedsData = async () => {
+      if (_seedsDataCache) return _seedsDataCache;
+      try {
+          const seedsPath = path.join(__dirname, './assets/seeds.json');
+          const data = await fs.readFile(seedsPath, 'utf8');
+          _seedsDataCache = JSON.parse(data);
+          return _seedsDataCache;
+      } catch (error) {
+          logger.error("Failed to load seeds.json", error);
+          return [];
+      }
+  };
 
-  // 관리자용 씨앗 구매 함수
+
+  // [수정] 관리자용 씨앗 구매 함수 (중첩 로직 및 새 데이터 구조 적용)
   const buySeed = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
     if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자만 씨앗을 구매할 수 있습니다.');
 
     const { seedId, quantity } = req.data;
-    if (!seedId || !quantity || quantity <= 0) {
+    const nQty = Math.floor(Number(quantity) || 0);
+    if (!seedId || nQty <= 0) {
       throw new HttpsError('invalid-argument', '필수 정보(seedId, quantity)가 누락되었습니다.');
     }
     
-    // TODO: seeds.json 같은 곳에서 씨앗 가격 정보 로드
-    const pricePerSeed = 10; // 임시 가격
-    const totalPrice = pricePerSeed * quantity;
+    const allSeeds = await loadSeedsData();
+    const seedInfo = allSeeds.find(s => s.id === seedId);
+    if (!seedInfo) throw new HttpsError('not-found', '존재하지 않는 씨앗입니다.');
+
+    const totalPrice = (seedInfo.price || 10) * nQty;
 
     return db.runTransaction(async (tx) => {
         const userRef = db.doc(`users/${uid}`);
         const userSnap = await tx.get(userRef);
         if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
 
-        const userCoins = userSnap.data().coins || 0;
+        const userData = userSnap.data();
+        const userCoins = userData.coins || 0;
         if (userCoins < totalPrice) throw new HttpsError('failed-precondition', '코인이 부족합니다.');
 
-        const newSeedItem = {
-            id: `seed_${seedId}_${Date.now()}`,
-            name: `${seedId} 씨앗`,
-            rarity: 'normal',
-            isConsumable: true,
-            uses: quantity,
-            description: `${seedId}의 씨앗. 농장에 심을 수 있다.`,
-            type: 'seed',
-            seedId: seedId
-        };
+        let items = userData.items_all || [];
+        
+        // 인벤토리에서 같은 종류의 씨앗(seedId)을 찾습니다.
+        const existingSeedIndex = items.findIndex(item => item.type === 'seed' && item.seedInfo?.id === seedId);
+
+        if (existingSeedIndex !== -1) {
+            // 이미 씨앗이 있다면 수량(uses)만 증가시킵니다.
+            items[existingSeedIndex].uses = (items[existingSeedIndex].uses || 0) + nQty;
+        } else {
+            // 없다면 새로운 아이템 객체를 생성하여 추가합니다.
+            const newSeedItem = {
+                id: `item_seed_${seedId}_${Date.now()}`, // 인벤토리 슬롯을 위한 고유 ID
+                name: seedInfo.name,
+                rarity: seedInfo.rarity,
+                description: seedInfo.description,
+                isConsumable: true,
+                uses: nQty,
+                type: 'seed', // [핵심] 아이템 타입을 'seed'로 명시
+                seedInfo: { // [핵심] 농사 관련 정보는 별도 객체에 저장
+                    id: seedInfo.id,
+                    growthTimeMinutes: seedInfo.growthTimeMinutes,
+                    harvest: seedInfo.harvest,
+                    isPerennial: seedInfo.isPerennial,
+                },
+                properties: { // [핵심] 감정 기능 충돌 방지를 위해 미리 '감정 완료' 상태로 설정
+                    appraised: true,
+                    category: 'gardening',
+                    placeable: true,
+                }
+            };
+            items.push(newSeedItem);
+        }
         
         tx.update(userRef, { 
             coins: FieldValue.increment(-totalPrice),
-            items_all: FieldValue.arrayUnion(newSeedItem)
+            items_all: items
         });
 
-        return { ok: true, paid: totalPrice, received: newSeedItem };
+        return { ok: true, paid: totalPrice };
     });
   });
 
-  // 아래 함수들은 향후 구현을 위한 플레이스홀더입니다.
+  // ... (getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm 함수들은 그대로 유지)
   const getFarmPlotDetail = onCall({ region: 'us-central1' }, async (req) => {
       if (!await _isAdmin(req.auth?.uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
       return { ok: true, message: "향후 구현될 기능입니다." };
@@ -74,6 +118,7 @@ module.exports = (admin) => {
       if (!await _isAdmin(req.auth?.uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
       return { ok: true, message: "향후 구현될 기능입니다." };
   });
+
 
   return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm };
 };
