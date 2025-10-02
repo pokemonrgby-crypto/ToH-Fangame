@@ -421,7 +421,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       return currentMinute >= t;
     };
 
-    // [추가] 함수 시작 시점에 세계관 정보를 미리 불러옵니다.
     const worldsSnap = await db.collection('configs').doc('worlds').get();
     const worldsData = worldsSnap.exists ? worldsSnap.data() : {};
 
@@ -433,15 +432,21 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
 
       const stockRef = stockDoc.ref;
       const planDocRef = db.collection('stock_events').doc(`${stockRef.id}_${today}`);
+      const dailyPlanRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`); // [수정] 미리 참조
       
-      // [추가] 현재 주식의 세계관 정보를 찾습니다.
       const stockDataForLoop = stockDoc.data();
       const worldInfoForLoop = (worldsData.worlds || []).find(w => w.id === stockDataForLoop.world_id) 
         || { id: stockDataForLoop.world_id, name: stockDataForLoop.world_name || stockDataForLoop.world_id || '', detail: { lore_long: '' } };
 
 
       await db.runTransaction(async (tx) => {
-        const [stockSnap, planSnap] = await Promise.all([tx.get(stockRef), tx.get(planDocRef)]);
+        // [수정] 필요한 모든 문서를 트랜잭션 시작 부분에서 미리 읽습니다.
+        const [stockSnap, planSnap, dailyPlanSnap] = await Promise.all([
+            tx.get(stockRef), 
+            tx.get(planDocRef),
+            tx.get(dailyPlanRef)
+        ]);
+
         if (!stockSnap.exists) return;
 
         const stock = stockSnap.data();
@@ -489,16 +494,30 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
               actual: out,
             });
 
-            await nudgeDailyTargetByEvent(tx, stockRef, today, out, mag);
+            // [수정] nudgeDailyTargetByEvent 함수 호출을 인라인으로 처리합니다.
+            const dailyData = dailyPlanSnap.exists ? dailyPlanSnap.data() : {};
+            const rate = MAG2RATE[mag] ?? 0.05;
+            const sign = out === 'positive' ? 1 : -1;
+            const curTarget = Number(dailyData.target_price || 0);
+            const nextTargetForEvent = Math.max(1, Math.round(curTarget * (1 + sign * rate)));
+            
+            if (!dailyPlanSnap.exists) {
+                tx.set(dailyPlanRef, {
+                    stock_id: stockRef.id, date: today,
+                    target_price: nextTargetForEvent,
+                    trend_sign: Math.random() < 0.5 ? -1 : 1,
+                    daily_open: price, // 이벤트 발생 시점의 가격을 시가로
+                    drift_bps: 5
+                }, { merge: true });
+            } else {
+                tx.update(dailyPlanRef, { target_price: nextTargetForEvent });
+            }
           }
         }
 
         // 이벤트 없을 때 분당 자연 이동(드리프트+노이즈)
         if (!movedByEvent) {
-          const dailyRef = db.collection('stock_daily_plans').doc(`${stockRef.id}_${today}`);
-          const dailySnap = await tx.get(dailyRef);
-
-          let dplan = dailySnap.exists ? dailySnap.data() : null;
+          let dplan = dailyPlanSnap.exists ? dailyPlanSnap.data() : null;
           if (!dplan) {
             const { drift_bps } = volatilityParams(stock.volatility || 'normal');
             dplan = {
@@ -506,22 +525,19 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
               trend_sign: Math.random() < 0.5 ? -1 : 1, daily_open: price,
               drift_bps, trend_sign_last_changed_at: admin.firestore.Timestamp.now()
             };
-            tx.set(dailyRef, dplan, { merge: true });
+            tx.set(dailyPlanRef, dplan, { merge: true });
           }
 
-          // ★★★★★ 30분마다 추세 방향 1/2 확률로 변경 ★★★★★
           let trend = Number(dplan.trend_sign || 1);
           const lastChangedMs = dplan.trend_sign_last_changed_at?.toMillis() || 0;
           const thirtyMinAgoMs = now.getTime() - 30 * 60 * 1000;
           
           if (lastChangedMs < thirtyMinAgoMs) {
             if (Math.random() < 0.5) {
-              trend *= -1; // 50% 확률로 방향 전환
+              trend *= -1;
             }
-            // 확률에 상관없이 시간은 갱신
-            tx.update(dailyRef, { trend_sign: trend, trend_sign_last_changed_at: admin.firestore.Timestamp.now() });
+            tx.update(dailyPlanRef, { trend_sign: trend, trend_sign_last_changed_at: admin.firestore.Timestamp.now() });
           }
-          // ★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★★
 
           const v = volatilityParams(stock.volatility || 'normal');
           const q = qualityMultipliers(stock.quality || 'standard');
@@ -538,7 +554,7 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
           if (Math.round(newPrice) === price) newPrice += (Math.random() < 0.5 ? -1 : 1);
           price = Math.max(1, Math.round(newPrice));
 
-          tx.update(dailyRef, { target_price: nextTarget });
+          tx.update(dailyPlanRef, { target_price: nextTarget });
         }
 
         if (price !== Number(stock.current_price)) {
@@ -581,7 +597,6 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       // 메일: 결과
       for (const job of postResultJobs) {
         try {
-          // [수정] 시스템 프롬프트에 세계관 상세 정보 주입
           const systemPrompt = `당신은 'Tale of Heros' 세계관의 경제 뉴스 채널 'TNN(Tale News Network)' 소속의 노련한 경제 분석가입니다.
 모든 분석과 기사는 해당 세계관에 몰입하여, 마치 그 세상의 주민인 것처럼 작성해야 합니다.
 
@@ -624,7 +639,6 @@ ${worldInfoForLoop.detail?.lore_long || worldInfoForLoop.detail?.lore || worldIn
       }
     }
   });
-
   // ==================================================================
   // 2-1) 세계관 사건 처리 (예고/확정)  — 인덱스 실패시 우회 내장
   // ==================================================================
