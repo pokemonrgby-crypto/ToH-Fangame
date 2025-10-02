@@ -88,8 +88,8 @@ async function getSeedInfoHtml(it) {
 export async function showItemDetailModal(item, context = {}) { // [수정] async 함수로 변경
     ensureModalCss();
     if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
-    const { equippedIds = [], onUpdate = null } = context;
-    const isEquipped = equippedIds.includes(item.id);
+    const { equippedIds, onUpdate } = context; // [수정] equippedIds가 undefined일 수 있음
+    const isEquipped = Array.isArray(equippedIds) && equippedIds.includes(item.id);
 
     const style = rarityStyle(item.rarity);
     const getItemDesc = (it) => (it?.description || it?.desc_long || it?.desc_soft || it?.desc || '').replace(/\n/g, '<br>');
@@ -169,7 +169,7 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
-    if (item.isPromptUse === true && typeof context.onUpdate === 'function') {
+    if (item.isPromptUse === true && typeof onUpdate === 'function') {
         const btnUse = document.createElement('button');
         btnUse.className = 'btn primary';
         btnUse.textContent = '✨ 사용하기';
@@ -217,6 +217,10 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
                 if (result.ok) {
                     showToast('아이템 감정이 완료되었습니다!');
                     closeModal(); 
+                    // onUpdate 콜백이 있으면 인벤토리 UI를 새로고침하도록 호출
+                    if (typeof onUpdate === 'function') {
+                        onUpdate();
+                    }
                 } else { throw new Error('서버에서 감정을 거부했습니다.'); }
             } catch (err) {
                 showToast(`감정 실패: ${err.message}`);
@@ -227,7 +231,9 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
         actionsContainer.appendChild(btnAppraise);
     }
 
-    if (typeof onUpdate === 'function') {
+    // ▼▼▼ [핵심 수정] ▼▼▼
+    // onUpdate 함수와 equippedIds 배열이 모두 존재할 때만 장착/해제 버튼을 표시합니다.
+    if (typeof onUpdate === 'function' && Array.isArray(equippedIds)) {
       if (isEquipped) {
         const btnUnequip = document.createElement('button');
         btnUnequip.className = 'btn';
@@ -248,5 +254,6 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
         actionsContainer.appendChild(btnEquip);
       }
     }
+    // ▲▲▲ [핵심 수정] ▲▲▲
     document.body.appendChild(back);
 }
