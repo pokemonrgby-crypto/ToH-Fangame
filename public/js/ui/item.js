@@ -5,6 +5,44 @@ import { showToast } from './toast.js';
 import { appraiseItem } from '../api/user.js';
 
 /**
+ * [신규] 씨앗 정보(seedInfo)를 표시하기 위한 HTML을 생성합니다.
+ * @param {object} it - 아이템 객체
+ * @returns {string} 씨앗 정보가 담긴 HTML 문자열
+ */
+function getSeedInfoHtml(it) {
+    if (it.type !== 'seed' || !it.seedInfo) return '';
+
+    const info = it.seedInfo;
+    const growthTime = info.growthTimeMinutes || 0;
+    const hours = Math.floor(growthTime / 60);
+    const minutes = growthTime % 60;
+    const timeText = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
+
+    const harvestItems = Array.isArray(info.harvest)
+        ? info.harvest.map(h => `<li>${esc(h.itemId)} (${h.min}~${h.max}개)</li>`).join('')
+        : '<li>알 수 없음</li>';
+
+    return `
+        <hr style="margin:12px 0; border-color:#273247;">
+        <div class="kv-label">씨앗 정보</div>
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; font-size: 13px; margin-top: 8px;">
+            <b style="color: #9aa4b2;">성장 시간</b>
+            <div>${timeText}</div>
+
+            <b style="color: #9aa4b2;">다년생</b>
+            <div>${info.isPerennial ? '✔ 예' : '❌ 아니오'}</div>
+            
+            <b style="color: #9aa4b2; grid-column: 1 / -1; margin-top: 6px;">예상 수확물</b>
+            <div style="grid-column: 1 / -1; padding-left: 16px;">
+                <ul style="margin: 0; padding: 0; list-style-type: '- '; color: #c8d0dc;">
+                    ${harvestItems}
+                </ul>
+            </div>
+        </div>
+    `;
+}
+
+/**
  * 아이템 상세 정보 모달을 표시합니다. (통합 버전)
  * @param {object} item - 아이템 객체
  * @param {object} context - { equippedIds: string[], onUpdate: function(string[]) }
@@ -41,7 +79,8 @@ export function showItemDetailModal(item, context = {}) {
         const valueTranslations = {
             // Categories
             "equipment": "장비", "consumable": "소모품", "material": "재료", "furniture": "가구", "decoration": "장식", "etc": "기타",
-            // SubCategories (추가된 항목 포함)
+            "gardening": "농사", // [신규] 농사 카테고리 추가
+            // SubCategories
             "weapon": "무기", "armor": "방어구", "shield": "방패", "clothing": "의상", "boots": "신발", "gloves": "장갑", "accessory": "장신구", 
             "potion": "물약", "food": "음식", "scroll": "주문서", "bomb": "폭탄", "tome": "마도서",
             "ore": "광석", "herb": "약초", "leather": "가죽", "cloth": "옷감", "gem": "보석", "monsterPart": "마물 부속", "essence": "정수",
@@ -49,27 +88,19 @@ export function showItemDetailModal(item, context = {}) {
             "key": "열쇠", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니"
         };
         
-        // 2. 표시할 속성의 순서를 미리 정의합니다.
         const propertyOrder = ['category', 'subCategory', 'equipable', 'placeable', 'aestheticValue', 'effects'];
-
         let html = '<hr style="margin:12px 0; border-color:#273247;"><div class="kv-label">감정된 속성</div>';
-        
-        // 3. API 응답에서 표시할 속성이 있는지 확인합니다.
         const availableProps = propertyOrder.filter(key => props.hasOwnProperty(key));
 
         if (availableProps.length > 0) {
             html += `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; font-size: 13px; margin-top: 8px;">`;
-            
-            // 4. 정의된 순서대로 반복하며 HTML을 생성합니다.
             for (const key of availableProps) {
                 const value = props[key];
                 const translatedKey = keyTranslations[key] || key;
-
                 if (key === 'effects' && Array.isArray(value)) {
                     html += `<b style="grid-column: 1 / -1; margin-top: 6px;">${esc(translatedKey)}</b>`;
                     if (value.length > 0) {
-                        html += `<div style="grid-column: 1 / -1; padding-left: 16px;">`;
-                        html += `<ul style="margin: 0; padding: 0; list-style-type: '- '; color: #c8d0dc;">`;
+                        html += `<div style="grid-column: 1 / -1; padding-left: 16px;"><ul style="margin: 0; padding: 0; list-style-type: '- '; color: #c8d0dc;">`;
                         value.forEach(effect => {
                             html += `<li style="margin-bottom: 4px;">${esc(effect.description || JSON.stringify(effect))}</li>`;
                         });
@@ -79,7 +110,7 @@ export function showItemDetailModal(item, context = {}) {
                     let displayValue;
                     if (typeof value === 'boolean') {
                         displayValue = value ? '✔ 예' : '❌ 아니오';
-                    } else if ((key === 'category' || key === 'subCategory') && typeof value === 'string') {
+                    } else if (key === 'category' || key === 'subCategory') {
                         displayValue = valueTranslations[value] || value;
                     } else {
                         displayValue = String(value ?? '');
@@ -88,7 +119,6 @@ export function showItemDetailModal(item, context = {}) {
                     html += `<div>${esc(displayValue)}</div>`;
                 }
             }
-            
             html += `</div>`;
         } else {
             html += `<div style="font-size:13px; margin-top: 8px;">특별한 속성이 발견되지 않았습니다.</div>`;
@@ -115,8 +145,9 @@ export function showItemDetailModal(item, context = {}) {
       </div>
       <div class="kv-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''}" style="padding:12px;">
         <div style="font-size:14px; line-height:1.6;">${getItemDesc(item) || '상세 설명이 없습니다.'}</div>
-        ${item.effects ? `<hr style="margin:12px 0; border-color:#273247;"><div class="kv-label">효과</div><div style="font-size:13px;">${getEffectsHtml(item)}</div>` : ''}
+        ${item.effects ? getEffectsHtml(item) : ''}
         ${getPropertiesHtml(item)}
+        ${getSeedInfoHtml(item)}
       </div>
       <div id="itemActions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;"></div>
     </div>
@@ -126,7 +157,6 @@ export function showItemDetailModal(item, context = {}) {
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
-
     const canAppraise = !item.properties?.appraised;
     if (canAppraise) {
         const btnAppraise = document.createElement('button');
