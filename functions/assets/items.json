@@ -78,5 +78,17 @@
   "phoenix_feather": { "name": "불사조의 깃털", "description": "꺼지지 않는 불꽃의 기운이 담긴 깃털. 강력한 화염 마법의 촉매가 된다.", "rarity": "myth", "type": "material", "placeable": false, "aestheticValue": 800 },
   "world_serpent_scale": { "name": "세계수의 비늘", "description": "세계를 감싸고 있는 거대한 뱀의 비늘. 모든 저항을 무시하는 절대 방어의 재료.", "rarity": "myth", "type": "material", "placeable": false, "aestheticValue": 1200 },
   "root_of_yggdrasil": { "name": "위그드라실의 뿌리", "description": "모든 세계를 연결하는 세계수의 작은 뿌리 조각. 차원을 넘나드는 힘의 원천이다.", "rarity": "myth", "type": "material", "placeable": true, "aestheticValue": 2500 },
-  "aether_core_fragment": { "name": "에테르 핵 파편", "description": "세계의 근원인 에테르의 순수한 결정체. 만물의 법칙을 뒤흔들 수 있는 잠재력을 지니고 있다.", "rarity": "aether", "type": "material", "placeable": true, "aestheticValue": 5000 }
+  "aether_core_fragment": { "name": "에테르 핵 파편", "description": "세계의 근원인 에테르의 순수한 결정체. 만물의 법칙을 뒤흔들 수 있는 잠재력을 지니고 있다.", "rarity": "aether", "type": "material", "placeable": true, "aestheticValue": 50000 },
+  "giggle_leaf": { "name": "실웃음초 잎사귀", "description": "가볍게 말려서 차로 마시면 잠시 동안 모든 걱정을 잊고 웃게 된다.", "rarity": "normal", "type": "material", "placeable": false, "aestheticValue": 30 },
+  "rock_melon": { "name": "바위멜론", "description": "바위처럼 단단한 껍질 속에 상상 이상으로 달콤하고 시원한 과육이 숨어있다.", "rarity": "rare", "type": "food", "placeable": true, "aestheticValue": 200 },
+  "rock_melon_shell": { "name": "바위멜론 껍질", "description": "가볍지만 강철처럼 단단한 멜론 껍질. 훌륭한 방어구의 재료가 될 것 같다.", "rarity": "rare", "type": "material", "placeable": false, "aestheticValue": 50 },
+  "volt_rose": { "name": "전기 장미", "description": "꽃잎 하나하나에 번개의 힘이 깃들어 있는 장미. 만지면 머리카락이 쭈뼛 선다.", "rarity": "rare", "type": "material", "placeable": true, "aestheticValue": 280 },
+  "dream_wool": { "name": "꿈솜", "description": "만지는 것만으로도 졸음이 쏟아질 만큼 부드럽고 푹신한 솜. 최고급 침구나 의복의 재료.", "rarity": "epic", "type": "material", "placeable": false, "aestheticValue": 400 },
+  "everburning_flower": { "name": "꺼지지 않는 불꽃초", "description": "결코 식지 않는 열기를 내뿜는 마그마의 꽃. 영원한 빛과 열이 필요한 마법 도구의 핵심 재료다.", "rarity": "epic", "type": "material", "placeable": true, "aestheticValue": 1200 },
+  "golden_apple": { "name": "황금사과", "description": "눈부신 황금빛을 뿜어내는 신비로운 사과. 먹으면 잃어버린 활력을 되찾고 몸이 가벼워진다.", "rarity": "legend", "type": "food", "placeable": true, "aestheticValue": 7500 },
+  "dew_of_world_tree": { "name": "세계수의 이슬", "description": "세계수의 잎사귀에 맺히는 영롱한 이슬. 어떤 상처나 저주도 정화하는 힘을 지녔다고 한다.", "rarity": "legend", "type": "potion", "placeable": false, "aestheticValue": 5000 },
+  "chaos_orchid_petal": { "name": "혼돈의 난초 꽃잎", "description": "시시각각 색과 형태가 변하는 불가사의한 꽃잎. 불안정하지만 무한한 가능성을 품은 연금술 재료.", "rarity": "myth", "type": "material", "placeable": false, "aestheticValue": 9000 },
+  "galaxy_lotus_seed": { "name": "은하 연꽃 씨앗", "description": "작은 씨앗 안에 하나의 은하계가 담겨 있는 듯한 착각을 불러일으킨다. 강력한 시공간 마법의 촉매제.", "rarity": "myth", "type": "material", "placeable": false, "aestheticValue": 11000 },
+  "essence_of_creation": { "name": "창조의 정수", "description": "태초의 씨앗에서 태어난 순수한 창조의 에너지 결정체. 새로운 생명을 탄생시키거나 무에서 유를 창조하는 궁극의 재료.", "rarity": "aether", "type": "material", "placeable": false, "aestheticValue": 25000 },
+  "oblivion_crystal": { "name": "망각의 수정", "description": "존재했던 모든 것을 무로 되돌리는 공허의 힘이 깃든 수정. 만지는 것만으로도 기억이 흐릿해진다.", "rarity": "aether", "type": "material", "placeable": false, "aestheticValue": 50000 }
 }
