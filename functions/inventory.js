@@ -1,7 +1,7 @@
 // /functions/inventory.js
 const fs = require('fs').promises;
 const path = require('path');
-const { FieldValue } = require('firebase-admin/firestore');
+const { FieldValue } = require('firebase-admin/firestore'); // <--- 이 부분이 핵심입니다!
 
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
