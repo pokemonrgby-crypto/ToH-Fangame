@@ -73,34 +73,36 @@ module.exports = (admin) => {
         let items = userData.items_all || [];
         
         // 인벤토리에서 같은 종류의 씨앗(seedId)을 찾습니다.
-        const existingSeedIndex = items.findIndex(item => item.type === 'seed' && item.seedInfo?.id === seedId);
+        const existingSeedIndex = items.findIndex(item => (item.type === 'seed' && item.seedInfo?.id === seedId) || item.id === seedId);
+
 
         if (existingSeedIndex !== -1) {
-            // 이미 씨앗이 있다면 수량(uses)만 증가시킵니다.
-            items[existingSeedIndex].uses = (items[existingSeedIndex].uses || 0) + nQty;
+            // 이미 아이템이 있다면 수량(uses)만 증가시킵니다.
+            items[existingSeedIndex].uses = (items[existingSeedIndex].uses || 1) + nQty;
         } else {
             // 없다면 새로운 아이템 객체를 생성하여 추가합니다.
             const newSeedItem = {
-                id: `item_seed_${seedId}_${Date.now()}`, // 인벤토리 슬롯을 위한 고유 ID
+                id: seedInfo.isPromptUse ? seedId : `item_seed_${seedId}_${Date.now()}`,
                 name: seedInfo.name,
                 rarity: seedInfo.rarity,
                 description: seedInfo.description,
                 isConsumable: true,
                 uses: nQty,
-                type: 'seed', // [핵심] 아이템 타입을 'seed'로 명시
-                placeable: seedInfo.placeable, // [수정] 배치 가능 여부 추가
-                ...(seedInfo.mutation && { mutation: seedInfo.mutation }), // [수정] 돌연변이 정보가 있으면 추가
-                seedInfo: { // [핵심] 농사 관련 정보는 별도 객체에 저장
+                type: 'seed',
+                placeable: seedInfo.placeable,
+                ...(seedInfo.mutation && { mutation: seedInfo.mutation }),
+                ...(seedInfo.isPromptUse && { isPromptUse: true, promptId: seedInfo.promptId }),
+                seedInfo: {
                     id: seedInfo.id,
                     growthTimeMinutes: seedInfo.growthTimeMinutes,
                     harvest: seedInfo.harvest,
                     isPerennial: seedInfo.isPerennial,
                 },
-                properties: { // [핵심] 감정 기능 충돌 방지를 위해 미리 '감정 완료' 상태로 설정
+                properties: {
                     appraised: true,
                     category: 'gardening',
                     placeable: seedInfo.placeable,
-                    aestheticValue: seedInfo.aestheticValue, // [수정] 미관 점수를 properties 안으로 이동
+                    aestheticValue: seedInfo.aestheticValue,
                 }
             };
             items.push(newSeedItem);
