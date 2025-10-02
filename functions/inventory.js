@@ -1,6 +1,6 @@
 // /functions/inventory.js
 const fs = require('fs').promises;
-const path = path();
+const path = require('path');
 const { FieldValue } = require('firebase-admin/firestore'); // <--- 이 부분이 핵심입니다!
 
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
@@ -96,14 +96,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       // 3. AI 호출하여 새로운 씨앗 JSON 생성
       const aiResponseRaw = await _callGemini(systemPrompt, aiUserInput);
       
-      // ▼▼▼ [수정된 부분] ▼▼▼
       // AI의 원본 응답을 Firebase Functions 로그에 기록합니다.
       logger.info(`[usePromptItem] AI Raw Response for user ${uid}:`, {
           itemId: itemId,
           userPrompt: userPrompt,
           aiResponse: aiResponseRaw
       });
-      // ▲▲▲ [수정된 부분] ▲▲▲
       
       const generatedSeedData = JSON.parse(aiResponseRaw);
       
@@ -179,12 +177,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       logger.info(`Item ${itemId} used by ${uid}. New seed ${newSeedItem.id} created. New custom items:`, { items: newCustomItems.map(it=>it.id) });
       
-      // ▼▼▼ [수정된 부분] ▼▼▼
       // 클라이언트에서 디버깅할 수 있도록 AI 원본 응답을 반환값에 포함합니다.
       return { ok: true, newItem: newSeedItem, _debug: { aiResponseRaw } };
-      // ▲▲▲ [수정된 부분] ▲▲▲
     });
   });
+
 
   // (기존 appraiseItem, toggleItemLock 함수는 그대로 유지)
   
