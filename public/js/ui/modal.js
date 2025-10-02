@@ -1,5 +1,5 @@
-// /public/js/ui/modal.js (전체 교체)
-
+// public/js/ui/modal.js
+// [전체 교체]
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /**
@@ -81,7 +81,7 @@ export function promptModal({ title, placeholder, hint, maxLen = 300, okText = '
                 <textarea id="prompt-text" class="input" style="margin-top:12px; min-height:100px; resize:vertical;" maxlength="${maxLen}" placeholder="${esc(placeholder)}"></textarea>
                 <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
                     <div id="char-count" style="font-size:12px; color:rgba(255,255,255,.6);">0 / ${maxLen}</div>
-                    <div>
+                    <div class="row" style="gap: 8px;">
                         <button class="btn ghost" id="prompt-cancel">${esc(cancelText)}</button>
                         <button class="btn primary" id="prompt-ok">${esc(okText)}</button>
                     </div>
@@ -111,5 +111,6 @@ export function promptModal({ title, placeholder, hint, maxLen = 300, okText = '
         };
         document.body.appendChild(back);
         txt.focus();
+        updateCount();
     });
 }
