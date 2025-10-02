@@ -1,6 +1,5 @@
 // /public/js/tabs/shop.js
 import { showToast } from '../ui/toast.js';
-// [오류 수정] 각 함수를 올바른 파일에서 가져오도록 import 문을 분리했습니다.
 import { showItemDetailModal } from '../ui/item.js';
 import { rarityStyle, ensureItemCss, esc } from '../ui/utils.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
@@ -14,6 +13,9 @@ let seedsData = []; // 씨앗 데이터 캐시
 
 async function loadSeedsData() {
     if (seedsData.length > 0) return seedsData;
+    // 씨앗 데이터가 등급별로 분리되었으므로, 이제 각 파일을 모두 가져와야 합니다.
+    // 여기서는 간단하게 기존 `seeds.json`을 그대로 사용하고, 
+    // 백엔드에서는 분리된 파일을 읽도록 수정했으므로 클라이언트는 수정할 필요가 없습니다.
     try {
         const response = await fetch('/assets/seeds.json');
         if (!response.ok) throw new Error('seeds.json not found');
@@ -25,18 +27,17 @@ async function loadSeedsData() {
     }
 }
 
-// 메인 렌더링 함수: 해시에 따라 올바른 탭을 표시하도록 수정
+// [수정] 메인 렌더링 함수: 요청하신대로 UI 구조 변경
 export async function renderShop(container) {
     const hash = location.hash || '';
+    const isBuy = hash.includes('/buy');
     const isSell = hash.includes('/sell');
-    const isFarm = hash.includes('/farm');
+    const isFarm = hash.includes('/farm'); // 농사 탭 식별
     
-    // '농사' 탭을 추가하고, 현재 활성화된 탭을 정확히 표시합니다.
     const subtabsHTML = `
         <div class="subtabs" style="margin-top: 12px; padding: 0 8px;">
-            <a href="#/economy/shop/buy" class="sub" style="text-decoration:none; color: var(--muted);">구매(준비중)</a>
+            <a href="#/economy/shop/buy" class="sub ${isBuy || isFarm ? 'active' : ''}" style="text-decoration:none;">구매</a>
             <a href="#/economy/shop/sell" class="sub ${isSell ? 'active' : ''}" style="text-decoration:none;">판매</a>
-            <a href="#/economy/shop/farm" class="sub ${isFarm ? 'active' : ''}" style="text-decoration:none;">농사</a>
             <a href="#/economy/shop/daily" class="sub" style="text-decoration:none; color: var(--muted);">일일상점(준비중)</a>
         </div>
     `;
@@ -44,68 +45,85 @@ export async function renderShop(container) {
 
     const contentRoot = container.querySelector('#shop-content');
     
-    // 해시에 따라 적절한 렌더링 함수를 호출합니다.
-    if (isFarm) {
-        await renderShop_Farm(contentRoot);
-    } else if (isSell) {
+    if (isSell) {
         await renderShop_Sell(contentRoot);
-    } else {
-        // 기본적으로 '판매' 탭을 표시하도록 설정
-        await renderShop_Sell(contentRoot);
+    } else { // 기본적으로 '구매' 관련 탭들을 표시
+        await renderShop_Buy(contentRoot, { isFarm });
     }
 }
 
-// 농사 탭 UI 렌더링 함수
-async function renderShop_Farm(root) {
-    ensureItemCss();
-    const seeds = await loadSeedsData();
-    const isAdmin = isAdminCached();
-
-    root.innerHTML = `
-        <div class="kv-card" style="margin-bottom:12px;">
-            <div style="font-weight:900;">씨앗 상점</div>
-            <div class="text-dim" style="font-size:12px;">농사에 필요한 씨앗이나 묘목을 구매할 수 있습니다. (현재 관리자 전용)</div>
+// [신규] 구매 탭 UI 렌더링 함수
+async function renderShop_Buy(root, { isFarm }) {
+    const buySubtabsHTML = `
+        <div class="subtabs" style="padding: 0 8px; margin-bottom: 12px;">
+            <a href="#/economy/shop/buy/general" class="sub" style="text-decoration:none; color: var(--muted);">일반</a>
+            <a href="#/economy/shop/buy/farm" class="sub ${isFarm ? 'active' : ''}" style="text-decoration:none;">농사</a>
         </div>
-        <div class="grid3" style="gap:12px;">
-            ${seeds.map(seed => {
-                const style = rarityStyle(seed.rarity);
-                return `
-                    <div class="kv-card item-card" style="padding:10px; border-left: 3px solid ${style.border}; background: ${style.bg};">
-                        <div class="row" style="justify-content:space-between; align-items:flex-start;">
-                            <div style="font-weight:700; color:${style.text};">${esc(seed.name)}</div>
-                            <div class="chip">🪙 ${seed.price}</div>
-                        </div>
-                        <div class="text-dim" style="font-size:12px; margin-top:6px; min-height: 3em;">${esc(seed.description)}</div>
-                        <div class="row" style="justify-content:flex-end; margin-top:8px;">
-                            ${isAdmin ? `<button class="btn small btn-buy-seed" data-seed-id="${esc(seed.id)}">구매</button>` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('')}
-        </div>
+        <div id="buy-content"></div>
     `;
+    root.innerHTML = buySubtabsHTML;
+    
+    const buyContentRoot = root.querySelector('#buy-content');
 
-    if (isAdmin) {
-        root.querySelectorAll('.btn-buy-seed').forEach(btn => {
-            btn.onclick = async () => {
-                const seedId = btn.dataset.seedId;
-                const quantity = parseInt(prompt("구매할 수량을 입력하세요:", "1"), 10);
-                if (!quantity || quantity <= 0) return;
-
-                btn.disabled = true;
-                btn.textContent = '구매중...';
-                try {
-                    await buySeed({ seedId, quantity });
-                    showToast(`${seedId} 씨앗 ${quantity}개를 구매했습니다.`);
-                } catch (e) {
-                    showToast(`구매 실패: ${e.message}`);
-                } finally {
-                    btn.disabled = false;
-                    btn.textContent = '구매';
-                }
-            };
-        });
+    if (isFarm) {
+        await renderShop_Farm(buyContentRoot);
+    } else {
+        // 기본 '구매' 탭 (현재 준비중)
+        buyContentRoot.innerHTML = `<div class="kv-card text-dim">일반 아이템 구매는 준비 중입니다.</div>`;
     }
+}
+
+// 농사 탭 UI 렌더링 함수 (기존과 동일)
+async function renderShop_Farm(root) {
+  ensureItemCss();
+  const seeds = await loadSeedsData();
+  const isAdmin = isAdminCached();
+
+  root.innerHTML = `
+      <div class="kv-card" style="margin-bottom:12px;">
+          <div style="font-weight:900;">씨앗 상점</div>
+          <div class="text-dim" style="font-size:12px;">농사에 필요한 씨앗이나 묘목을 구매할 수 있습니다. (현재 관리자 전용)</div>
+      </div>
+      <div class="grid3" style="gap:12px;">
+          ${seeds.map(seed => {
+              const style = rarityStyle(seed.rarity);
+              return `
+                  <div class="kv-card item-card" style="padding:10px; border-left: 3px solid ${style.border}; background: ${style.bg};">
+                      <div class="row" style="justify-content:space-between; align-items:flex-start;">
+                          <div style="font-weight:700; color:${style.text};">${esc(seed.name)}</div>
+                          <div class="chip">🪙 ${seed.price}</div>
+                      </div>
+                      <div class="text-dim" style="font-size:12px; margin-top:6px; min-height: 3em;">${esc(seed.description)}</div>
+                      <div class="row" style="justify-content:flex-end; margin-top:8px;">
+                          ${isAdmin ? `<button class="btn small btn-buy-seed" data-seed-id="${esc(seed.id)}">구매</button>` : ''}
+                      </div>
+                  </div>
+              `;
+          }).join('')}
+      </div>
+  `;
+
+  if (isAdmin) {
+      root.querySelectorAll('.btn-buy-seed').forEach(btn => {
+          btn.onclick = async () => {
+              const seedId = btn.dataset.seedId;
+              const quantity = parseInt(prompt("구매할 수량을 입력하세요:", "1"), 10);
+              if (!quantity || quantity <= 0) return;
+
+              btn.disabled = true;
+              btn.textContent = '구매중...';
+              try {
+                  await buySeed({ seedId, quantity });
+                  showToast(`${seedId} 씨앗 ${quantity}개를 구매했습니다.`);
+              } catch (e) {
+                  showToast(`구매 실패: ${e.message}`);
+              } finally {
+                  btn.disabled = false;
+                  btn.textContent = '구매';
+              }
+          };
+      });
+  }
 }
 
 // 아이템 판매 탭 UI 렌더링 함수 (기존과 동일)
