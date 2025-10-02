@@ -1,5 +1,5 @@
 // /public/js/ui/item.js
-
+import { db, fx } from '../api/firebase.js';
 import { esc, rarityStyle, useBadgeHtml } from './utils.js';
 import { ensureModalCss, promptModal } from './modal.js';
 import { showToast } from './toast.js';
@@ -19,23 +19,57 @@ async function getAllItemsData() {
     }
 }
 
+// ▼▼▼ [수정된 부분] ▼▼▼
+const itemDataCache = new Map();
+async function getItemDisplayData(itemId) {
+    if (itemDataCache.has(itemId)) return itemDataCache.get(itemId);
+
+    // 1. Check static items first
+    const allStaticItems = await getAllItemsData();
+    if (allStaticItems[itemId]) {
+        itemDataCache.set(itemId, allStaticItems[itemId]);
+        return allStaticItems[itemId];
+    }
+    
+    // 2. Fallback to Firestore custom_items
+    try {
+        const docRef = fx.doc(db, 'custom_items', itemId);
+        const docSnap = await fx.getDoc(docRef);
+        if (docSnap.exists()) {
+            const data = docSnap.data();
+            itemDataCache.set(itemId, data);
+            return data;
+        }
+    } catch (e) {
+        console.error(`Failed to fetch custom item ${itemId}`, e);
+    }
+
+    // 3. If not found anywhere, return a placeholder
+    const placeholder = { name: itemId };
+    itemDataCache.set(itemId, placeholder);
+    return placeholder;
+}
+
+
 async function getSeedInfoHtml(it) {
     if (it.type !== 'seed' || !it.seedInfo) return '';
 
-    const allItems = await getAllItemsData();
     const info = it.seedInfo;
     const growthTime = info.growthTimeMinutes || 0;
     const hours = Math.floor(growthTime / 60);
     const minutes = growthTime % 60;
     const timeText = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
 
-    const harvestItems = Array.isArray(info.harvest)
-        ? info.harvest.map(h => {
-            const itemInfo = allItems[h.itemId] || { name: h.itemId };
-            const probText = h.probability < 1.0 ? ` (${h.probability * 100}%)` : '';
+    const harvestItemsPromises = Array.isArray(info.harvest)
+        ? info.harvest.map(async (h) => {
+            if (!h.itemId) return '';
+            const itemInfo = await getItemDisplayData(h.itemId);
+            const probText = h.probability < 1.0 ? ` (${(h.probability * 100).toFixed(0)}%)` : '';
             return `<li>${esc(itemInfo.name || h.itemId)} (${h.min}~${h.max}개)${probText}</li>`;
-        }).join('')
-        : '<li>알 수 없음</li>';
+        })
+        : [Promise.resolve('<li>알 수 없음</li>')];
+    
+    const harvestItems = (await Promise.all(harvestItemsPromises)).join('');
     
     const mutationProb = (it.mutation?.probability || 0) * 100;
     const aestheticValue = it.properties?.aestheticValue || 0;
@@ -54,6 +88,7 @@ async function getSeedInfoHtml(it) {
         </div>
     `;
 }
+// ▲▲▲ [수정된 부분] ▲▲▲
 
 export async function showItemDetailModal(item, context = {}) {
     ensureModalCss();
