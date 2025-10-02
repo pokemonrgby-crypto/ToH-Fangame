@@ -4,24 +4,51 @@ import { ensureModalCss } from './modal.js';
 import { showToast } from './toast.js';
 import { appraiseItem } from '../api/user.js';
 
+// [신규] 게임 내 모든 아이템의 정보를 불러와 캐시하는 함수
+// 수확물 ID를 한글 이름으로 바꾸기 위해 필요합니다.
+let allItemsCache = null;
+async function getAllItemsData() {
+    if (allItemsCache) return allItemsCache;
+    try {
+        const response = await fetch('/assets/items.json');
+        if (!response.ok) throw new Error('items.json not found');
+        allItemsCache = await response.json();
+        return allItemsCache;
+    } catch (error) {
+        console.error("Failed to load items.json:", error);
+        return {};
+    }
+}
+
+
 /**
- * [신규] 씨앗 정보(seedInfo)를 표시하기 위한 HTML을 생성합니다.
+ * [신규] 씨앗 아이템일 경우, 농사 관련 정보를 표시하는 HTML을 생성하는 함수입니다.
  * @param {object} it - 아이템 객체
- * @returns {string} 씨앗 정보가 담긴 HTML 문자열
+ * @returns {Promise<string>} 씨앗 정보가 담긴 HTML 문자열 Promise
  */
-function getSeedInfoHtml(it) {
+async function getSeedInfoHtml(it) {
+    // 아이템 타입이 'seed'가 아니거나, seedInfo 객체가 없으면 아무것도 표시하지 않습니다.
     if (it.type !== 'seed' || !it.seedInfo) return '';
 
+    const allItems = await getAllItemsData();
     const info = it.seedInfo;
     const growthTime = info.growthTimeMinutes || 0;
     const hours = Math.floor(growthTime / 60);
     const minutes = growthTime % 60;
     const timeText = hours > 0 ? `${hours}시간 ${minutes}분` : `${minutes}분`;
 
+    // 수확물 정보를 표시합니다. items.json을 참조하여 아이템 ID를 한글 이름으로 보여줍니다.
     const harvestItems = Array.isArray(info.harvest)
-        ? info.harvest.map(h => `<li>${esc(h.itemId)} (${h.min}~${h.max}개)</li>`).join('')
+        ? info.harvest.map(h => {
+            const itemInfo = allItems[h.itemId] || { name: h.itemId };
+            const probText = h.probability < 1.0 ? ` (${h.probability * 100}%)` : '';
+            return `<li>${esc(itemInfo.name)} (${h.min}~${h.max}개)${probText}</li>`;
+        }).join('')
         : '<li>알 수 없음</li>';
+    
+    const mutationProb = (it.mutation?.probability || 0) * 100;
 
+    // 최종적으로 표시될 HTML 구조입니다.
     return `
         <hr style="margin:12px 0; border-color:#273247;">
         <div class="kv-label">씨앗 정보</div>
@@ -31,7 +58,13 @@ function getSeedInfoHtml(it) {
 
             <b style="color: #9aa4b2;">다년생</b>
             <div>${info.isPerennial ? '✔ 예' : '❌ 아니오'}</div>
+
+            <b style="color: #9aa4b2;">배치 가능</b>
+            <div>${it.placeable ? `✔ 예 (미관 점수: ${it.aestheticValue || 0})` : '❌ 아니오'}</div>
             
+            <b style="color: #9aa4b2;">돌연변이 확률</b>
+            <div>${mutationProb > 0 ? `${mutationProb.toFixed(1)}% (신비한 씨앗 획득 가능)`: '없음'}</div>
+
             <b style="color: #9aa4b2; grid-column: 1 / -1; margin-top: 6px;">예상 수확물</b>
             <div style="grid-column: 1 / -1; padding-left: 16px;">
                 <ul style="margin: 0; padding: 0; list-style-type: '- '; color: #c8d0dc;">
@@ -42,12 +75,11 @@ function getSeedInfoHtml(it) {
     `;
 }
 
+
 /**
- * 아이템 상세 정보 모달을 표시합니다. (통합 버전)
- * @param {object} item - 아이템 객체
- * @param {object} context - { equippedIds: string[], onUpdate: function(string[]) }
+ * 아이템 상세 정보 모달을 표시합니다.
  */
-export function showItemDetailModal(item, context = {}) {
+export async function showItemDetailModal(item, context = {}) { // [수정] async 함수로 변경
     ensureModalCss();
     if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
     const { equippedIds = [], onUpdate = null } = context;
@@ -55,6 +87,8 @@ export function showItemDetailModal(item, context = {}) {
 
     const style = rarityStyle(item.rarity);
     const getItemDesc = (it) => (it?.description || it?.desc_long || it?.desc_soft || it?.desc || '').replace(/\n/g, '<br>');
+    
+    // getEffectsHtml, getPropertiesHtml 함수는 이전에 제공된 코드와 동일하게 유지됩니다.
     const getEffectsHtml = (it) => {
         const eff = it?.effects;
         if (!eff) return '';
@@ -65,33 +99,11 @@ export function showItemDetailModal(item, context = {}) {
     const getPropertiesHtml = (it) => {
         const props = it?.properties;
         if (!props || !props.appraised) return '';
-
-        // 1. 속성 키와 값을 한글로 변환하기 위한 맵
-        const keyTranslations = {
-            category: '분류',
-            subCategory: '세부 분류',
-            equipable: '장착 가능',
-            placeable: '배치 가능',
-            aestheticValue: '미관 점수',
-            effects: '특수 효과'
-        };
-
-        const valueTranslations = {
-            // Categories
-            "equipment": "장비", "consumable": "소모품", "material": "재료", "furniture": "가구", "decoration": "장식", "etc": "기타",
-            "gardening": "농사", // [신규] 농사 카테고리 추가
-            // SubCategories
-            "weapon": "무기", "armor": "방어구", "shield": "방패", "clothing": "의상", "boots": "신발", "gloves": "장갑", "accessory": "장신구", 
-            "potion": "물약", "food": "음식", "scroll": "주문서", "bomb": "폭탄", "tome": "마도서",
-            "ore": "광석", "herb": "약초", "leather": "가죽", "cloth": "옷감", "gem": "보석", "monsterPart": "마물 부속", "essence": "정수",
-            "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "lighting": "조명", "plant": "화분/식물",
-            "key": "열쇠", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니"
-        };
-        
+        const keyTranslations = { category: '분류', subCategory: '세부 분류', equipable: '장착 가능', placeable: '배치 가능', aestheticValue: '미관 점수', effects: '특수 효과' };
+        const valueTranslations = { "equipment": "장비", "consumable": "소모품", "material": "재료", "furniture": "가구", "decoration": "장식", "etc": "기타", "gardening": "농사", "weapon": "무기", "armor": "방어구", "shield": "방패", "clothing": "의상", "boots": "신발", "gloves": "장갑", "accessory": "장신구", "potion": "물약", "food": "음식", "scroll": "주문서", "bomb": "폭탄", "tome": "마도서", "ore": "광석", "herb": "약초", "leather": "가죽", "cloth": "옷감", "gem": "보석", "monsterPart": "마물 부속", "essence": "정수", "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "lighting": "조명", "plant": "화분/식물", "key": "열쇠", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니" };
         const propertyOrder = ['category', 'subCategory', 'equipable', 'placeable', 'aestheticValue', 'effects'];
         let html = '<hr style="margin:12px 0; border-color:#273247;"><div class="kv-label">감정된 속성</div>';
         const availableProps = propertyOrder.filter(key => props.hasOwnProperty(key));
-
         if (availableProps.length > 0) {
             html += `<div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: start; font-size: 13px; margin-top: 8px;">`;
             for (const key of availableProps) {
@@ -101,22 +113,12 @@ export function showItemDetailModal(item, context = {}) {
                     html += `<b style="grid-column: 1 / -1; margin-top: 6px;">${esc(translatedKey)}</b>`;
                     if (value.length > 0) {
                         html += `<div style="grid-column: 1 / -1; padding-left: 16px;"><ul style="margin: 0; padding: 0; list-style-type: '- '; color: #c8d0dc;">`;
-                        value.forEach(effect => {
-                            html += `<li style="margin-bottom: 4px;">${esc(effect.description || JSON.stringify(effect))}</li>`;
-                        });
+                        value.forEach(effect => { html += `<li style="margin-bottom: 4px;">${esc(effect.description || JSON.stringify(effect))}</li>`; });
                         html += `</ul></div>`;
                     }
                 } else {
-                    let displayValue;
-                    if (typeof value === 'boolean') {
-                        displayValue = value ? '✔ 예' : '❌ 아니오';
-                    } else if (key === 'category' || key === 'subCategory') {
-                        displayValue = valueTranslations[value] || value;
-                    } else {
-                        displayValue = String(value ?? '');
-                    }
-                    html += `<b style="color: #9aa4b2;">${esc(translatedKey)}</b>`;
-                    html += `<div>${esc(displayValue)}</div>`;
+                    let displayValue = (typeof value === 'boolean') ? (value ? '✔ 예' : '❌ 아니오') : (key === 'category' || key === 'subCategory') ? (valueTranslations[value] || value) : String(value ?? '');
+                    html += `<b style="color: #9aa4b2;">${esc(translatedKey)}</b><div>${esc(displayValue)}</div>`;
                 }
             }
             html += `</div>`;
@@ -130,6 +132,9 @@ export function showItemDetailModal(item, context = {}) {
     back.className = 'modal-back';
     back.dataset.kind = 'item-detail';
     back.style.zIndex = '10001';
+
+    // [수정] 위에서 만든 getSeedInfoHtml 함수를 여기서 호출합니다.
+    const seedHtml = await getSeedInfoHtml(item);
 
     back.innerHTML = `
     <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:14px;max-width:720px;width:92vw;">
@@ -147,11 +152,12 @@ export function showItemDetailModal(item, context = {}) {
         <div style="font-size:14px; line-height:1.6;">${getItemDesc(item) || '상세 설명이 없습니다.'}</div>
         ${item.effects ? getEffectsHtml(item) : ''}
         ${getPropertiesHtml(item)}
-        ${getSeedInfoHtml(item)}
+        ${seedHtml} 
       </div>
       <div id="itemActions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;"></div>
     </div>
   `;
+
     const closeModal = () => back.remove();
     back.addEventListener('click', e => { if (e.target === back) closeModal(); });
     back.querySelector('#mCloseDetail').onclick = closeModal;
@@ -170,9 +176,7 @@ export function showItemDetailModal(item, context = {}) {
                 if (result.ok) {
                     showToast('아이템 감정이 완료되었습니다!');
                     closeModal(); 
-                } else {
-                    throw new Error('서버에서 감정을 거부했습니다.');
-                }
+                } else { throw new Error('서버에서 감정을 거부했습니다.'); }
             } catch (err) {
                 showToast(`감정 실패: ${err.message}`);
                 btnAppraise.disabled = false;
@@ -188,8 +192,7 @@ export function showItemDetailModal(item, context = {}) {
         btnUnequip.className = 'btn';
         btnUnequip.textContent = '장착 해제';
         btnUnequip.onclick = () => {
-          const newEquipped = equippedIds.filter(id => id !== item.id);
-          onUpdate(newEquipped);
+          onUpdate(equippedIds.filter(id => id !== item.id));
           closeModal();
         };
         actionsContainer.appendChild(btnUnequip);
@@ -198,8 +201,7 @@ export function showItemDetailModal(item, context = {}) {
         btnEquip.className = 'btn primary';
         btnEquip.textContent = '장착하기';
         btnEquip.onclick = () => {
-          const newEquipped = [...equippedIds, item.id];
-          onUpdate(newEquipped);
+          onUpdate([...equippedIds, item.id]);
           closeModal();
         };
         actionsContainer.appendChild(btnEquip);
