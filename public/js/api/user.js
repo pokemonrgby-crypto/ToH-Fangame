@@ -208,14 +208,15 @@ export async function appraiseItem(itemId) {
 }
 
 /**
- * [신규] 프롬프트 아이템 사용을 서버에 요청합니다.
+ * [수정] 프롬프트 아이템 사용을 서버에 요청합니다. (사용자가 정의한 데이터 사용)
  * @param {string} itemId - 사용할 아이템의 ID
- * @param {string} userPrompt - 사용자가 입력한 프롬프트
+ * @param {object} newItemData - 사용자가 생성할 새 아이템의 데이터 객체
  * @returns {Promise<{ok: boolean, newItem: object}>}
  */
-export async function usePromptItem(itemId, userPrompt) {
+export async function usePromptItem(itemId, newItemData) {
     if (!auth.currentUser) throw new Error('로그인이 필요합니다.');
     const call = httpsCallable(func, 'usePromptItem');
-    const result = await call({ itemId, userPrompt });
+    // 서버에 userPrompt 대신 newItemData 객체를 전달
+    const result = await call({ itemId, newItemData });
     return result.data;
 }
