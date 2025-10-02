@@ -336,37 +336,46 @@ module.exports = (admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KE
       const worldInfo = (worldsData.worlds || []).find(w => w.id === stock.world_id)
         || { id: stock.world_id, name: stock.world_name || stock.world_id || '', intro: '알려지지 않은 세계', detail: { lore_long: '' } };
 
-      const idea = await (async () => {
-        try {
-          // [수정] aiPickImpact 호출 시 stock.description과 worldInfo.detail.lore_long을 함께 전달
-          const ai = await aiPickImpact({
-            premise: `${stock.name} 관련 기업 소식 생성`,
-            subjectName: stock.name,
-            worldName: worldInfo.name,
-            subjectDescription: `${stock.description}\n\n[배경 세계관 상세 설정]\n${worldInfo.detail?.lore_long || worldInfo.detail?.lore || ''}`
-          });
-          return ai;
-        } catch (e) {
-          logger.error('기업 사건 AI 실패:', e);
-          return { direction:'positive', magnitude: 'small', title_before:'예고' };
-        }
-      })();
-
       const numEvents = 12 + Math.floor(Math.random() * 13); // 12~24회 (약 1~2시간당 1회)
       const majorEvents = [];
+      
+      // [수정] 이 루프 안에서 매번 새로운 사건 아이디어를 생성합니다.
       for (let i = 0; i < numEvents; i++) {
-        const triggerMinute = Math.floor(Math.random() * ((24 * 60) - 10));
-        const flip = Math.random() < 0.30; // 결과 뒤집기 확률 30%
-        majorEvents.push({
-          premise: `${stock.name} 관련 잠정 소식`,
-          title_before: idea.title_before,
-          potential_impact: idea.direction,
-          magnitude: idea.magnitude,
-          actual_outcome: flip ? (idea.direction === 'positive' ? 'negative' : 'positive') : idea.direction,
-          trigger_minute: triggerMinute,
-          forecast_sent: false,
-          processed: false,
-        });
+        try {
+            const idea = await aiPickImpact({
+                premise: `${stock.name} 관련 기업 소식 생성`,
+                subjectName: stock.name,
+                worldName: worldInfo.name,
+                subjectDescription: `${stock.description}\n\n[배경 세계관 상세 설정]\n${worldInfo.detail?.lore_long || worldInfo.detail?.lore || ''}`
+            });
+
+            const triggerMinute = Math.floor(Math.random() * ((24 * 60) - 10));
+            const flip = Math.random() < 0.30; // 결과 뒤집기 확률 30%
+            
+            majorEvents.push({
+                premise: `${stock.name} 관련 잠정 소식`,
+                title_before: idea.title_before,
+                potential_impact: idea.direction,
+                magnitude: idea.magnitude,
+                actual_outcome: flip ? (idea.direction === 'positive' ? 'negative' : 'positive') : idea.direction,
+                trigger_minute: triggerMinute,
+                forecast_sent: false,
+                processed: false,
+            });
+        } catch(e) {
+            logger.error(`기업 사건 AI 생성 실패 (Stock: ${doc.id}):`, e);
+            // 실패 시 기본 이벤트라도 추가
+            majorEvents.push({
+                premise: '기본 이벤트',
+                title_before: '소소한 소식',
+                potential_impact: 'positive',
+                magnitude: 'tiny',
+                actual_outcome: 'positive',
+                trigger_minute: Math.floor(Math.random() * ((24 * 60) - 10)),
+                forecast_sent: false,
+                processed: false,
+            });
+        }
       }
 
       await planRef.set({
