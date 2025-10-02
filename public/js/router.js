@@ -22,6 +22,7 @@ export const routes = {
   '#/economy/estate':() => import('./tabs/economy.js').then(m => (m.default)()),
   '#/market': () => import('./tabs/market.js').then(m => (m.showMarket || m.default)()),
   '#/guild': () => import('./tabs/guild.js').then(m => (m.showGuild || m.default)()),
+  '#/farm': () => import('./tabs/farm_plot.js').then(m => m.showFarmPlot()),
   '#/logs': () => import('./tabs/logs.js').then(m => (m.showLogs || m.default)()),
   '#/mail': () => import('./tabs/mail.js').then(m => (m.showMailbox || m.default)()),
   '#/manage': () => import('./tabs/manage.js').then(m => (m.showManage || m.default)()),
@@ -59,7 +60,7 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/farm/'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
