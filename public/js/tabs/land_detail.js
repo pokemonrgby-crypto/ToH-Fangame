@@ -4,6 +4,7 @@ import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/fireba
 import { isAdminCached, ensureAdmin } from '../api/admin.js';
 import { buyMicroPlot, sellMicroPlot } from '../api/land.js';
 import { showToast } from '../ui/toast.js';
+import { ensureModalCss, confirmModal } from '../ui/modal.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -36,6 +37,89 @@ async function getMicroLegend() {
     }
 }
 
+// [신규] 클라이언트 측 가격 계산 함수
+function calculateLandPrice(tileType, microTileType, legend) {
+    const basePrice = { s: 500, l: 700, M: 2000, m: 3000, f: 1200, n: 1000, b: 1500, d: 800, r: 2500, R: 5000 }[tileType] || 1000;
+    const microInfo = legend.micro_tile_legend[microTileType] || {};
+    const microMultiplier = microInfo.buildable ? 1.2 : 0.8;
+    return Math.floor(basePrice * microMultiplier);
+}
+
+
+// [신규] 마이크로 플롯 상세 정보 및 거래 모달
+async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin }) {
+  ensureModalCss();
+
+  const price = calculateLandPrice(landInfo.tile.type, tileInfo.type, await getMicroLegend());
+  const isOwner = ownerData?.owner_uid === auth.currentUser.uid;
+
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `
+    <div class="modal-card" style="max-width: 420px;">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
+        <div>
+          <div style="font-weight:900; font-size:18px;">${esc(tileInfo.name)}</div>
+          <div class="text-dim" style="font-size:12px;">(${landInfo.x}, ${landInfo.y}) 구역 내 (${microX}, ${microY})</div>
+        </div>
+        <button class="btn ghost" id="mClose">닫기</button>
+      </div>
+      
+      <div class="kv-card" style="padding:12px;">
+        <div class="row" style="justify-content:space-between;"><span>소유자</span> <b>${ownerData ? esc(ownerData.ownerName) : '없음'}</b></div>
+        <div class="row" style="justify-content:space-between; margin-top:8px;"><span>예상 가격</span> <b>🪙 ${price.toLocaleString()}</b></div>
+        ${ownerData ? `<div class="row" style="justify-content:space-between; margin-top:8px;"><span>판매 시 환급액 (80%)</span> <b>🪙 ${Math.floor(price * 0.8).toLocaleString()}</b></div>` : ''}
+      </div>
+      
+      <div id="modal-actions" style="margin-top:16px; display:flex; justify-content:flex-end; gap:8px;"></div>
+    </div>
+  `;
+
+  const closeModal = () => back.remove();
+  back.addEventListener('click', (e) => { if (e.target === back) closeModal(); });
+  back.querySelector('#mClose').onclick = closeModal;
+
+  if (isAdmin) {
+    const actionsContainer = back.querySelector('#modal-actions');
+    if (ownerData) {
+      if (isOwner) {
+        const sellBtn = document.createElement('button');
+        sellBtn.className = 'btn danger';
+        sellBtn.textContent = '판매하기';
+        sellBtn.onclick = async () => {
+          if (await confirmModal({ title: '토지 판매 확인', lines: [`이 토지를 🪙 ${Math.floor(price * 0.8).toLocaleString()}에 판매하시겠습니까?`] })) {
+            try {
+              await sellMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY });
+              showToast('토지를 판매했습니다.');
+              closeModal();
+              showLandDetail(); // 화면 새로고침
+            } catch (e) { showToast(`판매 실패: ${e.message}`); }
+          }
+        };
+        actionsContainer.appendChild(sellBtn);
+      }
+    } else {
+      const buyBtn = document.createElement('button');
+      buyBtn.className = 'btn primary';
+      buyBtn.textContent = '구매하기';
+      buyBtn.onclick = async () => {
+        if (await confirmModal({ title: '토지 구매 확인', lines: [`이 토지를 🪙 ${price.toLocaleString()}에 구매하시겠습니까?`] })) {
+          try {
+            await buyMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY, tileType: landInfo.tile.type, microTileType: tileInfo.type });
+            showToast('토지를 구매했습니다.');
+            closeModal();
+            showLandDetail(); // 화면 새로고침
+          } catch (e) { showToast(`구매 실패: ${e.message}`); }
+        }
+      };
+      actionsContainer.appendChild(buyBtn);
+    }
+  }
+  
+  document.body.appendChild(back);
+}
+
+
 export async function showLandDetail() {
   const root = document.getElementById('view');
   const landInfo = parseLandInfo();
@@ -45,7 +129,6 @@ export async function showLandDetail() {
     return;
   }
   
-  // [신규] 관리자 여부 확인
   const isAdmin = await ensureAdmin().catch(() => false);
 
   root.innerHTML = `<section class="container narrow"><div class="spin-center"></div></section>`;
@@ -71,42 +154,20 @@ export async function showLandDetail() {
         const microX = index % 10;
         const microY = Math.floor(index / 10);
         const ownerData = data.owners?.[`${microY}_${microX}`] || null;
-        const ownerName = ownerData?.ownerName || null;
         
-        let tileStyle = `background-color: ${tileInfo.color};`;
-        if (ownerName) {
+        let tileStyle = `background-color: ${tileInfo.color}; cursor: pointer;`;
+        if (ownerData) {
             tileStyle += `box-shadow: inset 0 0 0 2px ${ownerData.owner_uid === auth.currentUser.uid ? '#4ade80' : '#FFD700'};`;
         }
-        
-        // [신규] 관리자용 버튼 추가
-        let adminButtons = '';
-        if (isAdmin) {
-          if (ownerData) {
-            if (ownerData.owner_uid === auth.currentUser.uid) {
-              adminButtons = `<button class="btn danger small btn-sell" style="margin-top:8px;" data-mx="${microX}" data-my="${microY}">판매</button>`;
-            }
-          } else {
-             adminButtons = `<button class="btn primary small btn-buy" style="margin-top:8px;" data-mx="${microX}" data-my="${microY}" data-mtype="${microTileType}">구매</button>`;
-          }
-        }
-        
-        return `<div class="micro-tile" title="${tileInfo.name} (${microX}, ${microY})">
-                    <div class="micro-tile-inner" style="${tileStyle}"></div>
-                    <div class="micro-tile-info">
-                        <div>${tileInfo.name}</div>
-                        <div class="text-dim" style="font-size:11px">${ownerName ? `소유: ${esc(ownerName)}` : '공유지'}</div>
-                        ${adminButtons}
-                    </div>
-                </div>`;
+
+        return `<div class="micro-tile" style="${tileStyle}" data-mx="${microX}" data-my="${microY}" data-mtype="${microTileType}" title="${tileInfo.name} (${microX}, ${microY})"></div>`;
     }).join('');
 
     root.innerHTML = `
       <style>
         .micro-grid { display: grid; grid-template-columns: repeat(10, 1fr); border: 1px solid #555; image-rendering: pixelated; }
-        .micro-tile { aspect-ratio: 1 / 1; position: relative; }
-        .micro-tile-inner { position: absolute; inset: 0; }
-        .micro-tile:hover .micro-tile-info { display: flex; }
-        .micro-tile-info { display: none; position: absolute; inset: 0; background: rgba(0,0,0,0.7); color: white; flex-direction: column; align-items: center; justify-content: center; text-align: center; padding: 4px; font-size: 12px; }
+        .micro-tile { aspect-ratio: 1 / 1; }
+        .micro-tile:hover { outline: 2px solid yellow; z-index: 1; position: relative; }
       </style>
       <section class="container narrow">
         <div class="card p12">
@@ -115,41 +176,22 @@ export async function showLandDetail() {
                 <button class="btn ghost" onclick="history.back()">뒤로가기</button>
             </div>
             <div class="micro-grid mt12">${microGridHtml}</div>
-            <div class="text-dim" style="font-size:12px; margin-top:8px;">각 필지에 마우스를 올려 상세 정보를 확인하세요.</div>
+            <div class="text-dim" style="font-size:12px; margin-top:8px;">각 필지를 클릭하여 상세 정보를 확인하고 거래할 수 있습니다.</div>
         </div>
       </section>
     `;
-    
-    if(isAdmin) {
-        root.querySelectorAll('.btn-buy').forEach(btn => {
-            btn.onclick = async () => {
-                const microX = parseInt(btn.dataset.mx, 10);
-                const microY = parseInt(btn.dataset.my, 10);
-                const microTileType = btn.dataset.mtype;
-                
-                try {
-                    await buyMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY, tileType: landInfo.tile.type, microTileType });
-                    showToast('토지를 구매했습니다.');
-                    showLandDetail(); // 새로고침
-                } catch (e) {
-                    showToast(`구매 실패: ${e.message}`);
-                }
-            };
-        });
-        root.querySelectorAll('.btn-sell').forEach(btn => {
-            btn.onclick = async () => {
-                const microX = parseInt(btn.dataset.mx, 10);
-                const microY = parseInt(btn.dataset.my, 10);
-                try {
-                    await sellMicroPlot({ mapId: landInfo.mapId, x: landInfo.x, y: landInfo.y, microX, microY });
-                    showToast('토지를 판매했습니다.');
-                    showLandDetail(); // 새로고침
-                } catch (e) {
-                    showToast(`판매 실패: ${e.message}`);
-                }
-            };
-        });
-    }
+
+    root.querySelectorAll('.micro-tile').forEach(tileEl => {
+      tileEl.addEventListener('click', () => {
+        const microX = parseInt(tileEl.dataset.mx, 10);
+        const microY = parseInt(tileEl.dataset.my, 10);
+        const microTileType = tileEl.dataset.mtype;
+        const tileInfo = { type: microTileType, ...(legend[microTileType] || {}) };
+        const ownerData = data.owners?.[`${microY}_${microX}`] || null;
+        
+        showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin });
+      });
+    });
 
   } catch (error) {
     console.error("토지 상세 정보 로딩 실패:", error);
