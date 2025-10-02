@@ -47,6 +47,7 @@ async function getSeedInfoHtml(it) {
         : '<li>알 수 없음</li>';
     
     const mutationProb = (it.mutation?.probability || 0) * 100;
+    const aestheticValue = it.properties?.aestheticValue || 0;
 
     // 최종적으로 표시될 HTML 구조입니다.
     return `
@@ -60,8 +61,13 @@ async function getSeedInfoHtml(it) {
             <div>${info.isPerennial ? '✔ 예' : '❌ 아니오'}</div>
 
             <b style="color: #9aa4b2;">배치 가능</b>
-            <div>${it.placeable ? `✔ 예 (미관 점수: ${it.aestheticValue || 0})` : '❌ 아니오'}</div>
+            <div>${it.placeable ? '✔ 예' : '❌ 아니오'}</div>
             
+            ${aestheticValue > 0 ? `
+            <b style="color: #9aa4b2;">미관 점수</b>
+            <div>${aestheticValue.toLocaleString()}</div>
+            ` : ''}
+
             <b style="color: #9aa4b2;">돌연변이 확률</b>
             <div>${mutationProb > 0 ? `${mutationProb.toFixed(1)}% (신비한 씨앗 획득 가능)`: '없음'}</div>
 
@@ -98,7 +104,7 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     };
     const getPropertiesHtml = (it) => {
         const props = it?.properties;
-        if (!props || !props.appraised) return '';
+        if (!props || !props.appraised || it.type === 'seed') return ''; // 씨앗 아이템은 별도 처리하므로 여기서 제외
         const keyTranslations = { category: '분류', subCategory: '세부 분류', equipable: '장착 가능', placeable: '배치 가능', aestheticValue: '미관 점수', effects: '특수 효과' };
         const valueTranslations = { "equipment": "장비", "consumable": "소모품", "material": "재료", "furniture": "가구", "decoration": "장식", "etc": "기타", "gardening": "농사", "weapon": "무기", "armor": "방어구", "shield": "방패", "clothing": "의상", "boots": "신발", "gloves": "장갑", "accessory": "장신구", "potion": "물약", "food": "음식", "scroll": "주문서", "bomb": "폭탄", "tome": "마도서", "ore": "광석", "herb": "약초", "leather": "가죽", "cloth": "옷감", "gem": "보석", "monsterPart": "마물 부속", "essence": "정수", "chair": "의자", "table": "탁자", "bed": "침대", "storage": "보관함", "painting": "그림", "sculpture": "조각상", "rug": "융단", "lighting": "조명", "plant": "화분/식물", "key": "열쇠", "quest": "퀘스트", "collectible": "수집품", "junk": "잡동사니" };
         const propertyOrder = ['category', 'subCategory', 'equipable', 'placeable', 'aestheticValue', 'effects'];
