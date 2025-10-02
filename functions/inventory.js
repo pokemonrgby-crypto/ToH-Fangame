@@ -86,14 +86,42 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             throw new Error('AI가 유효한 아이템 데이터를 생성하지 않았습니다.');
         }
         
+        // Basic validation and sanitization
+        const sanitizedHarvest = (Array.isArray(parsedResponse.harvest) ? parsedResponse.harvest : []).slice(0, 3).map(h => ({
+            itemId: String(h.itemId).slice(0, 50),
+            min: Math.max(1, Math.min(Number(h.min) || 1, 5)),
+            max: Math.max(1, Math.min(Number(h.max) || 1, 5)),
+            probability: Math.max(0.001, Math.min(Number(h.probability) || 1.0, 1.0)),
+        }));
+        
+        // Ensure at least one guaranteed drop
+        if (sanitizedHarvest.length > 0 && sanitizedHarvest.every(h => h.probability < 1.0)) {
+            sanitizedHarvest[0].probability = 1.0;
+            sanitizedHarvest[0].min = 1;
+        }
+
+
         generatedItem = {
-            id: `item_gen_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: String(parsedResponse.name),
-            rarity: String(parsedResponse.rarity),
-            description: String(parsedResponse.description),
-            isConsumable: parsedResponse.isConsumable === true,
-            uses: Number(parsedResponse.uses) || 1,
-            ...parsedResponse.properties,
+            id: `item_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
+            name: String(parsedResponse.name).slice(0, 50),
+            rarity: String(parsedResponse.rarity).slice(0, 20),
+            description: String(parsedResponse.description).slice(0, 500),
+            isConsumable: true,
+            uses: 1, // Custom seeds are always single-use
+            type: 'seed',
+            placeable: true,
+            seedInfo: {
+                id: `custom_${Date.now()}`,
+                growthTimeMinutes: Math.max(10, Math.min(10080, Number(parsedResponse.growthTimeMinutes) || 60)),
+                isPerennial: parsedResponse.isPerennial === true,
+                harvest: sanitizedHarvest
+            },
+            properties: {
+                appraised: true,
+                category: 'gardening',
+                placeable: true,
+                aestheticValue: Math.max(0, Number(parsedResponse.aestheticValue) || 10),
+            },
             createdByPrompt: true
         };
 
@@ -102,7 +130,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         throw new HttpsError('internal', `AI 아이템 생성에 실패했습니다: ${e.message}`);
       }
       
-      items.splice(itemIndex, 1);
+      // 소모성 아이템 수량 차감 또는 제거
+      if (item.uses > 1) {
+        items[itemIndex].uses -= 1;
+      } else {
+        items.splice(itemIndex, 1);
+      }
       items.push(generatedItem);
 
       tx.update(userRef, { items_all: items });
