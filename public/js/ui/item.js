@@ -1,8 +1,8 @@
 // /public/js/ui/item.js
 import { esc, rarityStyle, useBadgeHtml } from './utils.js';
-import { ensureModalCss } from './modal.js';
+import { ensureModalCss, promptModal } from './modal.js'; // promptModal 추가
 import { showToast } from './toast.js';
-import { appraiseItem } from '../api/user.js';
+import { appraiseItem, usePromptItem } from '../api/user.js'; // usePromptItem 추가
 
 // [신규] 게임 내 모든 아이템의 정보를 불러와 캐시하는 함수
 // 수확물 ID를 한글 이름으로 바꾸기 위해 필요합니다.
@@ -169,6 +169,41 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
+    if (item.isPromptUse === true && typeof context.onUpdate === 'function') {
+        const btnUse = document.createElement('button');
+        btnUse.className = 'btn primary';
+        btnUse.textContent = '✨ 사용하기';
+        btnUse.onclick = async () => {
+            const userPrompt = await promptModal({
+                title: `${item.name} 사용`,
+                hint: '아이템을 어떻게 변형할지, 혹은 어떤 씨앗으로 변이시킬지 자유롭게 작성해주세요.',
+                placeholder: '예) 푸른색 보석이 박힌 날렵한 단검, 밤하늘을 담은 듯한 신비로운 씨앗...',
+                maxLen: 300
+            });
+
+            if (userPrompt === null) return; // 사용자가 취소
+
+            btnUse.disabled = true;
+            btnUse.textContent = '생성 중...';
+            try {
+                const result = await usePromptItem(item.id, userPrompt);
+                if (result.ok) {
+                    showToast(`'${result.newItem.name}' 아이템을 획득했습니다!`);
+                    closeModal();
+                    // onUpdate 콜백이 있으면 인벤토리 UI를 새로고침하도록 호출
+                    if (typeof context.onUpdate === 'function') {
+                        context.onUpdate();
+                    }
+                }
+            } catch (err) {
+                showToast(`아이템 사용 실패: ${err.message}`);
+                btnUse.disabled = false;
+                btnUse.textContent = '✨ 사용하기';
+            }
+        };
+        actionsContainer.appendChild(btnUse);
+    }
+    
     const canAppraise = !item.properties?.appraised;
     if (canAppraise) {
         const btnAppraise = document.createElement('button');
