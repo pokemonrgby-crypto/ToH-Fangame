@@ -1,0 +1,32 @@
+{
+  "raw_mystic_herb": {
+    "name": "가공되지 않은 신비한 약초",
+    "description": "연금술이나 요리에 사용할 수 있는 신비한 약초. 은은한 푸른 빛을 낸다.",
+    "rarity": "rare",
+    "type": "material"
+  },
+  "sunpetal": {
+    "name": "태양꽃잎",
+    "description": "따뜻한 기운이 느껴지는 화사한 꽃잎. 포션의 재료로 사용된다.",
+    "rarity": "normal",
+    "type": "material"
+  },
+  "ironwood_log": {
+    "name": "강철나무 원목",
+    "description": "금속처럼 단단하고 무거운 나무. 최고급 가구나 건축재로 사용된다.",
+    "rarity": "epic",
+    "type": "material"
+  },
+  "moon_glow_mushroom": {
+    "name": "달빛 버섯",
+    "description": "밤에만 희미한 빛을 내는 버섯. 환각 성분이 있어 주의가 필요하다.",
+    "rarity": "rare",
+    "type": "material"
+  },
+  "glowing_petal": {
+    "name": "빛나는 꽃잎",
+    "description": "신비한 약초에서 낮은 확률로 얻을 수 있는, 스스로 빛을 내는 희귀한 꽃잎.",
+    "rarity": "epic",
+    "type": "material"
+  }
+}
