@@ -216,7 +216,25 @@ export async function appraiseItem(itemId) {
 export async function usePromptItem(itemId, userPrompt) {
     if (!auth.currentUser) throw new Error('로그인이 필요합니다.');
     const call = httpsCallable(func, 'usePromptItem');
-    // 서버에 userPrompt 문자열을 전달
+    
+    // ▼▼▼ [수정된 부분] ▼▼▼
+    // 서버에 userPrompt 문자열을 전달하고, 결과 전체를 받습니다.
     const result = await call({ itemId, userPrompt });
+
+    // 서버가 보낸 디버그 정보가 있다면 콘솔에 출력합니다.
+    if (result.data?._debug) {
+        console.groupCollapsed('🔍 AI 응답 디버그 로그 (usePromptItem)');
+        console.log('서버로부터 받은 AI 원본 응답:');
+        console.log(result.data._debug.aiResponseRaw);
+        try {
+            console.log('JSON 파싱 시도 결과:');
+            console.dir(JSON.parse(result.data._debug.aiResponseRaw));
+        } catch (e) {
+            console.error('JSON 파싱에 실패했습니다:', e);
+        }
+        console.groupEnd();
+    }
+
     return result.data;
+    // ▲▲▲ [수정된 부분] ▲▲▲
 }
