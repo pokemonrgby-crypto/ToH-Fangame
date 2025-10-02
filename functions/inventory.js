@@ -37,113 +37,116 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const uid = req.auth?.uid;
     if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const { itemId, userPrompt } = req.data;
-    if (!itemId || !userPrompt) {
-      throw new HttpsError('invalid-argument', '아이템 ID와 프롬프트가 필요합니다.');
+    const { itemId, newItemData } = req.data;
+    if (!itemId || !newItemData) {
+        throw new HttpsError('invalid-argument', '아이템 ID와 생성할 아이템 데이터가 필요합니다.');
     }
-    if (userPrompt.length > 300) {
-      throw new HttpsError('invalid-argument', '프롬프트는 300자 이내로 작성해주세요.');
-    }
+
+    const allItems = await loadAllItems();
+    const RARITY_RANK = { normal: 1, rare: 2, epic: 3, legend: 4, myth: 5, aether: 6 };
 
     const userRef = db.doc(`users/${uid}`);
 
     return await db.runTransaction(async (tx) => {
-      const userSnap = await tx.get(userRef);
-      if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
-      
-      const items = userSnap.data()?.items_all || [];
-      const itemIndex = items.findIndex(it => it.id === itemId);
+        const userSnap = await tx.get(userRef);
+        if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
 
-      if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
-      
-      const item = items[itemIndex];
-      if (item.isPromptUse !== true) {
-        throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
-      }
+        const items = userSnap.data()?.items_all || [];
+        const itemIndex = items.findIndex(it => it.id === itemId);
 
-      // ▼▼▼ [핵심 수정] ▼▼▼
-      // 아이템에 지정된 promptId를 사용하고, 없으면 기본값('prompt_item_system')을 사용합니다.
-      const promptId = item.promptId || 'prompt_item_system';
-      
-      const promptsSnap = await tx.get(db.doc('configs/prompts'));
-      const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.[promptId] : '';
-      if (!systemPrompt) {
-        throw new HttpsError('internal', `'${promptId}' ID에 해당하는 시스템 프롬프트를 찾을 수 없습니다.`);
-      }
-      // ▲▲▲ [핵심 수정] ▲▲▲
-      
-      const aiUserPrompt = JSON.stringify({
-        baseItem: item,
-        userRequest: userPrompt
-      });
+        if (itemIndex === -1) throw new HttpsError('not-found', '인벤토리에서 해당 아이템을 찾을 수 없습니다.');
 
-      let generatedItem;
-      try {
-        const aiResponseRaw = await _callGemini(systemPrompt, aiUserPrompt);
-        const parsedResponse = JSON.parse(aiResponseRaw);
-
-        if (!parsedResponse.name || !parsedResponse.rarity || !parsedResponse.description) {
-            throw new Error('AI가 유효한 아이템 데이터를 생성하지 않았습니다.');
-        }
-        
-        // Basic validation and sanitization
-        const sanitizedHarvest = (Array.isArray(parsedResponse.harvest) ? parsedResponse.harvest : []).slice(0, 3).map(h => ({
-            itemId: String(h.itemId).slice(0, 50),
-            min: Math.max(1, Math.min(Number(h.min) || 1, 5)),
-            max: Math.max(1, Math.min(Number(h.max) || 1, 5)),
-            probability: Math.max(0.001, Math.min(Number(h.probability) || 1.0, 1.0)),
-        }));
-        
-        // Ensure at least one guaranteed drop
-        if (sanitizedHarvest.length > 0 && sanitizedHarvest.every(h => h.probability < 1.0)) {
-            sanitizedHarvest[0].probability = 1.0;
-            sanitizedHarvest[0].min = 1;
+        const baseItem = items[itemIndex];
+        if (baseItem.isPromptUse !== true) {
+            throw new HttpsError('failed-precondition', '프롬프트를 사용할 수 없는 아이템입니다.');
         }
 
+        // --- 입력 데이터 검증 ---
+        const rarity = baseItem.rarity || 'normal';
+        const rules = {
+            normal: { growthTime: [10, 60], aestheticValue: [10, 50], harvestRanks: [1, 2] },
+            rare:   { growthTime: [60, 300], aestheticValue: [20, 150], harvestRanks: [1, 2, 3] },
+            epic:   { growthTime: [300, 1440], aestheticValue: [30, 400], harvestRanks: [2, 3, 4] },
+            legend: { growthTime: [720, 1440], aestheticValue: [40, 1000], harvestRanks: [3, 4, 5] },
+            myth:   { growthTime: [1080, 1440], aestheticValue: [100, 2500], harvestRanks: [4, 5, 6] },
+            aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000], harvestRanks: [5, 6] }
+        }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50], harvestRanks: [1,2] };
 
-        generatedItem = {
+        const data = newItemData;
+        if (!data.name || data.name.length > 50) throw new HttpsError('invalid-argument', '이름이 유효하지 않습니다.');
+        if (!data.description || data.description.length > 500) throw new HttpsError('invalid-argument', '설명이 유효하지 않습니다.');
+
+        const growth = Number(data.growthTimeMinutes);
+        if (growth < rules.growthTime[0] || growth > rules.growthTime[1]) throw new HttpsError('invalid-argument', `성장 시간은 ${rules.growthTime[0]}~${rules.growthTime[1]}분 사이여야 합니다.`);
+        
+        const aesthetic = Number(data.aestheticValue);
+        if (aesthetic < rules.aestheticValue[0] || aesthetic > rules.aestheticValue[1]) throw new HttpsError('invalid-argument', `미관 점수는 ${rules.aestheticValue[0]}~${rules.aestheticValue[1]} 사이여야 합니다.`);
+
+        if (!Array.isArray(data.harvest) || data.harvest.length === 0 || data.harvest.length > 3) throw new HttpsError('invalid-argument', '수확물은 1~3개여야 합니다.');
+        if (data.harvest.filter(h => h.probability === 1.0).length !== 1) throw new HttpsError('invalid-argument', '확정 수확물(확률 100%)은 반드시 1개여야 합니다.');
+
+        for (const h of data.harvest) {
+            const harvestItemInfo = allItems[h.itemId];
+            if (!harvestItemInfo) throw new HttpsError('invalid-argument', `존재하지 않는 수확 아이템 ID: ${h.itemId}`);
+            
+            const harvestRarity = harvestItemInfo.rarity;
+            const harvestRank = RARITY_RANK[harvestRarity] || 0;
+            const baseRank = RARITY_RANK[rarity] || 0;
+
+            if (h.probability === 1.0) { // 확정 드랍
+                if (harvestRank !== baseRank) throw new HttpsError('invalid-argument', `확정 수확물은 '${rarity}' 등급이어야 합니다.`);
+                if (h.min !== 1 || h.max < 1 || h.max > 5) throw new HttpsError('invalid-argument', '확정 수확물의 수량(min/max)이 규칙에 맞지 않습니다.');
+            } else { // 추가 드랍
+                if (harvestRank > baseRank + 1) throw new HttpsError('invalid-argument', `추가 수확물은 기반 아이템보다 최대 한 등급 높은 아이템까지만 가능합니다.`);
+                if (harvestRank === baseRank + 1) {
+                    if (h.probability > 0.01) throw new HttpsError('invalid-argument', '한 등급 높은 아이템의 확률은 1%를 넘을 수 없습니다.');
+                    if (h.max > 1) throw new HttpsError('invalid-argument', '한 등급 높은 아이템의 최대 수확량은 1개여야 합니다.');
+                }
+                if (h.min !== 1 || h.max !== 1) throw new HttpsError('invalid-argument', '추가 수확물의 수량(min/max)은 반드시 1이어야 합니다.');
+            }
+        }
+        
+        // --- 검증 통과, 새 아이템 생성 ---
+        const generatedItem = {
             id: `item_seed_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-            name: String(parsedResponse.name).slice(0, 50),
-            rarity: String(parsedResponse.rarity).slice(0, 20),
-            description: String(parsedResponse.description).slice(0, 500),
+            name: data.name,
+            rarity: rarity,
+            description: data.description,
             isConsumable: true,
-            uses: 1, // Custom seeds are always single-use
+            uses: 1,
             type: 'seed',
             placeable: true,
             seedInfo: {
                 id: `custom_${Date.now()}`,
-                growthTimeMinutes: Math.max(10, Math.min(10080, Number(parsedResponse.growthTimeMinutes) || 60)),
-                isPerennial: parsedResponse.isPerennial === true,
-                harvest: sanitizedHarvest
+                growthTimeMinutes: growth,
+                isPerennial: baseItem.isPerennial === true,
+                harvest: data.harvest
             },
             properties: {
                 appraised: true,
                 category: 'gardening',
                 placeable: true,
-                aestheticValue: Math.max(0, Number(parsedResponse.aestheticValue) || 10),
+                aestheticValue: aesthetic,
             },
             createdByPrompt: true
         };
 
-      } catch (e) {
-        logger.error(`[usePromptItem] AI item generation failed for user ${uid}, item ${itemId}:`, e);
-        throw new HttpsError('internal', `AI 아이템 생성에 실패했습니다: ${e.message}`);
-      }
-      
-      // 소모성 아이템 수량 차감 또는 제거
-      if (item.uses > 1) {
-        items[itemIndex].uses -= 1;
-      } else {
-        items.splice(itemIndex, 1);
-      }
-      items.push(generatedItem);
+        // 소모성 아이템 수량 차감 또는 제거
+        if (baseItem.uses > 1) {
+            items[itemIndex].uses -= 1;
+        } else {
+            items.splice(itemIndex, 1);
+        }
+        items.push(generatedItem);
 
-      tx.update(userRef, { items_all: items });
+        tx.update(userRef, { items_all: items });
 
-      logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
-      return { ok: true, newItem: generatedItem };
+        logger.info(`Item ${itemId} was used by ${uid} to generate ${generatedItem.id}.`);
+        return { ok: true, newItem: generatedItem };
     });
   });
+
+
 
 
 
