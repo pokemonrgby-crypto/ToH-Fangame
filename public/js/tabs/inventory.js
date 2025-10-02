@@ -1,4 +1,4 @@
-// /public/js/tabs/inventory.js (신규 파일)
+// /public/js/tabs/inventory.js (수정 완료)
 import { db, auth, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { getUserInventory, toggleItemLock } from '../api/user.js';
@@ -62,6 +62,7 @@ export async function showInventory(root) {
 
         const card = document.createElement('div');
         card.className = `kv-card item-card ${isShiny ? 'shine-effect' : ''}`;
+        card.dataset.itemId = item.id; // 아이템 ID를 data 속성으로 추가
         card.style.cssText = `
           padding: 8px;
           border: 1px solid ${style.border};
@@ -79,23 +80,30 @@ export async function showInventory(root) {
               ${esc(item.desc_soft || item.desc || item.description || '')}
             </div>
           </div>
-          <button class="btn-lock" data-item-id="${item.id}" data-locked="${isLocked}" style="position: absolute; top: 4px; right: 4px; background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px; line-height: 1;">
+          <button class="btn-lock" data-locked="${isLocked}" style="position: absolute; top: 4px; right: 4px; background: none; border: none; font-size: 18px; cursor: pointer; padding: 4px; line-height: 1;">
             ${isLocked ? '🔒' : '🔓'}
           </button>
         `;
 
-        card.querySelector('.item-content-wrapper').addEventListener('click', () => showItemDetailModal(item));
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        // 아이템 상세 모달을 열 때 onUpdate 콜백을 전달하여, 
+        // 아이템 사용/생성 후 인벤토리 UI가 자동으로 새로고침되도록 합니다.
+        card.querySelector('.item-content-wrapper').addEventListener('click', () => {
+            showItemDetailModal(item, { onUpdate: renderInventory });
+        });
+        // ▲▲▲ [수정된 부분] ▲▲▲
         
         card.querySelector('.btn-lock').addEventListener('click', async (e) => {
           e.stopPropagation();
           const button = e.currentTarget;
-          const itemId = button.dataset.itemId;
+          const itemId = card.dataset.itemId;
           const currentLockState = button.dataset.locked === 'true';
           
           button.disabled = true;
           try {
             await toggleItemLock(itemId, !currentLockState);
             showToast(`아이템을 ${!currentLockState ? '잠갔습니다.' : '해제했습니다.'}`);
+            // 실시간 리스너가 변경을 감지하므로 별도 UI 업데이트는 필요 없습니다.
           } catch (err) {
             showToast(`오류: ${err.message}`);
           } finally {
