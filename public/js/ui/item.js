@@ -137,7 +137,7 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.dataset.kind = 'item-detail';
-    back.style.zIndex = '10001';
+    back.style.zIndex = '9000';
 
     const seedHtml = await getSeedInfoHtml(item);
 
