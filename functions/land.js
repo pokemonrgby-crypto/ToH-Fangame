@@ -12,7 +12,6 @@ module.exports = (admin) => {
   const loadMicroLegend = async () => {
     if (microLegend) return microLegend;
     try {
-        // [수정] 파일 경로를 functions 폴더 내부로 변경
         const legendPath = path.join(__dirname, './assets/micro_legend.json');
         const data = await fs.readFile(legendPath, 'utf8');
         microLegend = JSON.parse(data);
@@ -23,18 +22,35 @@ module.exports = (admin) => {
     }
   };
 
-  // [추가] 좌표를 기반으로 일관된 랜덤 값을 생성하는 함수
-  const createSeededRandom = (seed) => {
-    let state = seed;
+  // [수정] 더 안정적인 시드 기반 랜덤 생성기 (cyrb53 해시 알고리즘 사용)
+  const createSeededRandom = (seedStr) => {
+    let h1 = 1779033703, h2 = 3144134277,
+        h3 = 1013904242, h4 = 2773480762;
+
+    for (let i = 0, k; i < seedStr.length; i++) {
+        k = seedStr.charCodeAt(i);
+        h1 = h2 ^ Math.imul(h1 ^ k, 597399067);
+        h2 = h3 ^ Math.imul(h2 ^ k, 2869860233);
+        h3 = h4 ^ Math.imul(h3 ^ k, 951274213);
+        h4 = h1 ^ Math.imul(h4 ^ k, 2716044179);
+    }
+
+    h1 = Math.imul(h3 ^ (h1 >>> 18), 597399067);
+    h2 = Math.imul(h4 ^ (h2 >>> 22), 2869860233);
+    h3 = Math.imul(h1 ^ (h3 >>> 17), 951274213);
+    h4 = Math.imul(h2 ^ (h4 >>> 19), 2716044179);
+    
+    let seed = (h1^h2^h3^h4)>>>0;
+
     return () => {
-      state = (state * 9301 + 49297) % 233280;
-      return state / 233280;
+      seed = (seed * 9301 + 49297) % 233280;
+      return seed / 233280;
     };
   };
 
   // [수정] Blueprint에 따라 10x10 그리드를 '결정론적으로' 생성하는 함수
-  const generateMicroGrid = (blueprint, seed) => {
-    const random = createSeededRandom(seed); // 시드 기반 랜덤 함수 사용
+  const generateMicroGrid = (blueprint, seedStr) => {
+    const random = createSeededRandom(seedStr); // 시드 문자열 기반 랜덤 함수 사용
     const base = blueprint.base || 'g';
     const grid = Array(100).fill(base);
     const composition = blueprint.composition || [];
@@ -43,7 +59,6 @@ module.exports = (admin) => {
         const { type, density } = comp;
         const count = Math.floor(100 * density);
         for (let i = 0; i < count; i++) {
-            // 동일한 시드에서는 항상 같은 위치에 타일이 배치됨
             const randomIndex = Math.floor(random() * 100);
             grid[randomIndex] = type;
         }
@@ -51,20 +66,16 @@ module.exports = (admin) => {
     return grid;
   };
 
-
   const getLandDetail = onCall({ region: 'us-central1' }, async (req) => {
-    // 1. 요청에서 필요한 정보 추출
     const { mapId, x, y, tileType, plotId } = req.data;
     if (!mapId || x === undefined || y === undefined) {
       throw new HttpsError('invalid-argument', '필수 정보(mapId, x, y)가 누락되었습니다.');
     }
 
-    // 2. 동적 데이터 생성 (예: 유동 인구)
     const floatingPopulation = 10 + Math.floor(Math.random() * 50);
     
     let microGrid = null;
     
-    // 3. plotId가 있으면, 해당 이름의 사전 제작 파일을 먼저 찾습니다.
     if (plotId) {
         const plotPath = path.join(__dirname, 'assets', 'mapdata', mapId.split('_')[0], 'plots', `${plotId}.json`);
         try {
@@ -76,7 +87,6 @@ module.exports = (admin) => {
         }
     }
 
-    // 4. 사전 제작 파일이 없었거나 plotId가 원래 없었으면, 절차적으로 생성합니다.
     if (!microGrid) {
         if (!tileType) {
             logger.error(`Cannot generate grid for ${mapId}(${x},${y}) without plotId or tileType.`);
@@ -85,14 +95,9 @@ module.exports = (admin) => {
             const legend = await loadMicroLegend();
             const blueprint = legend.blueprints[tileType];
             if (blueprint) {
-                // [수정] 맵 ID와 좌표를 기반으로 고유한 시드를 생성
+                // [수정] 시드를 고유한 문자열로 생성
                 const seedString = `${mapId}_${x}_${y}`;
-                let seed = 0;
-                for (let i = 0; i < seedString.length; i++) {
-                    seed = (seed * 31 + seedString.charCodeAt(i)) | 0;
-                }
-                // [수정] 시드를 사용하여 결정론적 그리드 생성
-                microGrid = generateMicroGrid(blueprint, seed);
+                microGrid = generateMicroGrid(blueprint, seedString);
                 logger.info(`Procedurally generated grid for tileType '${tileType}' at ${mapId}(${x},${y})`);
             } else {
                 logger.warn(`No blueprint found for tileType '${tileType}'. Falling back to default.`);
@@ -101,13 +106,11 @@ module.exports = (admin) => {
         }
     }
 
-    // 5. Firestore에서 미시적(10x10) 소유권 정보 조회
     const ownershipRef = db.collection('land_plots').doc(`${mapId}_${x}_${y}`).collection('micro_ownership');
     const ownershipSnap = await ownershipRef.get();
     const owners = {};
     ownershipSnap.forEach(doc => { owners[doc.id] = doc.data().ownerName; });
 
-    // 6. 클라이언트에 모든 정보 반환
     return { ok: true, mapId, x, y, floatingPopulation, microGrid, owners };
   });
 
