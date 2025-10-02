@@ -1,8 +1,9 @@
 // /public/js/ui/item.js
 import { esc, rarityStyle, useBadgeHtml } from './utils.js';
-import { ensureModalCss, promptModal } from './modal.js'; // promptModal 추가
+// [수정] 'promptModal'을 올바른 함수 이름인 'seedCreatorModal'로 변경합니다.
+import { ensureModalCss, seedCreatorModal } from './modal.js';
 import { showToast } from './toast.js';
-import { appraiseItem, usePromptItem } from '../api/user.js'; // usePromptItem 추가
+import { appraiseItem, usePromptItem } from '../api/user.js';
 
 // [신규] 게임 내 모든 아이템의 정보를 불러와 캐시하는 함수
 // 수확물 ID를 한글 이름으로 바꾸기 위해 필요합니다.
@@ -169,7 +170,6 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
 
     const actionsContainer = back.querySelector('#itemActions');
     
-    // [전체 교체] '사용하기' 버튼 로직: seedCreatorModal 호출
     if (item.isPromptUse === true && typeof onUpdate === 'function') {
         const btnUse = document.createElement('button');
         btnUse.className = 'btn primary';
@@ -212,7 +212,6 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
                 if (result.ok) {
                     showToast('아이템 감정이 완료되었습니다!');
                     closeModal(); 
-                    // onUpdate 콜백이 있으면 인벤토리 UI를 새로고침하도록 호출
                     if (typeof onUpdate === 'function') {
                         onUpdate();
                     }
@@ -226,8 +225,6 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
         actionsContainer.appendChild(btnAppraise);
     }
 
-    // ▼▼▼ [핵심 수정] ▼▼▼
-    // onUpdate 함수와 equippedIds 배열이 모두 존재할 때만 장착/해제 버튼을 표시합니다.
     if (typeof onUpdate === 'function' && Array.isArray(equippedIds)) {
       if (isEquipped) {
         const btnUnequip = document.createElement('button');
@@ -249,6 +246,5 @@ export async function showItemDetailModal(item, context = {}) { // [수정] asyn
         actionsContainer.appendChild(btnEquip);
       }
     }
-    // ▲▲▲ [핵심 수정] ▲▲▲
     document.body.appendChild(back);
 }
