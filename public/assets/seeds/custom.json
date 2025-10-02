@@ -38,7 +38,7 @@
   {
     "id": "custom_seed_epic",
     "name": "커스텀 씨앗 (Epic)",
-    "price": 650,
+    "price": 500,
     "description": "사용자의 프롬프트를 기반으로 새로운 Epic 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "epic",
     "isPromptUse": true,
@@ -47,7 +47,7 @@
   {
     "id": "custom_seed_epic_perennial",
     "name": "커스텀 씨앗 (Epic, 다년생)",
-    "price": 3250,
+    "price": 3000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Epic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "epic",
     "isPromptUse": true,
@@ -56,7 +56,7 @@
   {
     "id": "custom_seed_legend",
     "name": "커스텀 씨앗 (Legendary)",
-    "price": 1700,
+    "price": 1200,
     "description": "사용자의 프롬프트를 기반으로 새로운 Legendary 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "legend",
     "isPromptUse": true,
@@ -65,7 +65,7 @@
   {
     "id": "custom_seed_legend_perennial",
     "name": "커스텀 씨앗 (Legendary, 다년생)",
-    "price": 8500,
+    "price": 6000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Legendary 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "legend",
     "isPromptUse": true,
@@ -74,7 +74,7 @@
   {
     "id": "custom_seed_myth",
     "name": "커스텀 씨앗 (Mythic)",
-    "price": 3000,
+    "price": 2000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Mythic 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "myth",
     "isPromptUse": true,
@@ -83,7 +83,7 @@
   {
     "id": "custom_seed_myth_perennial",
     "name": "커스텀 씨앗 (Mythic, 다년생)",
-    "price": 15000,
+    "price": 10000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Mythic 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "myth",
     "isPromptUse": true,
@@ -92,7 +92,7 @@
   {
     "id": "custom_seed_aether",
     "name": "커스텀 씨앗 (Aether)",
-    "price": 4650,
+    "price": 3000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Aether 등급 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "aether",
     "isPromptUse": true,
@@ -101,7 +101,7 @@
   {
     "id": "custom_seed_aether_perennial",
     "name": "커스텀 씨앗 (Aether, 다년생)",
-    "price": 23250,
+    "price": 15000,
     "description": "사용자의 프롬프트를 기반으로 새로운 Aether 등급의 다년생 씨앗을 생성할 수 있는 신비한 씨앗입니다.",
     "rarity": "aether",
     "isPromptUse": true,
