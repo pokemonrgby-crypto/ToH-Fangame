@@ -71,57 +71,131 @@ export function confirmModal(opts){
  * @param {object} opts - {title, placeholder, hint, maxLen, okText, cancelText}
  * @returns {Promise<string|null>} - 확인(입력값), 취소(null)
  */
-export function promptModal(opts = {}) {
-  ensureModalCss();
-  return new Promise(resolve => {
-    const { title = '입력', placeholder = '', hint = '', maxLen = 300, okText = '확인', cancelText = '취소' } = opts;
+export function seedCreatorModal(opts = {}) {
+    ensureModalCss();
+    const { baseItem } = opts;
+    if (!baseItem) return Promise.resolve(null);
 
-    const back = document.createElement('div');
-    back.className = 'modal-back';
-    back.innerHTML = `
-      <div class="modal-card" style="max-width: 520px;">
-        <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(title)}</div>
-        ${hint ? `<div class="text-dim" style="font-size:13px; margin-bottom:10px;">${esc(hint)}</div>` : ''}
-        <textarea id="prompt-text" class="input" style="min-height: 120px; border-radius: 8px; padding: 8px;" maxlength="${maxLen}" placeholder="${esc(placeholder)}"></textarea>
-        <div class="row" style="justify-content:space-between; align-items:center; margin-top:8px;">
-          <div id="prompt-count" class="text-dim" style="font-size:12px;">0 / ${maxLen}</div>
-          <div class="row" style="gap:8px;">
-            <button class="btn ghost" id="prompt-cancel">${esc(cancelText)}</button>
-            <button class="btn primary" id="prompt-ok">${esc(okText)}</button>
-          </div>
+    const rarity = baseItem.rarity || 'normal';
+    const rules = {
+        normal: { growthTime: [10, 60], aestheticValue: [10, 50] },
+        rare:   { growthTime: [60, 300], aestheticValue: [20, 150] },
+        epic:   { growthTime: [300, 1440], aestheticValue: [30, 400] },
+        legend: { growthTime: [720, 1440], aestheticValue: [40, 1000] },
+        myth:   { growthTime: [1080, 1440], aestheticValue: [100, 2500] },
+        aether: { growthTime: [1440, 1440], aestheticValue: [250, 5000] }
+    }[rarity] || { growthTime: [10, 60], aestheticValue: [10, 50] };
+
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-back';
+        back.innerHTML = `
+        <div class="modal-card" style="max-width: 640px;">
+            <div style="font-weight:900; font-size:18px; margin-bottom:12px">커스텀 씨앗 생성 (${rarity})</div>
+            
+            <div class="col" style="gap: 12px;">
+                <input id="seed-name" class="input" placeholder="새로운 씨앗 이름 (최대 50자)" maxlength="50">
+                <textarea id="seed-desc" class="input" placeholder="씨앗에 대한 설명 (최대 500자)" maxlength="500" rows="3"></textarea>
+                
+                <div class="grid2" style="gap: 12px;">
+                    <div>
+                        <label class="kv-label">성장 시간(분)</label>
+                        <input id="seed-growth" class="input" type="number" min="${rules.growthTime[0]}" max="${rules.growthTime[1]}" value="${rules.growthTime[0]}">
+                        <div class="text-dim" style="font-size:12px;">(추천: ${rules.growthTime[0]} ~ ${rules.growthTime[1]})</div>
+                    </div>
+                    <div>
+                        <label class="kv-label">미관 점수</label>
+                        <input id="seed-aesthetic" class="input" type="number" min="${rules.aestheticValue[0]}" max="${rules.aestheticValue[1]}" value="${rules.aestheticValue[0]}">
+                        <div class="text-dim" style="font-size:12px;">(추천: ${rules.aestheticValue[0]} ~ ${rules.aestheticValue[1]})</div>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="kv-label">수확물 (최대 3개, 확정 1개 필수)</div>
+                    <div id="harvest-rows" class="col" style="gap: 8px;"></div>
+                    <button id="btn-add-harvest" class="btn small" style="margin-top: 8px;">+ 수확물 추가</button>
+                </div>
+            </div>
+
+            <div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px;">
+                <button class="btn ghost" id="modal-cancel">취소</button>
+                <button class="btn primary" id="modal-ok">생성</button>
+            </div>
         </div>
-        <div id="prompt-warn" style="color:#ef4444; font-size:12px; margin-top:6px; text-align:right; display:none;"></div>
-      </div>
-    `;
+        `;
 
-    const txt = back.querySelector('#prompt-text');
-    const ok = back.querySelector('#prompt-ok');
-    const cancel = back.querySelector('#prompt-cancel');
-    const count = back.querySelector('#prompt-count');
-    const warn = back.querySelector('#prompt-warn');
+        const harvestRows = back.querySelector('#harvest-rows');
+        const btnAddHarvest = back.querySelector('#btn-add-harvest');
 
-    const update = () => {
-      const len = txt.value.length;
-      count.textContent = `${len} / ${maxLen}`;
-      const bad = len === 0 || len > maxLen;
-      ok.disabled = bad;
-      warn.style.display = bad ? 'block' : 'none';
-      if (len === 0) warn.textContent = '내용을 입력해주세요.';
-      else if (len > maxLen) warn.textContent = `최대 ${maxLen}자까지 입력할 수 있습니다.`;
-    };
+        const addHarvestRow = (isGuaranteed = false) => {
+            if (harvestRows.children.length >= 3) {
+                btnAddHarvest.style.display = 'none';
+                return;
+            }
+            const row = document.createElement('div');
+            row.className = 'row harvest-row';
+            row.style.gap = '8px';
+            row.innerHTML = `
+                <input class="input harvest-id" list="item-datalist" placeholder="아이템 ID">
+                <input class="input harvest-min" type="number" value="1" min="1" max="5" style="width: 60px;" ${isGuaranteed ? '' : 'disabled'}>
+                <input class="input harvest-max" type="number" value="1" min="1" max="5" style="width: 60px;">
+                <input class="input harvest-prob" type="number" value="${isGuaranteed ? '1.0' : '0.1'}" min="0" max="1" step="0.01" style="width: 80px;" ${isGuaranteed ? 'disabled' : ''}>
+                <button class="btn danger small btn-remove-harvest" style="${isGuaranteed ? 'display:none;' : ''}">X</button>
+            `;
+            harvestRows.appendChild(row);
+            if (harvestRows.children.length >= 3) btnAddHarvest.style.display = 'none';
+        };
 
-    txt.oninput = update;
-    cancel.onclick = () => { close(null); };
-    ok.onclick = () => {
-      const v = txt.value.trim();
-      if (!v || v.length > maxLen) { update(); return; }
-      close(v);
-    };
+        btnAddHarvest.onclick = () => addHarvestRow(false);
+        harvestRows.addEventListener('click', e => {
+            if (e.target.classList.contains('btn-remove-harvest')) {
+                e.target.parentElement.remove();
+                btnAddHarvest.style.display = 'block';
+            }
+        });
 
-    const close = (val) => { back.remove(); resolve(val); };
-    back.addEventListener('click', e => { if (e.target === back) close(null); });
-    
-    document.body.appendChild(back);
-    setTimeout(() => { txt.focus(); update(); }, 50);
-  });
+        const close = (val) => { back.remove(); resolve(val); };
+        back.addEventListener('click', e => { if (e.target === back) close(null); });
+        back.querySelector('#modal-cancel').onclick = () => close(null);
+        back.querySelector('#modal-ok').onclick = () => {
+            try {
+                const harvest = Array.from(harvestRows.children).map(row => {
+                    return {
+                        itemId: row.querySelector('.harvest-id').value,
+                        min: parseInt(row.querySelector('.harvest-min').value),
+                        max: parseInt(row.querySelector('.harvest-max').value),
+                        probability: parseFloat(row.querySelector('.harvest-prob').value)
+                    };
+                });
+
+                const data = {
+                    name: back.querySelector('#seed-name').value,
+                    description: back.querySelector('#seed-desc').value,
+                    growthTimeMinutes: parseInt(back.querySelector('#seed-growth').value),
+                    aestheticValue: parseInt(back.querySelector('#seed-aesthetic').value),
+                    harvest: harvest
+                };
+                
+                // 간단한 유효성 검사
+                if (!data.name || !data.description || !data.growthTimeMinutes || !data.aestheticValue || data.harvest.length === 0) {
+                    throw new Error('모든 필드를 채워주세요.');
+                }
+
+                close(data);
+            } catch (e) {
+                showToast(`입력 오류: ${e.message}`);
+            }
+        };
+
+        addHarvestRow(true); // 확정 드랍 행 1개 추가
+        document.body.appendChild(back);
+        
+        // Datalist for item search
+        fetch('/assets/items.json').then(r => r.json()).then(items => {
+            const datalist = document.createElement('datalist');
+            datalist.id = 'item-datalist';
+            datalist.innerHTML = Object.entries(items).map(([id, item]) => `<option value="${id}">${item.name} (${item.rarity})</option>`).join('');
+            back.appendChild(datalist);
+        });
+    });
 }
