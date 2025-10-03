@@ -127,6 +127,27 @@ function sendTpl(){
                 <input id="w-myth"   type="number" class="manage-input" value="0" min="0" placeholder="Myth">
                 <input id="w-aether" type="number" class="manage-input" value="0" min="0" placeholder="Aether">
             </div>
+
+
+            <div class="manage-col" style="margin-top: 12px; padding-top: 12px; border-top:1px dashed var(--bd);">
+              <div class="manage-row">
+                <label class="manage-label">복사 출처 UID</label>
+                <input id="copy-src-uid" class="manage-input" placeholder="예: uAbCdEf123456">
+              </div>
+              <div class="manage-row">
+                <label class="manage-label">출처 아이템 ID</label>
+                <input id="copy-src-item" class="manage-input" placeholder="예: item_xxx, mail_xxx 등">
+              </div>
+              <div class="manage-row">
+                <label class="manage-label">복사 개수</label>
+                <input id="copy-count" type="number" min="1" value="1" class="manage-input">
+              </div>
+              <div class="manage-hint">
+                ※ 둘 다 채우면 “아이템 JSON” 대신 이 아이템을 본떠서 새 ID로 지급해.  
+                아이템 ID는 상단 <b>검색</b> 탭에서 유저 조회하면 ITEMS 리스트로 볼 수 있어. (관리자 화면 이미 있음) 
+              </div>
+            </div>
+
         </div>
     </details>
     
@@ -485,7 +506,14 @@ function bindSendEvents() {
                     payload.attachments.items = JSON.parse(rawItems);
                 } catch (e) { return showToast('아이템 JSON 형식이 올바르지 않습니다.'); }
             }
-            
+            // [추가] copyFrom 입력값이 있으면 첨부
+            const srcUid  = document.getElementById('copy-src-uid')?.value.trim();
+            const srcItem = document.getElementById('copy-src-item')?.value.trim();
+            const cnt     = Number(document.getElementById('copy-count')?.value || 1);
+            if (srcUid && srcItem) {
+              payload.attachments.copyFrom = { uid: srcUid, itemId: srcItem, count: Math.max(1, Math.floor(cnt||1)) };
+            }
+
             if ($switch.dataset.on === '1') {
                 const weights = {
                     normal: Number(document.getElementById('w-normal').value || 0),
