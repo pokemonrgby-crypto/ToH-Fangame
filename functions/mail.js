@@ -137,6 +137,17 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       })).filter(x=>x.name);
     }
 
+    // [추가] 특정 유저의 인벤토리 아이템을 복사해 지급하기
+    if (attachments?.copyFrom) {
+      const srcUid   = String(attachments.copyFrom.uid || '').trim();
+      const srcItem  = String(attachments.copyFrom.itemId || '').trim();
+      const srcCount = Math.max(1, Math.floor(Number(attachments.copyFrom.count || 1)));
+      if (srcUid && srcItem) {
+        attach.copyFrom = { uid: srcUid, itemId: srcItem, count: srcCount };
+      }
+    }
+
+
     const doc = {
       kind: (['notice','warning','general'].includes(kind)) ? kind : 'notice',
       title: String(title).slice(0,100),
@@ -201,6 +212,39 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     // 코인/고정 아이템 처리
     const coins = Math.max(0, Math.floor(Number(m?.attachments?.coins||0)));
     const staticItems = Array.isArray(m?.attachments?.items) ? m.attachments.items : [];
+    // [추가] copyFrom 처리: 다른 유저의 보유 아이템을 본떠서 새 ID로 지급
+    let copiedItems = [];
+    try {
+      const cfg = m?.attachments?.copyFrom;
+      if (cfg?.uid && cfg?.itemId) {
+        const srcSnap = await db.doc(`users/${cfg.uid}`).get();
+        const srcList = srcSnap.exists ? (srcSnap.get('items_all') || []) : [];
+        const base = srcList.find(x => x.id === cfg.itemId);
+        if (base) {
+          const n = Math.max(1, Math.floor(Number(cfg.count || 1)));
+          for (let i = 0; i < n; i++) {
+            copiedItems.push({
+              id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`, // 새 랜덤 ID
+              name: String(base.name || 'Gift'),
+              rarity: String(base.rarity || 'normal'),
+              isConsumable: !!(base.isConsumable || base.consumable || base.consume),
+              uses: Math.max(1, Math.floor(Number(base.uses || 1))),
+              description: String(base.description || ''),
+              // 구조를 최대한 보존 (있으면 그대로 복사)
+              properties: base.properties || undefined,
+              type: base.type || undefined,
+              seedInfo: base.seedInfo || undefined,
+              placeable: (base.placeable !== undefined) ? !!base.placeable : undefined,
+              promptId: base.promptId || undefined,
+              isPromptUse: base.isPromptUse || undefined,
+            });
+          }
+        }
+      }
+    } catch (e) {
+      logger.error('[mail] copyFrom lookup failed', e);
+    }
+
 
     // 뽑기권이 있으면 등급 추첨 + AI 아이템 생성
     let ticketItem = null;
@@ -297,6 +341,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           description: String(it.description||'')
         });
       }
+
+      // [추가] 앞에서 만든 copiedItems를 먼저 담아두기
+      for (const ci of copiedItems) add.push(ci);
+
 
       if (ticketItem) add.push(ticketItem);
 
