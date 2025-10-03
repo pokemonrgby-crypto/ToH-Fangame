@@ -302,26 +302,53 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           };
         }
 
-        await gachaLogRef.set({
-          uid,
-          mailId,
-          at: admin.firestore.FieldValue.serverTimestamp(),
-          request: {
-            rarity: picked,
-            userPrompt: prompt || null,
-          },
-          ai_input: {
-            systemPrompt: systemText,
-            userPrompt: userText,
-          },
-          ai_output: {
-            rawResponse: rawAiResponse,
-          },
-          result: {
-            generatedItem: ticketItem,
-            error: errorLog || null,
+        // [변경] Firestore 1MB 제한을 피하기 위해 긴 로그는 잘라서 저장
+        const MAX_LOG_CHARS = 200_000; // 약 200KB 정도
+        const rawLen = (rawAiResponse || '').length;
+        const trimmedRaw = rawLen > MAX_LOG_CHARS
+          ? (rawAiResponse.slice(0, MAX_LOG_CHARS) + `\n[TRUNCATED: ${rawLen - MAX_LOG_CHARS} chars omitted]`)
+          : (rawAiResponse || '');
+
+        try {
+          await gachaLogRef.set({
+            uid,
+            mailId,
+            at: admin.firestore.FieldValue.serverTimestamp(),
+            request: {
+              rarity: picked,
+              userPrompt: prompt || null,
+            },
+            ai_input: {
+              systemPrompt: systemText,
+              userPrompt: userText,
+            },
+            ai_output: {
+              rawResponse: trimmedRaw,
+              truncated: rawLen > MAX_LOG_CHARS,
+              length: rawLen
+            },
+            result: {
+              generatedItem: ticketItem,
+              error: errorLog || null,
+            }
+          });
+        } catch (e) {
+          // 로그 저장 실패해도 보상은 진행되게 최소 정보만 저장
+          logger.warn('[mail] gachaLog write failed; writing minimal log instead', e);
+          try {
+            await gachaLogRef.set({
+              uid,
+              mailId,
+              at: admin.firestore.FieldValue.serverTimestamp(),
+              result: {
+                generatedItem: ticketItem,
+                error: (errorLog || 'log_write_failed'),
+              }
+            });
+          } catch (e2) {
+            logger.error('[mail] minimal gachaLog write also failed', e2);
           }
-        });
+        }
       }
     }
 
