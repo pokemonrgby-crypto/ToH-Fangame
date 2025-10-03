@@ -106,13 +106,19 @@ function cardHtml(doc) {
     !!(doc.attachments &&
       (((doc.attachments.coins|0) > 0) ||
        (Array.isArray(doc.attachments.items) && doc.attachments.items.length) ||
-       !!doc.attachments.ticket));
+       !!doc.attachments.ticket ||
+       !!doc.attachments.copyFrom));
+
 
   const attachHtml = hasAttach ? (`
     <div style="margin-top:10px;padding:10px;border-radius:10px;background:#F9FAFB;border:1px solid #E5E7EB;color:${theme.text}">
       <div style="font-weight:700;margin-bottom:6px">첨부</div>
       ${ doc.attachments?.ticket ? `<div>뽑기권: 가중치 지정됨</div>` : '' }
       ${ (doc.attachments?.coins|0) > 0 ? `<div>코인: +${doc.attachments.coins|0}</div>` : '' }
+      ${ doc.attachments?.copyFrom
+          ? `<div>복사지급: uid=${esc(doc.attachments.copyFrom.uid||'')}, item=${esc(doc.attachments.copyFrom.itemId||'')}, x${doc.attachments.copyFrom.count||1}</div>`
+          : '' }
+
       ${ Array.isArray(doc.attachments?.items) && doc.attachments.items.length ? `
         <div style="margin-top:4px">
           아이템:
