@@ -146,7 +146,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         attach.copyFrom = { uid: srcUid, itemId: srcItem, count: srcCount };
       }
     }
-
+    
+    // [가드] copyFrom이 있으면 JSON 아이템은 무시(중복 지급 방지) + 개수 상한
+    if (attach.copyFrom) {
+      attach.items = [];
+      attach.copyFrom.count = Math.min(50, Math.max(1, Math.floor(Number(attach.copyFrom.count || 1))));
+    }
 
     const doc = {
       kind: (['notice','warning','general'].includes(kind)) ? kind : 'notice',
@@ -221,7 +226,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const srcList = srcSnap.exists ? (srcSnap.get('items_all') || []) : [];
         const base = srcList.find(x => x.id === cfg.itemId);
         if (base) {
-          const n = Math.max(1, Math.floor(Number(cfg.count || 1)));
+          const n = Math.min(50, Math.max(1, Math.floor(Number(cfg.count || 1))));
           for (let i = 0; i < n; i++) {
             copiedItems.push({
               id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`, // 새 랜덤 ID
