@@ -20,25 +20,43 @@ module.exports = (admin) => {
 
       const characters = charsSnap.docs.map(doc => {
         const data = doc.data();
-        // [수정] skills 필드가 없으면 새로운 능력치를 포함한 기본값으로 초기화
-        const skills = data.skills || {
-          gardening: 0,
-          art: 0,
-          construction: 0,
-          speech: 0,
-          mining: 0,
-          cooking: 0,
-          processing: 0,
-          crafting: 0,
-          research: 0
+        
+        // [수정] 스킬 필드 데이터 구조 변경 및 레거시 호환 처리
+        const defaultSkill = { level: 0, exp: 0, nextExp: 1 };
+        const baseSkills = {
+          gardening: defaultSkill, art: defaultSkill, construction: defaultSkill,
+          speech: defaultSkill, mining: defaultSkill, cooking: defaultSkill,
+          processing: defaultSkill, crafting: defaultSkill, research: defaultSkill
         };
+
+        let skills = data.skills || {};
+        const finalSkills = {};
+        for (const key of Object.keys(baseSkills)) {
+          // [설명] 기존 데이터가 숫자(레벨)이면 새 구조로 변환, 없으면 기본값 사용
+          if (typeof skills[key] === 'number') {
+            const level = skills[key];
+            finalSkills[key] = {
+              level,
+              exp: 0,
+              nextExp: Math.floor(200 ** (Math.sqrt(level)))
+            };
+          } else if (typeof skills[key] === 'object' && skills[key] !== null) {
+            finalSkills[key] = {
+              level: skills[key].level || 0,
+              exp: skills[key].exp || 0,
+              nextExp: skills[key].nextExp || 1
+            };
+          } else {
+            finalSkills[key] = baseSkills[key];
+          }
+        }
 
         return {
           id: doc.id,
           name: data.name || '이름 없음',
           image_url: data.image_url || null,
           thumb_url: data.thumb_url || null,
-          skills: skills
+          skills: finalSkills
         };
       });
 
