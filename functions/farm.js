@@ -276,8 +276,52 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
     const plotId = plotIdFrom({ mapId, x, y, microX, microY });
     const plotRef = db.doc(`farm_plots/${plotId}`);
 
-    await plotRef.set({ assigned_char_id: charId || null, updatedAt: Date.now() }, { merge: true });
+    if (charId) {
+      const charRef = db.doc(`chars/${charId}`);
+      const DEFAULT_SKILLS = {
+        gardening: 0, construction: 0, art: 0, crafting: 0, research: 0,
+        speech: 0, mining: 0, cooking: 0, processing: 0,
+      };
+      const KEY_ORDER = ['gardening','construction','art','crafting','research','speech','mining','cooking','processing'];
+
+      await db.runTransaction(async (tx) => {
+        const now = Date.now();
+        const cSnap = await tx.get(charRef);
+        const cData = cSnap.exists ? (cSnap.data() || {}) : {};
+
+        let nextSkills = null;
+
+        // 1) skills가 없거나, null/undefined
+        if (!cData.skills) {
+          nextSkills = { ...DEFAULT_SKILLS };
+        }
+        // 2) skills가 배열인 레거시 → 객체로 매핑
+        else if (Array.isArray(cData.skills)) {
+          const arr = cData.skills;
+          nextSkills = {};
+          KEY_ORDER.forEach((k, i) => { nextSkills[k] = Number(arr[i] ?? 0) || 0; });
+        }
+        // 3) skills가 객체인데 몇몇 키가 없음 → 부족한 키만 채움
+        else if (typeof cData.skills === 'object') {
+          nextSkills = { ...cData.skills };
+          for (const k of Object.keys(DEFAULT_SKILLS)) {
+            if (nextSkills[k] == null) nextSkills[k] = 0;
+          }
+        }
+
+        if (nextSkills) {
+          tx.set(charRef, { skills: nextSkills, updatedAt: now }, { merge: true });
+        }
+
+        // 배정 자체
+        tx.set(plotRef, { assigned_char_id: charId, updatedAt: now }, { merge: true });
+      });
+    } else {
+      await plotRef.set({ assigned_char_id: null, updatedAt: Date.now() }, { merge: true });
+    }
+
     return { ok: true, assigned_char_id: charId || null };
+
   });
 
   const harvestTiles = onCall({ region: 'us-central1' }, async (req) => {
