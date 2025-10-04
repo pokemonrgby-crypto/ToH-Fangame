@@ -1,8 +1,8 @@
-// /public/js/tabs/land_management.js (기존 파일 전체 교체)
+// /public/js/tabs/land_management.js (기존 farm_plot.js 대체)
 import { auth, db, fx } from '../api/firebase.js';
 import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles } from '../api/farm.js';
 import { getUserInventory } from '../api/user.js';
-import { getUserCharacters } from '../api/char.js'; // [추가] 캐릭터 API 임포트
+import { getUserCharacters } from '../api/char.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
 
@@ -48,7 +48,7 @@ export async function showLandManagement() {
     root.innerHTML = `
         <style>
           .farm-grid { display: grid; grid-template-columns: repeat(32, 1fr); border: 1px solid #555; background-color: ${microTileInfo.color || '#3e2e1c'}; }
-          .farm-tile { aspect-ratio: 1 / 1; background-size: cover; border: 1px solid rgba(0,0,0,0.1); }
+          .farm-tile { aspect-ratio: 1 / 1; background-size: cover; border: 1px solid rgba(0,0,0,0.1); transition: transform 0.1s ease-out, box-shadow 0.1s ease-out; }
           .farm-tile:hover { outline: 1px solid yellow; z-index: 1; position: relative; }
           .farm-tile.selected { box-shadow: inset 0 0 0 2px #4aa3ff; }
           .farm-tile.planted { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="%23a3e635"/></svg>'); background-size: 40%; background-repeat: no-repeat; background-position: center; }
@@ -76,8 +76,8 @@ export async function showLandManagement() {
 
     const state = {
         plotData: {},
-        assignedChar: null, // [수정] 캐릭터 전체 객체를 저장
-        mode: 'view', // 'view', 'planting'
+        assignedChar: null,
+        mode: 'view',
         selectedSeed: null,
         selectedTiles: new Set(),
         isDragging: false,
@@ -85,7 +85,6 @@ export async function showLandManagement() {
     };
 
     const render = () => {
-        // Render Management Panel
         const managementPanel = root.querySelector('#management-panel');
         const charInfoHtml = state.assignedChar
             ? `<b>${esc(state.assignedChar.name)}</b> <span class="text-dim">(원예 ${state.assignedChar.skills.gardening})</span>`
@@ -102,12 +101,11 @@ export async function showLandManagement() {
                 <div class="row" style="gap:8px; margin-top:8px;">
                     <button class="btn small mgmt-btn" id="btn-plant-seed" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>씨앗 심기</button>
                     <button class="btn small mgmt-btn" id="btn-harvest-all" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>전체 수확</button>
-                    <button class="btn small mgmt-btn" id="btn-build" ${microTileInfo.buildable ? '' : 'disabled title="건설 불가 토지"'}>건설하기</button>
+                    <button class="btn small mgmt-btn" id="btn-build" ${microTileInfo.buildable ? '' : 'disabled title="건설 불가 토지"'}>건설</button>
                 </div>
             </div>
         `;
         
-        // Render Grid
         const now = Date.now();
         gridContainer.innerHTML = '';
         for (let i = 0; i < TILE_COUNT; i++) {
@@ -229,14 +227,14 @@ export async function showLandManagement() {
 
     const handleAssignCharacter = async () => {
         const selectedChar = await openCharacterPickerModal();
-        if (selectedChar === undefined) return; // 모달 그냥 닫음
+        if (selectedChar === undefined) return;
         
         const charId = selectedChar ? selectedChar.id : null;
         try {
             await assignCharacterToFarm({ ...plotInfo, charId });
             showToast('캐릭터 할당이 완료되었습니다.');
-            state.assignedChar = selectedChar; // [수정] state에 캐릭터 정보 업데이트
-            render(); // 화면 다시 그리기
+            state.assignedChar = selectedChar;
+            render();
         } catch(e) { showToast(e.message || '배정 실패'); }
     };
     
@@ -285,27 +283,41 @@ export async function showLandManagement() {
         
         const btn = root.querySelector('#btn-confirm-plant');
         btn.disabled = true;
-        btn.textContent = '처리 중...';
+
+        const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
+        
+        const backendTask = plantSeedOnTile({
+            ...plotInfo,
+            charId: state.assignedChar.id,
+            seedItemId: state.selectedSeed.id,
+            seedId: state.selectedSeed.seedInfo.id,
+            tileIndices: sortedTiles
+        });
+
+        const animationTask = async () => {
+            for (let i = 0; i < sortedTiles.length; i++) {
+                const index = sortedTiles[i];
+                const tileNode = gridContainer.children[index];
+                if (tileNode) {
+                    tileNode.classList.add('planted');
+                    tileNode.style.transform = 'scale(0.8)';
+                    setTimeout(() => tileNode.style.transform = 'scale(1)', 50);
+                }
+                btn.textContent = `심는 중... (${i + 1}/${sortedTiles.length})`;
+                await new Promise(resolve => setTimeout(resolve, 30)); 
+            }
+        };
 
         try {
-            const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
-            
-            await plantSeedOnTile({
-                ...plotInfo,
-                charId: state.assignedChar.id,
-                seedItemId: state.selectedSeed.id,
-                seedId: state.selectedSeed.seedInfo.id,
-                tileIndices: sortedTiles
-            });
-            showToast(`${state.selectedTiles.size}개의 씨앗을 심었습니다.`);
+            await Promise.all([backendTask, animationTask()]);
+            showToast(`${sortedTiles.length}개의 씨앗을 심었습니다.`);
+        } catch (e) {
+            showToast(`심기 실패: ${e.message}`);
+        } finally {
             state.mode = 'view';
             state.selectedSeed = null;
             state.selectedTiles.clear();
-            loadPlotData();
-        } catch (e) {
-            showToast(`심기 실패: ${e.message}`);
-            btn.disabled = false;
-            btn.textContent = '심기 확인';
+            loadPlotData(); // 서버로부터 최신 상태 다시 로드
         }
     };
     
@@ -351,12 +363,12 @@ export async function showLandManagement() {
               <div class="modal-card" style="max-width: 600px;">
                 <div style="font-weight:900; margin-bottom:12px;">심을 씨앗 선택</div>
                 <div class="grid3" style="gap:10px; max-height: 40vh; overflow-y:auto;">
-                    ${seeds.length > 0 ? seeds.map(seed => {
-                        return `<button class="kv-card" data-seed-id="${seed.id}" style="text-align:left; cursor:pointer;">
-                                    <div>${esc(seed.name)}</div>
-                                    <div class="text-dim" style="font-size:12px;">보유: ${seed.uses}개</div>
-                                </button>`
-                    }).join('') : '<div class="text-dim">사용 가능한 씨앗이 없습니다.</div>'}
+                    ${seeds.length > 0 ? seeds.map(seed => `
+                        <button class="kv-card" data-seed-id="${seed.id}" style="text-align:left; cursor:pointer;">
+                            <div>${esc(seed.name)}</div>
+                            <div class="text-dim" style="font-size:12px;">보유: ${seed.uses}개</div>
+                        </button>
+                    `).join('') : '<div class="text-dim">사용 가능한 씨앗이 없습니다.</div>'}
                 </div>
                 <button class="btn ghost" id="mClose" style="margin-top:12px; align-self:flex-end;">취소</button>
               </div>`;
@@ -374,7 +386,6 @@ export async function showLandManagement() {
         });
     };
 
-    // [신규] 캐릭터 선택 모달
     const openCharacterPickerModal = async () => {
         ensureModalCss();
         const characters = await getUserCharacters();
@@ -383,22 +394,24 @@ export async function showLandManagement() {
             const back = document.createElement('div');
             back.className = 'modal-back';
             let cardsHtml = characters.map(char => {
-                const skills = char.skills || { gardening: 0, art: 0, construction: 0 };
+                const skills = char.skills || { gardening: 0, art: 0, construction: 0, speech: 0, mining: 0, cooking: 0, processing: 0, crafting: 0, research: 0 };
+                // [수정] 스킬 표시 부분을 2줄로 나누어 가독성 확보
                 return `
-                    <div class="kv-card card-hover" data-char-id="${char.id}" style="cursor:pointer;">
+                    <div class="kv-card" data-char-id="${char.id}" style="cursor:pointer;">
                         <div class="row" style="gap:10px">
-                            <img src="${char.thumb_url || char.image_url || 'https://via.placeholder.com/60'}" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
+                            <img src="${char.thumb_url || char.image_url || ''}" onerror="this.src='https://via.placeholder.com/60'" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
                             <div>
                                 <div style="font-weight:bold;">${esc(char.name)}</div>
-                                <div class="text-dim" style="font-size:12px; margin-top:4px;">
-                                    원예 ${skills.gardening} | 건설 ${skills.construction} | 예술 ${skills.art}
+                                <div class="text-dim" style="font-size:11px; margin-top:4px; line-height: 1.4;">
+                                    원예 ${skills.gardening} | 건설 ${skills.construction} | 예술 ${skills.art} | 제작 ${skills.crafting} | 연구 ${skills.research}<br>
+                                    화술 ${skills.speech} | 채굴 ${skills.mining} | 조리 ${skills.cooking} | 가공 ${skills.processing}
                                 </div>
                             </div>
                         </div>
                     </div>`;
             }).join('');
 
-            cardsHtml += `<button class="kv-card card-hover" data-char-id="null">
+            cardsHtml += `<button class="kv-card" data-char-id="null" style="cursor:pointer; text-align:center;">
                             <div class="text-dim">🚫 담당자 할당 해제</div>
                           </button>`;
 
@@ -406,7 +419,7 @@ export async function showLandManagement() {
                 <div class="modal-card" style="max-width: 700px;">
                     <div style="font-weight:900; margin-bottom:12px;">담당 캐릭터 선택</div>
                     <div class="grid2" style="gap:10px; max-height: 50vh; overflow-y:auto;">${cardsHtml}</div>
-                    <button class="btn ghost" id="mClose" style="margin-top:16px;">닫기</button>
+                    <button class="btn ghost" id="mClose" style="margin-top:16px; align-self:flex-end;">닫기</button>
                 </div>`;
             document.body.appendChild(back);
 
@@ -436,14 +449,14 @@ export async function showLandManagement() {
             const charId = state.plotData.assigned_char_id || null;
 
             if (charId) {
-                // [수정] 캐릭터 정보를 Firestore에서 직접 가져오도록 변경
                 const charSnap = await fx.getDoc(fx.doc(db, 'chars', charId));
                 if (charSnap.exists()) {
                     const data = charSnap.data();
                     state.assignedChar = {
                         id: charSnap.id,
                         name: data.name,
-                        skills: data.skills || { gardening: 0, art: 0, construction: 0 }
+                        // [수정] 모든 스킬 정보를 읽어오도록 확장
+                        skills: data.skills || { gardening: 0, art: 0, construction: 0, speech: 0, mining: 0, cooking: 0, processing: 0, crafting: 0, research: 0 }
                     };
                 } else {
                      state.assignedChar = null;
@@ -451,9 +464,7 @@ export async function showLandManagement() {
             } else {
                 state.assignedChar = null;
             }
-
             render();
-
         } catch (e) {
             console.error(e);
             root.innerHTML = `<section class="container narrow"><div class="kv-card">농장 정보를 불러오지 못했습니다: ${e.message}</div></section>`;
