@@ -136,8 +136,9 @@ export async function showLandManagement() {
     
     const render = () => {
         const managementPanel = root.querySelector('#management-panel');
+        // [수정] 스킬 데이터 구조 변경에 따라 .level 추가
         const charInfoHtml = state.assignedChar
-            ? `<b>${esc(state.assignedChar.name)}</b> <span class="text-dim">(원예 ${state.assignedChar.skills.gardening})</span>`
+            ? `<b>${esc(state.assignedChar.name)}</b> <span class="text-dim">(원예 ${state.assignedChar.skills?.gardening?.level || 0})</span>`
             : '할당된 캐릭터 없음';
 
         managementPanel.innerHTML = `
@@ -489,6 +490,7 @@ export async function showLandManagement() {
             back.className = 'modal-back';
             let cardsHtml = characters.map(char => {
                 const skills = char.skills || {};
+                // [수정] 스킬 데이터 구조 변경에 따라 .level 추가 및 안전한 접근을 위해 ?. 사용
                 return `
                     <div class="kv-card" data-char-id="${char.id}" style="cursor:pointer;">
                         <div class="row" style="gap:10px">
@@ -496,8 +498,8 @@ export async function showLandManagement() {
                             <div>
                                 <div style="font-weight:bold;">${esc(char.name)}</div>
                                 <div class="text-dim" style="font-size:11px; margin-top:4px; line-height: 1.4;">
-                                    원예 ${skills.gardening||0} | 건설 ${skills.construction||0} | 예술 ${skills.art||0} | 제작 ${skills.crafting||0} | 연구 ${skills.research||0}<br>
-                                    화술 ${skills.speech||0} | 채굴 ${skills.mining||0} | 조리 ${skills.cooking||0} | 가공 ${skills.processing||0}
+                                    원예 ${skills.gardening?.level||0} | 건설 ${skills.construction?.level||0} | 예술 ${skills.art?.level||0} | 제작 ${skills.crafting?.level||0} | 연구 ${skills.research?.level||0}<br>
+                                    화술 ${skills.speech?.level||0} | 채굴 ${skills.mining?.level||0} | 조리 ${skills.cooking?.level||0} | 가공 ${skills.processing?.level||0}
                                 </div>
                             </div>
                         </div>
@@ -546,7 +548,7 @@ export async function showLandManagement() {
                     state.assignedChar = {
                         id: charSnap.id,
                         name: data.name,
-                        skills: data.skills || { gardening: 0 }
+                        skills: data.skills || {} // [수정] 기본값 빈 객체로 변경
                     };
                 }
             }
