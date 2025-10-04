@@ -190,7 +190,7 @@ module.exports = (admin) => {
     }
     logger.info(`[plantSeedOnTile] Client requested to plant seedId: "${seedId}"`);
 
-    const seed = allSeeds.find(s => s.id === seedId);
+    let seed = allSeeds.find(s => s.id === seedId);
     if (!seed) {
         logger.error(`[plantSeedOnTile] Seed not found in loaded data: "${seedId}"`);
         throw new HttpsError('not-found', `서버에 존재하지 않는 씨앗입니다: ${seedId}`);
@@ -208,6 +208,29 @@ module.exports = (admin) => {
       const items = Array.isArray(u.items_all) ? u.items_all : [];
 
       const seedItem = items.find(it => it.id === seedItemId);
+      // [추가] 커스텀 씨앗 fallback: 서버 메타에 없으면 seedItem.seedInfo 사용
+      if (!seed) {
+        const si = seedItem?.seedInfo;
+        if (si && (String(si.id) === String(seedId) || String(seedId).includes(String(si.id)))) {
+          seed = {
+            id: String(si.id),
+            rarity: String(seedItem.rarity || si.rarity || 'normal').toLowerCase(),
+            growthTimeMinutes: Math.max(1, Number(si.growthTimeMinutes || si.growMin || 5)),
+            harvest: Array.isArray(si.harvest) && si.harvest.length
+              ? si.harvest.map(h => ({
+                  itemId: String(h.itemId || h.id || 'unknown_crop'),
+                  min: Math.max(1, Number(h.min ?? 1)),
+                  max: Math.max(1, Number(h.max ?? 1)),
+                  probability: Math.min(1, Math.max(0, Number(h.probability ?? 1)))
+                }))
+              // 기본 “하나 심으면 하나 남” — 커스텀에 harvest 없으면 1개 고정
+              : [{ itemId: String(si.defaultHarvestItemId || seedId), min: 1, max: 1, probability: 1 }],
+            season_bonus: si.season_bonus || {}
+          };
+        }
+      }
+if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정의가 없습니다: ${seedId}`);
+
       if (!seedItem) throw new HttpsError('failed-precondition', '인벤토리에 해당 씨앗이 없습니다.');
       const uses = Number(seedItem.uses ?? 1);
       if (uses < n) throw new HttpsError('failed-precondition', `씨앗 사용 가능 횟수가 부족합니다. (필요: ${n}, 보유: ${uses})`);
