@@ -17,11 +17,6 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // 이미 있다면 재�
 const exploreV2 = require('./explore_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
-exports.buySeed            = farmFns.buySeed;
-exports.getFarmPlotDetail  = farmFns.getFarmPlotDetail;
-exports.plantSeedOnTile    = farmFns.plantSeedOnTile;
-exports.assignCharacterToFarm = farmFns.assignCharacterToFarm;
-exports.harvestTiles       = farmFns.harvestTiles; // (새로 추가할 함수)
 
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const landFns = require('./land')(admin);
@@ -421,7 +416,8 @@ async function sellItemsCore(uid, data) {
           // [수정] 미관 점수 보너스 추가
           const aestheticBonus = Math.floor(0.02 * (item.properties?.aestheticValue || 0));
 
-          totalGold += (basePrice + aestheticBonus);
+          const qty = Number(item.count || 1);
+          totalGold += (basePrice + aestheticBonus) * qty;
         } else {
           itemsToKeep.push(item);
         }
