@@ -1,5 +1,6 @@
 // /public/js/tabs/farm_plot.js (신규 파일)
 import { auth, db, fx } from '../api/firebase.js';
+import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles } from '../api/farm.js';
 import { isAdminCached } from '../api/admin.js';
 import { showToast } from '../ui/toast.js';
 
@@ -74,13 +75,103 @@ export async function showFarmPlot() {
   `;
 
   const gridContainer = root.querySelector('#farm-grid-container');
-  // 성능을 위해 일단 10x10으로 표시 (추후 100x100으로 확장)
-  for (let i = 0; i < 100; i++) {
-    const tile = document.createElement('div');
-    tile.className = 'farm-tile';
-    tile.dataset.index = i;
-    gridContainer.appendChild(tile);
+  const COLS = 100, ROWS = 100, TILE_COUNT = COLS * ROWS;
+const selected = new Set();
+
+// 타일 생성
+for (let i = 0; i < TILE_COUNT; i++) {
+  const tile = document.createElement('div');
+  tile.className = 'farm-tile';
+  tile.dataset.index = i;
+  gridContainer.appendChild(tile);
+}
+
+// 선택 표시용 CSS
+const style = document.createElement('style');
+style.textContent = `
+  .farm-tile.selected { outline: 2px solid #4aa3ff; position: relative; }
+  .farm-tile.marker::after {
+    content: '';
+    position: absolute; right: 2px; top: 2px; width: 6px; height: 6px; border-radius: 50%;
+    background: var(--marker-color, #999);
   }
+`;
+document.head.appendChild(style);
+
+// 드래그 선택
+let dragging = false, startIdx = null;
+const xyFromIndex = (i)=>({ x: i % COLS, y: Math.floor(i / COLS) });
+
+gridContainer.addEventListener('mousedown', (e)=>{
+  const t = e.target.closest('.farm-tile');
+  if (!t) return;
+  dragging = true;
+  startIdx = Number(t.dataset.index);
+  selected.clear();
+  t.classList.add('selected');
+  selected.add(startIdx);
+});
+gridContainer.addEventListener('mousemove', (e)=>{
+  if (!dragging) return;
+  const t = e.target.closest('.farm-tile');
+  if (!t) return;
+  const cur = Number(t.dataset.index);
+  selected.clear();
+  const a = xyFromIndex(startIdx), b = xyFromIndex(cur);
+  const [minX, maxX] = [Math.min(a.x,b.x), Math.max(a.x,b.x)];
+  const [minY, maxY] = [Math.min(a.y,b.y), Math.max(a.y,b.y)];
+  gridContainer.querySelectorAll('.farm-tile').forEach(node=>node.classList.remove('selected'));
+  for (let y=minY; y<=maxY; y++){
+    for (let x=minX; x<=maxX; x++){
+      const idx = y*COLS + x;
+      selected.add(idx);
+      gridContainer.children[idx].classList.add('selected');
+    }
+  }
+});
+window.addEventListener('mouseup', ()=>{ dragging = false; startIdx = null; });
+
+// 서버에서 현재 심어진 타일 받아와 표식 찍기
+(async ()=>{
+  try{
+    const detail = await getFarmPlotDetail({ mapId: plotInfo.mapId, x: plotInfo.x, y: plotInfo.y, microX: plotInfo.microX, microY: plotInfo.microY });
+    const tiles = detail?.data?.tiles || {};
+    for (const [k, v] of Object.entries(tiles)) {
+      const idx = Number(k);
+      const node = gridContainer.children[idx];
+      if (!node) continue;
+      node.classList.add('marker');
+      // 등급색
+      const color = { normal:'#999', rare:'#4aa3ff', epic:'#a855f7', legendary:'#f59e0b', mythic:'#ef4444', aether:'#22d3ee' }[String(v.rarity||'normal')];
+      node.style.setProperty('--marker-color', color || '#999');
+    }
+  }catch(e){ console.error(e); }
+})();
+
+// 버튼 동작: 캐릭터 배정/심기/수확(간단)
+root.querySelector('#btn-assign-char').onclick = async ()=>{
+  const charId = prompt('할당할 캐릭터 ID를 입력하세요(없으면 비워두기):','');
+  try{
+    await assignCharacterToFarm({ mapId: plotInfo.mapId, x: plotInfo.x, y: plotInfo.y, microX: plotInfo.microX, microY: plotInfo.microY, charId: (charId||null) });
+    showToast('캐릭터 배정이 완료되었어!');
+  }catch(e){ showToast(e.message||'배정 실패'); }
+};
+
+root.querySelector('#btn-plant-seed').onclick = async ()=>{
+  if (selected.size===0) return showToast('먼저 심을 범위를 드래그로 선택해줘!');
+  const seedItemId = prompt('인벤토리의 씨앗 “아이템 ID”를 입력하세요:','');
+  const seedId     = prompt('씨앗의 “seedId”를 입력하세요(예: wheat_seed):','');
+  if(!seedItemId || !seedId) return;
+  try{
+    await plantSeedOnTile({
+      mapId: plotInfo.mapId, x: plotInfo.x, y: plotInfo.y, microX: plotInfo.microX, microY: plotInfo.microY,
+      charId: null, seedItemId, seedId, tileIndices: Array.from(selected)
+    });
+    showToast(`선택한 ${selected.size}칸에 심었어!`);
+    location.reload();
+  }catch(e){ showToast(e.message||'심기 실패'); }
+};
+
 
   // TODO: 캐릭터 할당 및 씨앗 심기 로직 추가
   root.querySelector('#btn-assign-char').onclick = () => showToast('캐릭터 할당 기능은 개발 중입니다.');
