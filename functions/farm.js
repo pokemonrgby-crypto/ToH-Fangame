@@ -37,6 +37,7 @@ module.exports = (admin) => {
   }
   
   // 땅 소유권 확인
+  // 땅 소유권 확인
   async function _isOwner(uid, { mapId, x, y, microX, microY }) {
     if (!uid) return false;
     const microDoc = `${microY}_${microX}`;
@@ -46,7 +47,7 @@ module.exports = (admin) => {
     return snap.exists && snap.data()?.owner_uid === uid;
   }
 
-  // [수정] 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더 (안정성 강화)
+  // 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더 (안정성 강화)
   let _seedsDataCache = null;
   const loadSeedsData = async () => {
       if (_seedsDataCache) return _seedsDataCache;
@@ -54,24 +55,30 @@ module.exports = (admin) => {
           const seedsDir = path.join(__dirname, './assets/seeds');
           const files = await fs.readdir(seedsDir);
           const allSeeds = [];
+          logger.info(`Loading seeds from: ${seedsDir}`);
           for (const file of files) {
               if (file.endsWith('.json')) {
                   try {
                       const data = await fs.readFile(path.join(seedsDir, file), 'utf8');
-                      allSeeds.push(...JSON.parse(data));
+                      const seedsFromFile = JSON.parse(data);
+                      if (Array.isArray(seedsFromFile)) {
+                          allSeeds.push(...seedsFromFile);
+                      }
+                      logger.info(`Successfully loaded ${seedsFromFile.length} seeds from ${file}.`);
                   } catch (e) {
                       logger.error(`Failed to parse seed file: ${file}`, e);
                   }
               }
           }
           _seedsDataCache = allSeeds;
-          logger.info(`Loaded ${_seedsDataCache.length} seeds from ${files.length} files.`);
+          logger.info(`Total seeds loaded: ${_seedsDataCache.length}`);
           return _seedsDataCache;
       } catch (error) {
           logger.error("Failed to load seeds data from directory", error);
           return [];
       }
   };
+
 
   const buySeed = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
@@ -173,10 +180,20 @@ module.exports = (admin) => {
     if (!isOwner) throw new HttpsError('permission-denied', '이 토지에 심을 권한이 없습니다.');
 
     const allSeeds = await loadSeedsData();
+    
+    // [추가] 커스텀 씨앗 디버깅을 위한 로그
+    if (allSeeds.length === 0) {
+        logger.error("[plantSeedOnTile] No seeds loaded from any file.");
+    } else {
+        const allSeedIds = allSeeds.map(s => s.id);
+        logger.info(`[plantSeedOnTile] Available seed IDs (${allSeedIds.length}): ${JSON.stringify(allSeedIds)}`);
+    }
+    logger.info(`[plantSeedOnTile] Client requested to plant seedId: "${seedId}"`);
+
     const seed = allSeeds.find(s => s.id === seedId);
     if (!seed) {
-        logger.error(`Seed not found: ${seedId}`);
-        throw new HttpsError('not-found', `존재하지 않는 씨앗입니다: ${seedId}`);
+        logger.error(`[plantSeedOnTile] Seed not found in loaded data: "${seedId}"`);
+        throw new HttpsError('not-found', `서버에 존재하지 않는 씨앗입니다: ${seedId}`);
     }
 
     const n = tileIndices.length;
@@ -219,7 +236,7 @@ module.exports = (admin) => {
       tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
     });
 
-    await _awardFarmExp(uid, 5);
+    await _awardFarmExp(uid, 5 * n);
 
     return { ok: true, planted: tileIndices.length };
   });
