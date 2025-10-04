@@ -1,7 +1,8 @@
-// /public/js/tabs/land_management.js (기존 farm_plot.js 대체)
+// /public/js/tabs/land_management.js (기존 파일 전체 교체)
 import { auth, db, fx } from '../api/firebase.js';
 import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles } from '../api/farm.js';
 import { getUserInventory } from '../api/user.js';
+import { getUserCharacters } from '../api/char.js'; // [추가] 캐릭터 API 임포트
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
 
@@ -52,6 +53,7 @@ export async function showLandManagement() {
           .farm-tile.selected { box-shadow: inset 0 0 0 2px #4aa3ff; }
           .farm-tile.planted { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="%23a3e635"/></svg>'); background-size: 40%; background-repeat: no-repeat; background-position: center; }
           .farm-tile.ready { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M5 1 L7 4 L9 4 L6 7 L6 9 L4 9 L4 7 L1 4 L3 4 Z" fill="%23f59e0b"/></svg>'); background-size: 70%; }
+          .mgmt-btn { padding: 4px 8px !important; font-size: 12px !important; }
         </style>
         <section class="container narrow">
           <div class="card p12">
@@ -74,7 +76,7 @@ export async function showLandManagement() {
 
     const state = {
         plotData: {},
-        assignedCharId: null,
+        assignedChar: null, // [수정] 캐릭터 전체 객체를 저장
         mode: 'view', // 'view', 'planting'
         selectedSeed: null,
         selectedTiles: new Set(),
@@ -85,18 +87,22 @@ export async function showLandManagement() {
     const render = () => {
         // Render Management Panel
         const managementPanel = root.querySelector('#management-panel');
+        const charInfoHtml = state.assignedChar
+            ? `<b>${esc(state.assignedChar.name)}</b> <span class="text-dim">(원예 ${state.assignedChar.skills.gardening})</span>`
+            : '할당된 캐릭터 없음';
+
         managementPanel.innerHTML = `
             <div class="kv-card" style="flex:1;">
                 <div class="kv-label">담당 캐릭터</div>
-                <div id="assigned-char" style="min-height: 20px;">${state.assignedCharId ? '로딩 중...' : '할당된 캐릭터 없음'}</div>
-                <button class="btn small mt8" id="btn-assign-char">캐릭터 할당/변경</button>
+                <div id="assigned-char" style="min-height: 20px;">${charInfoHtml}</div>
+                <button class="btn small mt8 mgmt-btn" id="btn-assign-char">캐릭터 할당/변경</button>
             </div>
             <div class="kv-card" style="flex:1;">
                 <div class="kv-label">관리 메뉴</div>
                 <div class="row" style="gap:8px; margin-top:8px;">
-                    <button class="btn small" id="btn-plant-seed" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>씨앗 심기</button>
-                    <button class="btn small" id="btn-harvest-all" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>전체 수확</button>
-                    <button class="btn small" id="btn-build" ${microTileInfo.buildable ? '' : 'disabled title="건설 불가 토지"'}>건설하기</button>
+                    <button class="btn small mgmt-btn" id="btn-plant-seed" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>씨앗 심기</button>
+                    <button class="btn small mgmt-btn" id="btn-harvest-all" ${microTileInfo.can_farm ? '' : 'disabled title="농사 불가 토지"'}>전체 수확</button>
+                    <button class="btn small mgmt-btn" id="btn-build" ${microTileInfo.buildable ? '' : 'disabled title="건설 불가 토지"'}>건설하기</button>
                 </div>
             </div>
         `;
@@ -135,7 +141,7 @@ export async function showLandManagement() {
             state.isDragging = false;
             
             singleClickTimer = setTimeout(() => {
-                if (!state.isDragging) { // 드래그가 시작되지 않았을 때만 단일 클릭으로 처리
+                if (!state.isDragging) {
                     handleTileClick(Number(tile.dataset.index));
                 }
             }, 200);
@@ -151,7 +157,7 @@ export async function showLandManagement() {
 
         gridContainer.addEventListener('mousemove', (e) => {
             if (state.mode !== 'planting' || !state.isDragging) return;
-            state.isDragging = true; // mousemove가 한 번이라도 발생하면 드래그로 간주
+            state.isDragging = true;
 
             const tile = e.target.closest('.farm-tile');
             if (!tile) return;
@@ -222,17 +228,20 @@ export async function showLandManagement() {
     };
 
     const handleAssignCharacter = async () => {
-        const charId = prompt('할당할 캐릭터 ID를 입력하세요 (비우면 할당 해제):', state.assignedCharId || '');
-        if (charId === null) return; // 취소
+        const selectedChar = await openCharacterPickerModal();
+        if (selectedChar === undefined) return; // 모달 그냥 닫음
+        
+        const charId = selectedChar ? selectedChar.id : null;
         try {
-            await assignCharacterToFarm({ ...plotInfo, charId: charId.trim() || null });
+            await assignCharacterToFarm({ ...plotInfo, charId });
             showToast('캐릭터 할당이 완료되었습니다.');
-            loadPlotData();
+            state.assignedChar = selectedChar; // [수정] state에 캐릭터 정보 업데이트
+            render(); // 화면 다시 그리기
         } catch(e) { showToast(e.message || '배정 실패'); }
     };
     
     const startPlantingMode = async () => {
-        if (!state.assignedCharId) {
+        if (!state.assignedChar) {
             showToast('씨앗을 심으려면 먼저 담당 캐릭터를 할당해야 합니다.');
             return;
         }
@@ -249,8 +258,8 @@ export async function showLandManagement() {
                 <div class="kv-label">씨앗 심는 중: ${esc(seed.name)}</div>
                 <div class="text-dim" style="font-size:12px;">보유: ${seed.uses}개. 심을 영역을 드래그하세요.</div>
                 <div class="row" style="gap:8px; margin-top:8px;">
-                    <button class="btn primary" id="btn-confirm-plant">심기 확인</button>
-                    <button class="btn ghost" id="btn-cancel-plant">취소</button>
+                    <button class="btn primary mgmt-btn" id="btn-confirm-plant">심기 확인</button>
+                    <button class="btn ghost mgmt-btn" id="btn-cancel-plant">취소</button>
                 </div>
             </div>
         `;
@@ -279,12 +288,11 @@ export async function showLandManagement() {
         btn.textContent = '처리 중...';
 
         try {
-            // 정렬하여 좌측 상단부터 심도록 보장
             const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
             
             await plantSeedOnTile({
                 ...plotInfo,
-                charId: state.assignedCharId,
+                charId: state.assignedChar.id,
                 seedItemId: state.selectedSeed.id,
                 seedId: state.selectedSeed.seedInfo.id,
                 tileIndices: sortedTiles
@@ -366,18 +374,86 @@ export async function showLandManagement() {
         });
     };
 
+    // [신규] 캐릭터 선택 모달
+    const openCharacterPickerModal = async () => {
+        ensureModalCss();
+        const characters = await getUserCharacters();
+        
+        return new Promise(resolve => {
+            const back = document.createElement('div');
+            back.className = 'modal-back';
+            let cardsHtml = characters.map(char => {
+                const skills = char.skills || { gardening: 0, art: 0, construction: 0 };
+                return `
+                    <div class="kv-card card-hover" data-char-id="${char.id}" style="cursor:pointer;">
+                        <div class="row" style="gap:10px">
+                            <img src="${char.thumb_url || char.image_url || 'https://via.placeholder.com/60'}" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
+                            <div>
+                                <div style="font-weight:bold;">${esc(char.name)}</div>
+                                <div class="text-dim" style="font-size:12px; margin-top:4px;">
+                                    원예 ${skills.gardening} | 건설 ${skills.construction} | 예술 ${skills.art}
+                                </div>
+                            </div>
+                        </div>
+                    </div>`;
+            }).join('');
+
+            cardsHtml += `<button class="kv-card card-hover" data-char-id="null">
+                            <div class="text-dim">🚫 담당자 할당 해제</div>
+                          </button>`;
+
+            back.innerHTML = `
+                <div class="modal-card" style="max-width: 700px;">
+                    <div style="font-weight:900; margin-bottom:12px;">담당 캐릭터 선택</div>
+                    <div class="grid2" style="gap:10px; max-height: 50vh; overflow-y:auto;">${cardsHtml}</div>
+                    <button class="btn ghost" id="mClose" style="margin-top:16px;">닫기</button>
+                </div>`;
+            document.body.appendChild(back);
+
+            const close = (char = undefined) => { back.remove(); resolve(char); };
+            
+            back.querySelector('#mClose').onclick = () => close();
+            back.addEventListener('click', e => { if(e.target === back) close() });
+
+            back.querySelectorAll('[data-char-id]').forEach(card => {
+                card.onclick = () => {
+                    const charId = card.dataset.charId;
+                    if (charId === 'null') {
+                        close(null);
+                    } else {
+                        const char = characters.find(c => c.id === charId);
+                        close(char);
+                    }
+                };
+            });
+        });
+    };
+
     const loadPlotData = async () => {
         try {
             const detail = await getFarmPlotDetail(plotInfo);
             state.plotData = detail?.data || {};
-            state.assignedCharId = state.plotData.assigned_char_id || null;
-            render();
-            if (state.assignedCharId) {
-                const charSnap = await fx.getDoc(fx.doc(db, 'chars', state.assignedCharId));
+            const charId = state.plotData.assigned_char_id || null;
+
+            if (charId) {
+                // [수정] 캐릭터 정보를 Firestore에서 직접 가져오도록 변경
+                const charSnap = await fx.getDoc(fx.doc(db, 'chars', charId));
                 if (charSnap.exists()) {
-                    root.querySelector('#assigned-char').textContent = charSnap.data().name;
+                    const data = charSnap.data();
+                    state.assignedChar = {
+                        id: charSnap.id,
+                        name: data.name,
+                        skills: data.skills || { gardening: 0, art: 0, construction: 0 }
+                    };
+                } else {
+                     state.assignedChar = null;
                 }
+            } else {
+                state.assignedChar = null;
             }
+
+            render();
+
         } catch (e) {
             console.error(e);
             root.innerHTML = `<section class="container narrow"><div class="kv-card">농장 정보를 불러오지 못했습니다: ${e.message}</div></section>`;
