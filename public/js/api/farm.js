@@ -18,3 +18,6 @@ export const assignCharacterToFarm = (data) => call('assignCharacterToFarm')(dat
 
 // [추가] 수확 함수
 export const harvestTiles = (data) => call('harvestTiles')(data);
+
+// 작업 취소 (심기 예약 취소)
+export const cancelPlanting = (data) => call('cancelPlanting')(data);
