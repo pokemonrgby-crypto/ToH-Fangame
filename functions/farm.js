@@ -20,6 +20,54 @@ module.exports = (admin) => {
       return !!(user?.email && allowEmails.includes(user.email));
     } catch (_) { return false; }
   }
+
+
+
+
+  const { FieldValue, Timestamp } = admin.firestore;
+
+// 땅 소유권 확인
+async function _isOwner(uid, { mapId, x, y, microX, microY }) {
+  if (!uid) return false;
+  const microDoc = `${microY}_${microX}`;
+  const plotDoc = `${mapId}_${x}_${y}`;
+  const ref = db.collection('land_plots').doc(plotDoc).collection('micro_ownership').doc(microDoc);
+  const snap = await ref.get();
+  return snap.exists && snap.data()?.owner_uid === uid;
+}
+
+// 농사 프로필(레벨/경험치) 읽기/업데이트
+async function _getFarmProfile(uid) {
+  const ref = db.doc(`farm_profiles/${uid}`);
+  const snap = await ref.get();
+  if (!snap.exists) return { level: 1, exp: 0, nextExp: 100 };
+  const d = snap.data() || {};
+  return { level: d.level || 1, exp: d.exp || 0, nextExp: d.nextExp || 100 };
+}
+
+async function _awardFarmExp(uid, gain) {
+  const ref = db.doc(`farm_profiles/${uid}`);
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(ref);
+    let { level=1, exp=0, nextExp=100 } = snap.exists ? (snap.data()||{}) : {};
+    exp += gain;
+    while (exp >= nextExp && level < 30) {
+      exp -= nextExp;
+      level += 1;
+      nextExp = Math.round(100 + 50 * level); // 간단 규칙
+    }
+    tx.set(ref, { level, exp, nextExp, updatedAt: Date.now() }, { merge: true });
+  });
+}
+
+function plotIdFrom({ mapId, x, y, microX, microY }) {
+  return `${mapId}_${x}_${y}_${microX}_${microY}`;
+}
+
+
+
+
+
   
   // [수정] 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더
   let _seedsDataCache = null;
@@ -117,20 +165,210 @@ module.exports = (admin) => {
     });
   });
 
-  // ... (getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm 함수들은 그대로 유지)
   const getFarmPlotDetail = onCall({ region: 'us-central1' }, async (req) => {
-      if (!await _isAdmin(req.auth?.uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-      return { ok: true, message: "향후 구현될 기능입니다." };
-  });
+  const uid = req.auth?.uid || req.auth?.token?.uid || null;
+  const { mapId, x, y, microX, microY } = req.data || {};
+  if (mapId==null || x==null || y==null || microX==null || microY==null) {
+    throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+  }
+
+  const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+  const docRef = db.doc(`farm_plots/${plotId}`);
+  const snap = await docRef.get();
+
+  // 소유자 확인
+  let owner_uid = null;
+  try {
+    const own = await _isOwner(uid || '', { mapId, x, y, microX, microY });
+    if (own) owner_uid = uid;
+  } catch {}
+
+  const d = snap.exists ? (snap.data()||{}) : {};
+  return {
+    ok: true,
+    owner_uid,
+    assigned_char_id: d.assigned_char_id || null,
+    tiles: d.tiles || {}, // 희소맵: { "i": { seedId, rarity, plantedAt, readyAt, stage } }
+    updatedAt: d.updatedAt || 0
+  };
+});
+
   const plantSeedOnTile = onCall({ region: 'us-central1' }, async (req) => {
-      if (!await _isAdmin(req.auth?.uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-      return { ok: true, message: "향후 구현될 기능입니다." };
+  const uid = req.auth?.uid || req.auth?.token?.uid;
+  const { mapId, x, y, microX, microY, charId, seedItemId, seedId, tileIndices=[] } = req.data || {};
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  if ([mapId,x,y,microX,microY].some(v=>v==null) || !Array.isArray(tileIndices) || tileIndices.length===0 || !seedItemId || !seedId) {
+    throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+  }
+
+  // 권한: 소유자 또는 관리자
+  const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
+  const isAdmin = await _isAdmin(uid);
+  if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에 심을 권한이 없습니다.');
+
+  // 씨앗 정의 로드 및 검증
+  const allSeeds = await loadSeedsData();
+  const seed = allSeeds.find(s => s.id === seedId);
+  if (!seed) throw new HttpsError('not-found', '존재하지 않는 씨앗입니다.');
+
+  const n = tileIndices.length;
+  const userRef = db.doc(`users/${uid}`);
+  const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+  const plotRef = db.doc(`farm_plots/${plotId}`);
+
+  await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보가 없습니다.');
+    const u = userSnap.data() || {};
+    const items = Array.isArray(u.items_all) ? u.items_all : [];
+
+    const seedItem = items.find(it => it.id === seedItemId);
+    if (!seedItem) throw new HttpsError('failed-precondition', '인벤토리에 해당 씨앗이 없습니다.');
+    const uses = Number(seedItem.uses ?? 1);
+    if (uses < n) throw new HttpsError('failed-precondition', `씨앗 사용 가능 횟수가 부족합니다. (필요: ${n}, 보유: ${uses})`);
+
+    // 플롯 문서 가져오기
+    const plotSnap = await tx.get(plotRef);
+    const cur = plotSnap.exists ? (plotSnap.data()||{}) : {};
+    const tiles = cur.tiles || {};
+    const now = Date.now();
+    const growMin = Math.max(1, Number(seed.growthTimeMinutes || 5)); // 씨앗 JSON의 성장시간
+    const readyAt = now + growMin*60*1000;
+    const rarity = String(seed.rarity || 'normal').toLowerCase();
+
+    // 각 타일 심기
+    for (const i of tileIndices) {
+      const key = String(i);
+      tiles[key] = { seedId, rarity, plantedAt: now, readyAt, stage: 'growing', plantedByChar: charId || null };
+    }
+
+    // 씨앗 uses 차감(0이면 제거)
+    if (uses === n) {
+      const remain = items.filter(it => it.id !== seedItemId);
+      tx.update(userRef, { items_all: remain });
+    } else {
+      const remain = items.map(it => it.id === seedItemId ? { ...it, uses: uses - n } : it);
+      tx.update(userRef, { items_all: remain });
+    }
+
+    tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
   });
+
+  // 경험치(간단): 심기 보상
+  await _awardFarmExp(uid, 5); // 1차 규칙
+
+  return { ok: true, planted: tileIndices.length };
+});
+
   const assignCharacterToFarm = onCall({ region: 'us-central1' }, async (req) => {
-      if (!await _isAdmin(req.auth?.uid)) throw new HttpsError('permission-denied', '관리자 전용 기능입니다.');
-      return { ok: true, message: "향후 구현될 기능입니다." };
+  const uid = req.auth?.uid || req.auth?.token?.uid;
+  const { mapId, x, y, microX, microY, charId } = req.data || {};
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  if ([mapId,x,y,microX,microY].some(v=>v==null)) throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+
+  const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
+  const isAdmin = await _isAdmin(uid);
+  if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에 배정할 권한이 없습니다.');
+
+  const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+  const plotRef = db.doc(`farm_plots/${plotId}`);
+
+  await plotRef.set({ assigned_char_id: charId || null, updatedAt: Date.now() }, { merge: true });
+  return { ok: true, assigned_char_id: charId || null };
+});
+
+const harvestTiles = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid || req.auth?.token?.uid;
+  const { mapId, x, y, microX, microY, tileIndices=[] } = req.data || {};
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  if ([mapId,x,y,microX,microY].some(v=>v==null) || !Array.isArray(tileIndices) || tileIndices.length===0) {
+    throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+  }
+  const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
+  const isAdmin = await _isAdmin(uid);
+  if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에서 수확할 권한이 없습니다.');
+
+  const allSeeds = await loadSeedsData();
+
+  const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+  const plotRef = db.doc(`farm_plots/${plotId}`);
+  const userRef = db.doc(`users/${uid}`);
+
+  const rewards = {}; // { itemId: count }
+
+  await db.runTransaction(async (tx) => {
+    const plotSnap = await tx.get(plotRef);
+    if (!plotSnap.exists) throw new HttpsError('failed-precondition', '심어진 작물이 없습니다.');
+    const d = plotSnap.data() || {};
+    const tiles = d.tiles || {};
+    const now = Date.now();
+
+    // 타일 순회
+    for (const i of tileIndices) {
+      const key = String(i);
+      const t = tiles[key];
+      if (!t) continue; // 빈 타일
+      if ((t.readyAt || 0) > now) continue; // 아직 성장 중
+
+      // 수확
+      const seed = allSeeds.find(s => s.id === t.seedId);
+      if (seed && Array.isArray(seed.harvest)) {
+        for (const rule of seed.harvest) {
+          const p = Number(rule.probability ?? 1);
+          if (p >= 1 || Math.random() < p) {
+            const min = Math.max(1, Number(rule.min||1));
+            const max = Math.max(min, Number(rule.max||min));
+            const qty = Math.floor(Math.random()*(max-min+1)) + min;
+            rewards[rule.itemId] = (rewards[rule.itemId] || 0) + qty;
+          }
+        }
+      }
+      delete tiles[key]; // 수확 후 비우기
+    }
+
+    // 인벤 반영
+    if (Object.keys(rewards).length > 0) {
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보가 없습니다.');
+      const u = userSnap.data()||{};
+      const itemsAll = Array.isArray(u.items_all)? u.items_all : [];
+
+      // items.json에서 메타 로드
+      const itemsMeta = await (async ()=>{
+        if (!global.__ITEMS_META) {
+          const p = path.join(__dirname, './assets/items.json');
+          const raw = await fs.readFile(p,'utf8');
+          global.__ITEMS_META = JSON.parse(raw);
+        }
+        return global.__ITEMS_META;
+      })();
+
+      for (const [itemId, cnt] of Object.entries(rewards)) {
+        const meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0 };
+        itemsAll.push({
+          id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+          name: meta.name || itemId,
+          rarity: (meta.rarity || 'normal').toLowerCase(),
+          type: meta.type || 'material',
+          isConsumable: false,
+          properties: { aestheticValue: meta.aestheticValue || 0 },
+          count: Number(cnt)
+        });
+      }
+
+      tx.update(userRef, { items_all: itemsAll });
+    }
+
+    tx.set(plotRef, { tiles, updatedAt: Date.now() }, { merge: true });
   });
 
+  // 경험치(간단): 수확 보상
+  await _awardFarmExp(uid, 12);
 
-  return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm };
+  return { ok: true, rewards };
+});
+
+
+  return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles };
+
 };
