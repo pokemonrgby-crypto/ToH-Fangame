@@ -21,6 +21,7 @@ const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, log
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
+const charFns = require('./character')(admin); // [추가] character.js 로드
 
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
@@ -734,6 +735,8 @@ Object.assign(exports, mailFns);
 Object.assign(exports, landFns);
 
 Object.assign(exports, farmFns);
+
+exports.getUserCharacters = charFns.getUserCharacters; // [추가]
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
