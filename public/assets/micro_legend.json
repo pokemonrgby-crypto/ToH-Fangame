@@ -1,7 +1,7 @@
 {
   "micro_tile_legend": {
     "g": { "name": "잔디", "color": "#8AAA79", "buildable": true },
-    "d": { "name": "흙", "color": "#B99A6B", "buildable": true },
+    "d": { "name": "흙", "color": "#B99A6B", "buildable": true, "can_farm": true },
     "sr": { "name": "보도블럭", "color": "#A9A9A9", "buildable": true, "build_conditions": "상업 건물만 가능" },
     "r": { "name": "도로", "color": "#888", "buildable": false },
     "w_l": { "name": "얕은 물", "color": "#76A2C2", "buildable": false },
