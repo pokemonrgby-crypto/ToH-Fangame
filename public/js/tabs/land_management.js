@@ -31,6 +31,17 @@ function formatRemainingTime(ms) {
     return `${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
 }
 
+// [추가] 등급별 파종 시간 (밀리초 단위)
+const RARITY_PLANT_TIMES = {
+    normal: 1000*5,
+    rare: 1000*10,
+    epic: 1000*20,
+    legendary: 1000*30,
+    mythic: 1000*60,
+    aether: 1000*90,
+};
+
+
 
 export async function showLandManagement() {
     const root = document.getElementById('view');
@@ -76,13 +87,13 @@ export async function showLandManagement() {
     const state = {
         plotData: {},
         assignedChar: null,
-        mode: 'view',
+        mode: 'view', // 'view', 'planting', 'working'
         selectedSeed: null,
         selectedTiles: new Set(),
         isDragging: false,
         dragStart: null,
     };
-
+  
     const render = () => {
         const managementPanel = root.querySelector('#management-panel');
         const charInfoHtml = state.assignedChar
@@ -218,10 +229,17 @@ export async function showLandManagement() {
     };
 
     const attachButtonEvents = () => {
-        root.querySelector('#btn-assign-char').onclick = handleAssignCharacter;
-        root.querySelector('#btn-build').onclick = () => showToast('건설 기능은 현재 준비 중입니다.');
-        root.querySelector('#btn-plant-seed').onclick = startPlantingMode;
-        root.querySelector('#btn-harvest-all').onclick = handleHarvestAll;
+        const isWorking = state.mode === 'working';
+        root.querySelectorAll('#management-panel button').forEach(btn => {
+            if (isWorking) btn.disabled = true;
+        });
+
+        if (!isWorking) {
+            root.querySelector('#btn-assign-char').onclick = handleAssignCharacter;
+            root.querySelector('#btn-build').onclick = () => showToast('건설 기능은 현재 준비 중입니다.');
+            root.querySelector('#btn-plant-seed').onclick = startPlantingMode;
+            root.querySelector('#btn-harvest-all').onclick = handleHarvestAll;
+        }
     };
 
     const handleAssignCharacter = async () => {
@@ -280,39 +298,47 @@ export async function showLandManagement() {
             return;
         }
         
-        const btn = root.querySelector('#btn-confirm-plant');
-        btn.disabled = true;
+        state.mode = 'working'; // 작업 시작, UI 비활성화
+        
+        const managementPanel = root.querySelector('#management-panel');
+        const plantBtn = managementPanel.querySelector('#btn-confirm-plant');
+        const cancelBtn = managementPanel.querySelector('#btn-cancel-plant');
+        if (plantBtn) plantBtn.disabled = true;
+        if (cancelBtn) cancelBtn.disabled = true;
 
         const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
+        const rarity = state.selectedSeed.rarity || 'normal';
+        const plantTime = RARITY_PLANT_TIMES[rarity] || 500;
         
-        const backendTask = plantSeedOnTile({
-            ...plotInfo,
-            charId: state.assignedChar.id,
-            seedItemId: state.selectedSeed.id,
-            seedId: state.selectedSeed.seedInfo.id,
-            tileIndices: sortedTiles
-        });
-
-        const animationTask = async () => {
-            for (let i = 0; i < sortedTiles.length; i++) {
-                const index = sortedTiles[i];
-                const tileNode = gridContainer.children[index];
-                if (tileNode) {
-                    tileNode.classList.add('planted');
-                    tileNode.style.transform = 'scale(0.8)';
-                    setTimeout(() => tileNode.style.transform = 'scale(1)', 50);
-                }
-                btn.textContent = `심는 중... (${i + 1}/${sortedTiles.length})`;
-                await new Promise(resolve => setTimeout(resolve, 30)); 
+        // 실제 파종 루프 시작
+        for (let i = 0; i < sortedTiles.length; i++) {
+            const index = sortedTiles[i];
+            const tileNode = gridContainer.children[index];
+            if (tileNode) {
+                tileNode.classList.add('planted'); // 즉시 UI에 반영
+                tileNode.style.transform = 'scale(0.8)';
+                setTimeout(() => tileNode.style.transform = 'scale(1)', 50);
             }
-        };
+            if (plantBtn) {
+                plantBtn.textContent = `심는 중... (${i + 1}/${sortedTiles.length})`;
+            }
+            await new Promise(resolve => setTimeout(resolve, plantTime));
+        }
 
+        // 모든 타일에 대한 시간 소요 후, 백엔드에 한번에 전송
         try {
-            await Promise.all([backendTask, animationTask()]);
-            showToast(`${sortedTiles.length}개의 씨앗을 심었습니다.`);
+            await plantSeedOnTile({
+                ...plotInfo,
+                charId: state.assignedChar.id,
+                seedItemId: state.selectedSeed.id,
+                seedId: state.selectedSeed.seedInfo.id,
+                tileIndices: sortedTiles
+            });
+            showToast(`${sortedTiles.length}개의 씨앗을 성공적으로 심었습니다.`);
         } catch (e) {
             showToast(`심기 실패: ${e.message}`);
         } finally {
+            // 상태 초기화 및 데이터 리로드
             state.mode = 'view';
             state.selectedSeed = null;
             state.selectedTiles.clear();
