@@ -22,13 +22,12 @@ export const routes = {
   '#/economy/estate':() => import('./tabs/economy.js').then(m => (m.default)()),
   '#/market': () => import('./tabs/market.js').then(m => (m.showMarket || m.default)()),
   '#/guild': () => import('./tabs/guild.js').then(m => (m.showGuild || m.default)()),
-  '#/farm': () => import('./tabs/farm_plot.js').then(m => m.showFarmPlot()),
   '#/logs': () => import('./tabs/logs.js').then(m => (m.showLogs || m.default)()),
   '#/mail': () => import('./tabs/mail.js').then(m => (m.showMailbox || m.default)()),
   '#/manage': () => import('./tabs/manage.js').then(m => (m.showManage || m.default)()),
-  // [수정] 월드맵과 랜드 상세 라우트를 추가합니다.
   '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
   '#/land': () => import('./tabs/land_detail.js').then(m => m.showLandDetail()),
+  '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
 };
 
 export function highlightTab() {
@@ -36,8 +35,7 @@ export function highlightTab() {
   const mainRoute = '#/' + hash.split('/')[1];
   let tabName = mainRoute.substring(2);
 
-  // 'economy' 또는 'market' 탭에 있을 때 하단 바의 '광장' 아이콘을 활성화합니다.
-  if (['economy', 'market', 'worldmap', 'land'].includes(tabName)) {
+  if (['economy', 'market', 'worldmap', 'land', 'land-management'].includes(tabName)) {
     tabName = 'plaza';
   }
 
@@ -60,7 +58,7 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/farm/'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/land-management/'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
