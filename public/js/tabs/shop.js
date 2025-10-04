@@ -223,7 +223,9 @@ async function renderShop_Sell(root) {
     
     const aestheticBonus = Math.floor(0.02 * (item.properties?.aestheticValue || 0));
 
-    return basePrice + aestheticBonus;
+    const qty = Number(item.count ?? 1);
+    return (basePrice + aestheticBonus) * qty;
+
   };
 
   let inventory = [];
@@ -286,7 +288,7 @@ async function renderShop_Sell(root) {
                         style="${leftBorder} text-align:left; padding:8px; ${isLocked ? 'opacity: 0.6; cursor: not-allowed;' : ''}"
                         ${isLocked ? 'disabled' : ''}>
                   <div style="font-weight:700; color:${style.text};">${esc(item.name)} ${isLocked ? '🔒' : ''}</div>
-                  <div class="text-dim" style="font-size:12px;">판매가: 🪙 ${calculatePrice(item)}</div>
+                  <div class="text-dim" style="font-size:12px;">판매가: 🪙 ${calculatePrice(item)}${(Number(item.count ?? 1) > 1) ? ` (x${Number(item.count)})` : ''}</div>
                 </button>
               `;
             }).join('')}
