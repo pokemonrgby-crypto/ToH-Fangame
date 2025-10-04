@@ -253,6 +253,7 @@ function economyTpl() {
         <button class="manage-tab" data-subtab="event">개별 사건 관리</button>
         <button class="manage-tab" data-subtab="world-event">세계관 사건 관리</button>
         <button class="manage-tab" data-subtab="random-event">랜덤 사건 생성</button>
+        <button class="manage-tab" data-subtab="auction-settle">경매 일괄 정산</button>
         <button class="manage-tab" data-subtab="emergency">일괄 폐지/가격상향</button>
     </div>
     <div id="economy-sub-content" class="manage-card" style="border-top-left-radius:0;"></div>
@@ -318,6 +319,16 @@ function economyEventTpl() {
         <div class="manage-row" style="justify-content:flex-end">
           <button id="btn-create-event" class="btn primary">사건 생성</button>
         </div>
+    </div>
+  `;
+}
+// [ADD] 일괄 정산 탭 HTML
+function economyAuctionSettleTpl() {
+  return `
+    <h5 style="margin-top:0;">경매 일괄 정산</h5>
+    <div class="manage-hint">마감 시간이 지났지만 아직 'active' 상태인 모든 경매를 찾아 정산 처리합니다. 유찰된 경매는 판매자에게 아이템이 반환됩니다.</div>
+    <div class="manage-row" style="justify-content:flex-end; margin-top: 12px;">
+      <button id="btn-settle-all-auctions" class="btn primary">일괄 정산 실행</button>
     </div>
   `;
 }
@@ -392,6 +403,30 @@ function economyWorldEventTpl() {
     </div>
   `;
 }
+// [ADD] 일괄 정산 이벤트 바인딩
+async function bindAuctionSettleEvents() {
+  const btn = document.getElementById('btn-settle-all-auctions');
+  if (!btn) return;
+
+  btn.addEventListener('click', async () => {
+    if (!confirm('완료된 모든 경매를 정산하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) return;
+
+    btn.disabled = true;
+    btn.textContent = '정산 중...';
+    try {
+      const fn = httpsCallable(func, 'adminSettleAllEndedAuctions');
+      const res = await fn();
+      const d = res?.data || {};
+      showToast(`정산 완료: 총 ${d.settledCount || 0}건의 경매를 처리했습니다.`);
+    } catch (e) {
+      showToast(`일괄 정산 실패: ${e.message}`);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '일괄 정산 실행';
+    }
+  });
+}
+
 
 async function bindEmergencyEvents() {
   const modeEl = document.getElementById('refund-mode');
@@ -754,7 +789,9 @@ function bindEconomyEvents() {
         } else if (subTabId === 'emergency') {
             content.innerHTML = economyEmergencyTpl();
             bindEmergencyEvents();
-  
+        } else if (subTabId === 'auction-settle') { // [ADD]
+            content.innerHTML = economyAuctionSettleTpl();
+            bindAuctionSettleEvents();
         } else if (subTabId === 'world-event') {
             content.innerHTML = economyWorldEventTpl();
             bindWorldEventEvents();
