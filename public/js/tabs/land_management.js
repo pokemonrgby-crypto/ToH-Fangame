@@ -33,12 +33,12 @@ function formatRemainingTime(ms) {
 
 // [추가] 등급별 파종 시간 (밀리초 단위)
 const RARITY_PLANT_TIMES = {
-    normal: 1000*5,
-    rare: 1000*10,
-    epic: 1000*20,
-    legendary: 1000*30,
-    mythic: 1000*60,
-    aether: 1000*90,
+  normal:   5 * 60 * 1000,
+  rare:    10 * 60 * 1000,
+  epic:    20 * 60 * 1000,
+  legendary: 40 * 60 * 1000,
+  mythic:  80 * 60 * 1000,
+  aether: 160 * 60 * 1000,
 };
 
 
@@ -64,6 +64,20 @@ export async function showLandManagement() {
           .farm-tile.planted { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><circle cx="5" cy="5" r="2" fill="%23a3e635"/></svg>'); background-size: 40%; background-repeat: no-repeat; background-position: center; }
           .farm-tile.ready { background-image: url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><path d="M5 1 L7 4 L9 4 L6 7 L6 9 L4 9 L4 7 L1 4 L3 4 Z" fill="%23f59e0b"/></svg>'); background-size: 70%; }
           .mgmt-btn { padding: 4px 8px !important; font-size: 12px !important; }
+          .farm-tile { position: relative; }
+          .farm-tile .tile-progress {
+            position: absolute;
+            left: 2px; right: 2px; bottom: 2px;
+            height: 4px; background: rgba(255,255,255,0.2);
+            overflow: hidden; border-radius: 2px;
+          }
+          .farm-tile .tile-progress .inner {
+            height: 100%;
+            width: 0%;
+            background: rgba(255,255,255,0.85);
+            transition: width 0.2s linear;
+          }
+
         </style>
         <section class="container narrow">
           <div class="card p12">
@@ -93,6 +107,21 @@ export async function showLandManagement() {
         isDragging: false,
         dragStart: null,
     };
+
+  // [추가] 실시간 구독: 서버 plot 문서를 onSnapshot으로 듣기
+    let __unsubPlot = null;
+    function subscribePlotRealtime(plotInfo) {
+      const plotDocId = `${plotInfo.mapId}_${plotInfo.x}_${plotInfo.y}_${plotInfo.microX}_${plotInfo.microY}`;
+      if (__unsubPlot) { __unsubPlot(); __unsubPlot = null; }
+      const ref = fx.doc(db, 'farm_plots', plotDocId);
+      __unsubPlot = fx.onSnapshot(ref, (snap) => {
+        if (!snap.exists()) return;
+        const d = snap.data() || {};
+        state.plotData = d; // 서버 값을 진실로 동기화
+        render();
+      });
+    }
+
   
     const render = () => {
         const managementPanel = root.querySelector('#management-panel');
@@ -140,6 +169,9 @@ export async function showLandManagement() {
     };
 
     const attachGridEvents = () => {
+      if (gridContainer.__bound) return;
+      gridContainer.__bound = true;
+
         let singleClickTimer = null;
         gridContainer.addEventListener('mousedown', (e) => {
             const tile = e.target.closest('.farm-tile');
@@ -195,6 +227,7 @@ export async function showLandManagement() {
         gridContainer.addEventListener('mouseup', endDrag);
         gridContainer.addEventListener('mouseleave', endDrag);
     };
+
 
     const handleTileClick = async (index) => {
         const tileData = state.plotData.tiles?.[index];
@@ -322,7 +355,31 @@ export async function showLandManagement() {
             if (plantBtn) {
                 plantBtn.textContent = `심는 중... (${i + 1}/${sortedTiles.length})`;
             }
-            await new Promise(resolve => setTimeout(resolve, plantTime));
+            // [레벨 보정] 0~30레벨, 30레벨이면 10%만 남게 (90% 감소)
+            const lvl = Math.max(0, Math.min(30, Number(state.assignedChar?.skills?.gardening || 0)));
+            const speedMult = 1 - 0.9 * (lvl / 30);
+            const adjTime = Math.floor(plantTime * speedMult);
+            
+            // [작은 진행바 표시]
+            const tileEl = gridContainer.children[index];
+            let bar = tileEl?.querySelector('.tile-progress');
+            if (!bar && tileEl) {
+              bar = document.createElement('div');
+              bar.className = 'tile-progress';
+              bar.innerHTML = '<div class="inner"></div>';
+              tileEl.appendChild(bar);
+            }
+            const inner = bar?.querySelector('.inner');
+            
+            const start = Date.now(), end = start + adjTime;
+            await new Promise((resolve) => {
+              const iv = setInterval(() => {
+                const now = Date.now();
+                const pct = Math.max(0, Math.min(100, Math.floor(((now - start) * 100) / (end - start || 1))));
+                if (inner) inner.style.width = pct + '%';
+                if (now >= end) { clearInterval(iv); if (bar) bar.remove(); resolve(); }
+              }, 200);
+            });
         }
 
         // 모든 타일에 대한 시간 소요 후, 백엔드에 한번에 전송
@@ -536,6 +593,7 @@ export async function showLandManagement() {
             root.innerHTML = `<section class="container narrow"><div class="kv-card">농장 정보를 불러오지 못했습니다: ${e.message}</div></section>`;
         }
     };
-    
+    subscribePlotRealtime(plotInfo);
+
     loadPlotData();
 }
