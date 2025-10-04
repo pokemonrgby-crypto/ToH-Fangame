@@ -91,13 +91,17 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
     const actionsContainer = back.querySelector('#modal-actions');
     if (ownerData) {
       if (isOwner) {
-        // [신규] 토지 관리 버튼
+        // [수정] 토지 관리 버튼 로직 변경
         const manageBtn = document.createElement('button');
         manageBtn.className = 'btn';
         manageBtn.textContent = '토지 관리';
         manageBtn.onclick = () => {
-          location.hash = `#/farm/${landInfo.mapId}/${landInfo.x}/${landInfo.y}/${microX}/${microY}`;
-          closeModal();
+          if (canFarm) {
+            location.hash = `#/farm/${landInfo.mapId}/${landInfo.x}/${landInfo.y}/${microX}/${microY}`;
+            closeModal();
+          } else {
+            showToast('농사가 불가능한 토지입니다. (추후 다른 관리 기능 추가 예정)');
+          }
         };
         actionsContainer.appendChild(manageBtn);
 
@@ -136,7 +140,6 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
   
   document.body.appendChild(back);
 }
-
 
 export async function showLandDetail() {
   const root = document.getElementById('view');
