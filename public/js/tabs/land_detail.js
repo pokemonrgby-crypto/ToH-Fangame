@@ -55,7 +55,7 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
 
   // 최종 건설/농사 가능 여부 판단
   const canBuild = (macroTileInfo.buildable !== false) && (tileInfo.buildable !== false);
-  const canFarm = (macroTileInfo.can_farm === true) && (tileInfo.can_farm !== false);
+  const canFarm = (macroTileInfo.can_farm !== false) && (tileInfo.can_farm !== false);
 
   const back = document.createElement('div');
   back.className = 'modal-back';
