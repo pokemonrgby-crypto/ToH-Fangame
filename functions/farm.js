@@ -285,6 +285,7 @@ module.exports = (admin) => {
             id: String(si.id),
             rarity: String(seedItem.rarity || si.rarity || 'normal').toLowerCase(),
             growthTimeMinutes: Math.max(1, Number(si.growthTimeMinutes || si.growMin || 5)),
+            isPerennial: si.isPerennial || false, // 다년생 정보 추가
             harvest: Array.isArray(si.harvest) && si.harvest.length
               ? si.harvest.map(h => ({
                   itemId: String(h.itemId || h.id || 'unknown_crop'),
@@ -313,26 +314,23 @@ module.exports = (admin) => {
         }
       }
       
-      // ANCHOR: [작업 큐] 시작
-      // 이 플롯에서 "심기" 작업 중인 마지막 타일의 종료 시각을 찾습니다.
       let lastPlantingEndsAt = Date.now();
       for (const key in tiles) {
           const tile = tiles[key];
-          // plantingEndsAt이 미래인 타일들 (즉, 아직 심고 있거나 심기 예약된 타일들) 중에서 가장 늦은 시간을 찾습니다.
           if (tile && tile.plantingEndsAt > lastPlantingEndsAt) {
               lastPlantingEndsAt = Number(tile.plantingEndsAt);
           }
       }
-      // ANCHOR_END
       
       const rarity = String(seed.rarity || 'normal').toLowerCase();
       
       let gardeningLv = 0;
+      let charDoc = null;
       if (charId) {
           try {
-              const cSnap = await tx.get(db.doc(`chars/${charId}`));
-              if (cSnap.exists) {
-                  const skills = cSnap.data()?.skills;
+              charDoc = await tx.get(db.doc(`chars/${charId}`));
+              if (charDoc.exists) {
+                  const skills = charDoc.data()?.skills;
                   gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
               }
           } catch (_) {}
@@ -346,21 +344,35 @@ module.exports = (admin) => {
       let cumulativePlantingTime = 0;
       for (const i of tileIndices) {
         const key = String(i);
-        // ANCHOR: [작업 큐] 시작 시점 계산 수정
-        // 작업 시작 시점을 'now'가 아닌, 큐의 마지막 작업 종료 시점부터 계산합니다.
         const plantingStartsAt = lastPlantingEndsAt + cumulativePlantingTime;
-        // ANCHOR_END
         const plantingEndsAt = plantingStartsAt + plantMs;
         const readyAt = plantingEndsAt + growMs;
+
+        // ANCHOR: [수확물 사전 결정] 시작
+        const actualHarvest = [];
+        if (Array.isArray(seed.harvest)) {
+          for (const rule of seed.harvest) {
+              const p = Number(rule.probability ?? 1);
+              if (p >= 1 || Math.random() < p) {
+                  const min = Math.max(1, Number(rule.min || 1));
+                  const max = Math.max(min, Number(rule.max || min));
+                  let qty = Math.floor(Math.random() * (max - min + 1)) + min;
+                  actualHarvest.push({ itemId: rule.itemId, count: qty });
+              }
+          }
+        }
+        // ANCHOR_END
 
         tiles[key] = {
           seedId: String(seed.id),
           rarity,
+          isPerennial: !!seed.isPerennial, // 다년생 여부 저장
           plantedByChar: charId || null,
           plantedAt: plantingStartsAt,
           plantingEndsAt: plantingEndsAt,
           readyAt: readyAt,
           status: 'planting',
+          actualHarvest, // 결정된 수확물 저장
         };
         cumulativePlantingTime += plantMs;
       }
@@ -460,7 +472,6 @@ module.exports = (admin) => {
     const plotRef = db.doc(`farm_plots/${plotId}`);
     const userRef = db.doc(`users/${uid}`);
 
-    let rewards = {};
     let newItemsForUser = [];
     let totalCharExpGain = 0;
     let totalSkillExpGain = 0;
@@ -483,45 +494,37 @@ module.exports = (admin) => {
 
         charToAwardExp = t.plantedByChar;
 
-        const seed = allSeeds.find(s => s.id === t.seedId);
-        if (seed && Array.isArray(seed.harvest)) {
-          for (const rule of seed.harvest) {
-            const p = Number(rule.probability ?? 1);
-            if (p >= 1 || Math.random() < p) {
-              const min = Math.max(1, Number(rule.min||1));
-              const max = Math.max(min, Number(rule.max||min));
-              let qty = Math.floor(Math.random()*(max-min+1)) + min;
-
-              let levelBonus = 0;
-              try {
-                if (t.plantedByChar) {
-                  const charSnap = await tx.get(db.doc(`chars/${String(t.plantedByChar).replace(/^chars\//,'')}`));
-                  if(charSnap.exists) {
-                    const skills = charSnap.data()?.skills;
-                    const g = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
-                    levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
-                  }
-                }
-              } catch (_) { }
-
-              qty += levelBonus;
-
-              const seasonBonus = seed.season_bonus?.[currentSeason];
-              if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
-              if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
-              
-              currentRewards[rule.itemId] = (currentRewards[rule.itemId] || 0) + qty;
-              totalCharExpGain += 10;
-              totalSkillExpGain += 15;
+        // ANCHOR: [수확물 사전 결정] 수확 로직 수정
+        const harvestItems = t.actualHarvest || [];
+        for (const item of harvestItems) {
+            let qty = item.count;
+            
+            // 보너스 로직은 수확 시점에 적용
+            let levelBonus = 0;
+            if (t.plantedByChar) {
+              const charSnap = await tx.get(db.doc(`chars/${String(t.plantedByChar).replace(/^chars\//,'')}`));
+              if(charSnap.exists) {
+                const skills = charSnap.data()?.skills;
+                const g = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
+                levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
+              }
             }
-          }
+            qty += levelBonus;
+            
+            const seed = allSeeds.find(s => s.id === t.seedId);
+            const seasonBonus = seed?.season_bonus?.[currentSeason];
+            if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
+            if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
+
+            currentRewards[item.itemId] = (currentRewards[item.itemId] || 0) + qty;
         }
+        totalCharExpGain += 10;
+        totalSkillExpGain += 15;
+        // ANCHOR_END
         
-        // ANCHOR: [다년생 작물] 시작
-        // 다년생 작물인지 확인합니다.
-        if (seed?.isPerennial) {
-          // 다년생이면 타일을 삭제하는 대신, 다음 수확 시간을 다시 설정합니다.
-          const growMs = (seed.growthTimeMinutes || 30) * 60 * 1000;
+        if (t.isPerennial) {
+          const seed = allSeeds.find(s => s.id === t.seedId);
+          const growMs = (seed?.growthTimeMinutes || 30) * 60 * 1000;
           let gardeningLv = 0;
           
           if (t.plantedByChar) {
@@ -535,15 +538,12 @@ module.exports = (admin) => {
           const slotMult = deviceSpeedMult(d.device_slots || []);
           const regrowMs = Math.floor(growMs * levelSpeedMult(gardeningLv) * slotMult);
           
-          // 다음 수확 준비 시간과, UI 프로그레스바 계산 기준점을 업데이트합니다.
           tiles[key].readyAt = now + regrowMs;
-          tiles[key].plantingEndsAt = now; // 프로그레스바 시작점을 현재로 리셋
+          tiles[key].plantingEndsAt = now;
           
         } else {
-          // 다년생이 아니면 기존처럼 타일 정보를 삭제합니다.
           delete tiles[key];
         }
-        // ANCHOR_END
       }
 
       if (Object.keys(currentRewards).length > 0) {
@@ -561,9 +561,7 @@ module.exports = (admin) => {
           return global.__ITEMS_META;
         })();
         
-        rewards = currentRewards;
-        
-        for (const [itemId, cnt] of Object.entries(rewards)) {
+        for (const [itemId, cnt] of Object.entries(currentRewards)) {
           const meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0, description: '' };
           const newItem = {
             id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
@@ -620,8 +618,9 @@ module.exports = (admin) => {
       if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
 
       const now = Date.now();
-      if (!t.plantingEndsAt || now >= t.plantingEndsAt) {
-        throw new HttpsError('failed-precondition', '이미 심기 완료 상태로 취소할 수 없습니다.');
+      // [수정] 이제 '심는 중' 뿐만 아니라 '자라는 중'인 것도 취소(제초)할 수 있습니다.
+      if (!t.readyAt || now >= t.readyAt) {
+        throw new HttpsError('failed-precondition', '이미 수확 준비가 완료된 작물은 취소할 수 없습니다.');
       }
 
       delete tiles[String(tileIndex)];
