@@ -70,9 +70,12 @@ export async function showLandManagement() {
     const gridContainer = root.querySelector('#farm-grid-container');
     const COLS = 32, ROWS = 32, TILE_COUNT = COLS * ROWS;
 
-    for (let i = 0; i < TILE_COUNT; i++) {
-        gridContainer.appendChild(document.createElement('div'));
-    }
+    // ▼▼▼ [수정된 부분] ▼▼▼
+    // 불필요한 초기 그리드 생성 루프를 삭제했습니다.
+    // for (let i = 0; i < TILE_COUNT; i++) {
+    //     gridContainer.appendChild(document.createElement('div'));
+    // }
+    // ▲▲▲ [수정된 부분] ▲▲▲
 
     const state = {
         plotData: {},
@@ -136,7 +139,6 @@ export async function showLandManagement() {
     
     const render = () => {
         const managementPanel = root.querySelector('#management-panel');
-        // [수정] 스킬 데이터 구조 변경에 따라 .level 추가
         const charInfoHtml = state.assignedChar
             ? `<b>${esc(state.assignedChar.name)}</b> <span class="text-dim">(원예 ${state.assignedChar.skills?.gardening?.level || 0})</span>`
             : '할당된 캐릭터 없음';
@@ -490,7 +492,6 @@ export async function showLandManagement() {
             back.className = 'modal-back';
             let cardsHtml = characters.map(char => {
                 const skills = char.skills || {};
-                // [수정] 스킬 데이터 구조 변경에 따라 .level 추가 및 안전한 접근을 위해 ?. 사용
                 return `
                     <div class="kv-card" data-char-id="${char.id}" style="cursor:pointer;">
                         <div class="row" style="gap:10px">
@@ -548,7 +549,7 @@ export async function showLandManagement() {
                     state.assignedChar = {
                         id: charSnap.id,
                         name: data.name,
-                        skills: data.skills || {} // [수정] 기본값 빈 객체로 변경
+                        skills: data.skills || {}
                     };
                 }
             }
