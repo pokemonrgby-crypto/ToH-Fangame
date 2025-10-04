@@ -35,6 +35,32 @@ module.exports = (admin) => {
   function plotIdFrom({ mapId, x, y, microX, microY }) {
     return `${mapId}_${x}_${y}_${microX}_${microY}`;
   }
+
+  // [ADD] 등급별 심기 시간(ms)
+  const RARITY_PLANT_MS = {
+    normal:   5 * 60 * 1000,
+    rare:    10 * 60 * 1000,
+    epic:    20 * 60 * 1000,
+    legendary: 40 * 60 * 1000,
+    mythic:  80 * 60 * 1000,
+    aether: 160 * 60 * 1000,
+  };
+
+  // [ADD] 캐릭터 레벨 보정 (0~30 → 30이면 10% 남김)
+  function levelSpeedMult(gardeningLv = 0) {
+    const lv = Math.max(0, Math.min(30, Number(gardeningLv || 0)));
+    return 1 - 0.9 * (lv / 30); // 1.0 → 0.1
+  }
+
+  // [ADD] 장치(최대 2개) 보정: 각 슬롯 speedMult 곱셈 (기본 1.0)
+  function deviceSpeedMult(deviceSlots = []) {
+    if (!Array.isArray(deviceSlots)) return 1.0;
+    return deviceSlots
+      .filter(Boolean)
+      .map(d => Number(d?.speedMult || 1.0))
+      .reduce((a, b) => a * (isFinite(b) && b > 0 ? b : 1.0), 1.0);
+  }
+  
   
   // 땅 소유권 확인
   // 땅 소유권 확인
@@ -192,8 +218,7 @@ module.exports = (admin) => {
 
     let seed = allSeeds.find(s => s.id === seedId);
     if (!seed) {
-        logger.error(`[plantSeedOnTile] Seed not found in loaded data: "${seedId}"`);
-        throw new HttpsError('not-found', `서버에 존재하지 않는 씨앗입니다: ${seedId}`);
+      logger.warn(`[plantSeedOnTile] Seed not found in seeds data; will try fallback from inventory seedInfo: "${seedId}"`);
     }
 
     const n = tileIndices.length;
@@ -243,10 +268,34 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
       const readyAt = now + growMin*60*1000;
       const rarity = String(seed.rarity || 'normal').toLowerCase();
 
+      // 캐릭터 원예레벨 읽기 (레벨 보정용)
+      let gardeningLv = 0;
+      try {
+        const cSnap = await tx.get(db.doc(`chars/${charId}`));
+        gardeningLv = cSnap.exists ? Number(cSnap.data()?.skills?.gardening || 0) : 0;
+      } catch (_) {}
+
+      // 플롯 장치 보정(최대 2개 슬롯 곱)
+      const slotMult = deviceSpeedMult((cur.device_slots || []));
+
+      // 등급별 기본 심기시간 → 레벨보정 × 장치보정
+      const plantBaseMs = RARITY_PLANT_MS[rarity] || 5*60*1000;
+      const plantMs = Math.floor(plantBaseMs * levelSpeedMult(gardeningLv) * slotMult);
+
+
       for (const i of tileIndices) {
         const key = String(i);
-        tiles[key] = { seedId, rarity, plantedAt: now, readyAt, stage: 'growing', plantedByChar: charId || null };
+        tiles[key] = {
+          seedId: String(seed.id),
+          rarity,
+          plantedByChar: charId || null,
+          plantedAt: now,                 // 성장 시작
+          plantingEndsAt: now + plantMs,  // 심기 작업 종료시각
+          readyAt,                        // 수확 가능 시각
+          status: 'planting',             // planting → growing → ready (클라는 시간 비교로 표기)
+        };
       }
+
 
       if (uses === n) {
         const remain = items.filter(it => it.id !== seedItemId);
@@ -440,5 +489,46 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
     return { ok: true, rewards: newItemsForUser };
   });
 
-  return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles };
+
+
+const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid || req.auth?.token?.uid;
+  const { mapId, x, y, microX, microY, tileIndex } = req.data || {};
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  if ([mapId,x,y,microX,microY,tileIndex].some(v=>v==null)) {
+    throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+  }
+
+  const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
+  if (!isOwner) throw new HttpsError('permission-denied', '이 토지에서 작업을 취소할 권한이 없습니다.');
+
+  const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+  const plotRef = db.doc(`farm_plots/${plotId}`);
+
+  await db.runTransaction(async (tx) => {
+    const snap = await tx.get(plotRef);
+    if (!snap.exists) throw new HttpsError('not-found', 'plot not found');
+    const d = snap.data() || {};
+    const tiles = d.tiles || {};
+    const t = tiles[String(tileIndex)];
+    if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
+
+    const now = Date.now();
+    // plantingEndsAt이 아직 안 지났을 때만 취소 가능 (씨앗 미반환)
+    if (!t.plantingEndsAt || now >= t.plantingEndsAt) {
+      throw new HttpsError('failed-precondition', '이미 심기 완료 상태로 취소할 수 없습니다.');
+    }
+
+    delete tiles[String(tileIndex)];
+    tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
+  });
+
+  return { ok: true };
+});
+
+
+
+  
+
+  return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting };
 };
