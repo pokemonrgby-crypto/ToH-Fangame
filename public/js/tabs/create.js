@@ -137,6 +137,20 @@ function buildCharPayloadFromAi(out, world, name, desc){
     abilities_equipped: [0,1],
     items_equipped: [],
 
+        // [수정] 신규 캐릭터 생성 시 모든 스킬을 0으로 초기화
+    skills: {
+        gardening: 0,
+        art: 0,
+        construction: 0,
+        speech: 0,
+        mining: 0,
+        cooking: 0,
+        processing: 0,
+        crafting: 0,
+        research: 0
+    },
+
+
     // 썸네일(없으면 빈 값 유지)
     image_url: '',
 
