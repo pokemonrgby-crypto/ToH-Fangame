@@ -1,4 +1,4 @@
-// /functions/farm.js
+// /functions/farm.js (수정)
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 const fs = require('fs').promises;
@@ -6,19 +6,7 @@ const path = require('path');
 
 module.exports = (admin) => {
   const db = admin.firestore();
-  const { FieldValue, Timestamp } = admin.firestore; // FieldValue와 Timestamp를 함께 선언
-
-  // [제거] _isAdmin 함수 (더 이상 필요 없음)
-
-  // 땅 소유권 확인
-  async function _isOwner(uid, { mapId, x, y, microX, microY }) {
-    if (!uid) return false;
-    const microDoc = `${microY}_${microX}`;
-    const plotDoc = `${mapId}_${x}_${y}`;
-    const ref = db.collection('land_plots').doc(plotDoc).collection('micro_ownership').doc(microDoc);
-    const snap = await ref.get();
-    return snap.exists && snap.data()?.owner_uid === uid;
-  }
+  const { FieldValue, Timestamp } = admin.firestore;
 
   // 농사 프로필(레벨/경험치) 읽기/업데이트
   async function _getFarmProfile(uid) {
@@ -38,7 +26,7 @@ module.exports = (admin) => {
       while (exp >= nextExp && level < 30) {
         exp -= nextExp;
         level += 1;
-        nextExp = Math.round(100 + 50 * level); // 간단 규칙
+        nextExp = Math.round(100 + 50 * level);
       }
       tx.set(ref, { level, exp, nextExp, updatedAt: Date.now() }, { merge: true });
     });
@@ -47,8 +35,18 @@ module.exports = (admin) => {
   function plotIdFrom({ mapId, x, y, microX, microY }) {
     return `${mapId}_${x}_${y}_${microX}_${microY}`;
   }
+  
+  // 땅 소유권 확인
+  async function _isOwner(uid, { mapId, x, y, microX, microY }) {
+    if (!uid) return false;
+    const microDoc = `${microY}_${microX}`;
+    const plotDoc = `${mapId}_${x}_${y}`;
+    const ref = db.collection('land_plots').doc(plotDoc).collection('micro_ownership').doc(microDoc);
+    const snap = await ref.get();
+    return snap.exists && snap.data()?.owner_uid === uid;
+  }
 
-  // [수정] 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더
+  // [수정] 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더 (안정성 강화)
   let _seedsDataCache = null;
   const loadSeedsData = async () => {
       if (_seedsDataCache) return _seedsDataCache;
@@ -58,11 +56,16 @@ module.exports = (admin) => {
           const allSeeds = [];
           for (const file of files) {
               if (file.endsWith('.json')) {
-                  const data = await fs.readFile(path.join(seedsDir, file), 'utf8');
-                  allSeeds.push(...JSON.parse(data));
+                  try {
+                      const data = await fs.readFile(path.join(seedsDir, file), 'utf8');
+                      allSeeds.push(...JSON.parse(data));
+                  } catch (e) {
+                      logger.error(`Failed to parse seed file: ${file}`, e);
+                  }
               }
           }
           _seedsDataCache = allSeeds;
+          logger.info(`Loaded ${_seedsDataCache.length} seeds from ${files.length} files.`);
           return _seedsDataCache;
       } catch (error) {
           logger.error("Failed to load seeds data from directory", error);
@@ -72,7 +75,6 @@ module.exports = (admin) => {
 
   const buySeed = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
-    // [제거] 관리자 확인 로직
     if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
     const { seedId, quantity } = req.data;
@@ -150,16 +152,9 @@ module.exports = (admin) => {
     const docRef = db.doc(`farm_plots/${plotId}`);
     const snap = await docRef.get();
 
-    let owner_uid = null;
-    try {
-      const own = await _isOwner(uid || '', { mapId, x, y, microX, microY });
-      if (own) owner_uid = uid;
-    } catch {}
-
     const d = snap.exists ? (snap.data()||{}) : {};
     return {
       ok: true,
-      owner_uid,
       assigned_char_id: d.assigned_char_id || null,
       tiles: d.tiles || {},
       updatedAt: d.updatedAt || 0
@@ -179,7 +174,10 @@ module.exports = (admin) => {
 
     const allSeeds = await loadSeedsData();
     const seed = allSeeds.find(s => s.id === seedId);
-    if (!seed) throw new HttpsError('not-found', '존재하지 않는 씨앗입니다.');
+    if (!seed) {
+        logger.error(`Seed not found: ${seedId}`);
+        throw new HttpsError('not-found', `존재하지 않는 씨앗입니다: ${seedId}`);
+    }
 
     const n = tileIndices.length;
     const userRef = db.doc(`users/${uid}`);
@@ -254,7 +252,6 @@ module.exports = (admin) => {
 
     const allSeeds = await loadSeedsData();
     
-    // [추가] 현재 계절 정보 가져오기
     const seasonSnap = await db.doc('configs/season').get();
     const currentSeason = seasonSnap.exists ? seasonSnap.data().current : 'spring';
 
@@ -262,7 +259,8 @@ module.exports = (admin) => {
     const plotRef = db.doc(`farm_plots/${plotId}`);
     const userRef = db.doc(`users/${uid}`);
 
-    const rewards = {}; 
+    let rewards = {};
+    let newItemsForUser = [];
 
     await db.runTransaction(async (tx) => {
       const plotSnap = await tx.get(plotRef);
@@ -270,6 +268,8 @@ module.exports = (admin) => {
       const d = plotSnap.data() || {};
       const tiles = d.tiles || {};
       const now = Date.now();
+      
+      const currentRewards = {};
 
       for (const i of tileIndices) {
         const key = String(i);
@@ -286,23 +286,22 @@ module.exports = (admin) => {
               const max = Math.max(min, Number(rule.max||min));
               let qty = Math.floor(Math.random()*(max-min+1)) + min;
 
-              // [추가] 계절 보너스 적용
               const seasonBonus = seed.season_bonus?.[currentSeason];
               if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
               if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
               
-              rewards[rule.itemId] = (rewards[rule.itemId] || 0) + qty;
+              currentRewards[rule.itemId] = (currentRewards[rule.itemId] || 0) + qty;
             }
           }
         }
         delete tiles[key];
       }
 
-      if (Object.keys(rewards).length > 0) {
+      if (Object.keys(currentRewards).length > 0) {
         const userSnap = await tx.get(userRef);
         if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보가 없습니다.');
         const u = userSnap.data()||{};
-        const itemsAll = Array.isArray(u.items_all)? u.items_all : [];
+        let itemsAll = Array.isArray(u.items_all)? u.items_all : [];
 
         const itemsMeta = await (async ()=>{
           if (!global.__ITEMS_META) {
@@ -312,18 +311,23 @@ module.exports = (admin) => {
           }
           return global.__ITEMS_META;
         })();
-
+        
+        rewards = currentRewards;
+        
         for (const [itemId, cnt] of Object.entries(rewards)) {
-          const meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0 };
-          itemsAll.push({
+          const meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0, description: '' };
+          const newItem = {
             id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
             name: meta.name || itemId,
+            description: meta.description || '', // [수정] 설명 추가
             rarity: (meta.rarity || 'normal').toLowerCase(),
             type: meta.type || 'material',
             isConsumable: false,
             properties: { aestheticValue: meta.aestheticValue || 0 },
             count: Number(cnt)
-          });
+          };
+          itemsAll.push(newItem);
+          newItemsForUser.push(newItem);
         }
 
         tx.update(userRef, { items_all: itemsAll });
@@ -332,9 +336,11 @@ module.exports = (admin) => {
       tx.set(plotRef, { tiles, updatedAt: Date.now() }, { merge: true });
     });
 
-    await _awardFarmExp(uid, 12);
-
-    return { ok: true, rewards };
+    if(Object.keys(rewards).length > 0) {
+        await _awardFarmExp(uid, 12);
+    }
+    
+    return { ok: true, rewards: newItemsForUser };
   });
 
   return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles };
