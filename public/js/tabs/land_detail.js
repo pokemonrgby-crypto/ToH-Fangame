@@ -1,7 +1,6 @@
 // /public/js/tabs/land_detail.js
 import { func, auth, db, fx } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
-import { isAdminCached, ensureAdmin } from '../api/admin.js';
 import { buyMicroPlot, sellMicroPlot } from '../api/land.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
@@ -41,19 +40,18 @@ function calculateLandPrice(tileType, microTileType, legend, floatingPopulation)
     const basePrice = { s: 500, l: 700, M: 2000, m: 3000, f: 1200, n: 1000, b: 1500, d: 800, r: 2500, R: 5000 }[tileType] || 1000;
     const microInfo = legend.micro_tile_legend[microTileType] || {};
     const microMultiplier = microInfo.buildable ? 1.2 : 0.8;
-    const populationBonus = Math.floor(basePrice * (floatingPopulation / 100)); // 유동인구 1명당 1% 가격 보너스
+    const populationBonus = Math.floor(basePrice * (floatingPopulation / 100));
     return Math.floor(basePrice * microMultiplier) + populationBonus;
 }
 
 
-async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin, floatingPopulation }) {
+async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, floatingPopulation }) {
   ensureModalCss();
   const legend = await getMicroLegend();
   const price = calculateLandPrice(landInfo.tile.type, tileInfo.type, legend, floatingPopulation);
   const isOwner = ownerData?.owner_uid === auth.currentUser.uid;
   const macroTileInfo = landInfo.tile;
 
-  // 최종 건설/농사 가능 여부 판단
   const canBuild = (macroTileInfo.buildable !== false) && (tileInfo.buildable !== false);
   const canFarm = (macroTileInfo.can_farm !== false) && (tileInfo.can_farm !== false);
 
@@ -87,21 +85,16 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
   back.addEventListener('click', (e) => { if (e.target === back) closeModal(); });
   back.querySelector('#mClose').onclick = closeModal;
 
-  if (isAdmin) {
-    const actionsContainer = back.querySelector('#modal-actions');
-    if (ownerData) {
+  const actionsContainer = back.querySelector('#modal-actions');
+  if (ownerData) {
       if (isOwner) {
-        // [수정] 토지 관리 버튼 로직 변경
         const manageBtn = document.createElement('button');
         manageBtn.className = 'btn';
         manageBtn.textContent = '토지 관리';
         manageBtn.onclick = () => {
-          if (canFarm) {
-            location.hash = `#/farm/${landInfo.mapId}/${landInfo.x}/${landInfo.y}/${microX}/${microY}`;
-            closeModal();
-          } else {
-            showToast('농사가 불가능한 토지입니다. (추후 다른 관리 기능 추가 예정)');
-          }
+          const microTileParam = encodeURIComponent(JSON.stringify(tileInfo));
+          location.hash = `#/land-management/${landInfo.mapId}/${landInfo.x}/${landInfo.y}/${microX}/${microY}?tile=${encodeURIComponent(JSON.stringify(landInfo.tile))}&microTile=${microTileParam}`;
+          closeModal();
         };
         actionsContainer.appendChild(manageBtn);
 
@@ -136,7 +129,6 @@ async function showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInf
       };
       actionsContainer.appendChild(buyBtn);
     }
-  }
   
   document.body.appendChild(back);
 }
@@ -150,8 +142,6 @@ export async function showLandDetail() {
     return;
   }
   
-  const isAdmin = await ensureAdmin().catch(() => false);
-
   root.innerHTML = `<section class="container narrow"><div class="spin-center"></div></section>`;
   
   try {
@@ -210,7 +200,7 @@ export async function showLandDetail() {
         const tileInfo = { type: microTileType, ...(legend[microTileType] || {}) };
         const ownerData = data.owners?.[`${microY}_${microX}`] || null;
         
-        showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, isAdmin, floatingPopulation: data.floatingPopulation });
+        showMicroPlotModal({ microX, microY, tileInfo, ownerData, landInfo, floatingPopulation: data.floatingPopulation });
       });
     });
 
