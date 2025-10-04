@@ -13,6 +13,20 @@ module.exports = (admin, { onCall, HttpsError, logger }) => {
   function _assert(cond, code, msg) {
     if (!cond) throw new HttpsError(code, msg);
   }
+  // [ADD] isAdmin 헬퍼 함수
+  async function _isAdmin(uid) {
+    if (!uid) return false;
+    try {
+      const snap = await db.doc('configs/admins').get();
+      const d = snap.exists ? snap.data() : {};
+      const allow = Array.isArray(d.allow) ? d.allow : [];
+      const allowEmails = Array.isArray(d.allowEmails) ? d.allowEmails : [];
+      if (allow.includes(uid)) return true;
+      const user = await admin.auth().getUser(uid);
+      return !!(user?.email && allowEmails.includes(user.email));
+    } catch (_) { return false; }
+  }
+
 
   function _calculatePrice(item) {
     const raw = String(item?.rarity || 'normal').trim().toLowerCase();
@@ -499,6 +513,78 @@ const auctionListMyBids = onCall({ region:'us-central1' }, async (req)=>{
   return { ok:true, rows };
 });
 
+  // [ADD] 관리자용 일괄 정산 함수
+  const adminSettleAllEndedAuctions = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!await _isAdmin(uid)) {
+      throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+    }
+
+    const now = nowTs();
+    const endedAuctionsQuery = aucCol
+      .where('status', '==', 'active')
+      .where('endsAt', '<=', now);
+    
+    const snap = await endedAuctionsQuery.get();
+    if (snap.empty) {
+      return { ok: true, settledCount: 0, message: '정산할 경매가 없습니다.' };
+    }
+
+    let settledCount = 0;
+    const errors = [];
+
+    // Firestore는 한 번에 많은 문서를 처리하는 데 제한이 있으므로,
+    // 병렬 처리보다는 순차적으로 처리하거나 작은 배치로 나누는 것이 안전합니다.
+    for (const doc of snap.docs) {
+      const auctionId = doc.id;
+      const ref = doc.ref;
+      
+      try {
+        await db.runTransaction(async (tx) => {
+          // 트랜잭션 내에서 최신 문서를 다시 읽어옵니다.
+          const currentSnap = await tx.get(ref);
+          if (!currentSnap.exists) return;
+          const A = currentSnap.data();
+          if (A.status !== 'active' || A.endsAt?.toMillis() > Date.now()) return;
+
+          const sellerRef = db.doc(`users/${A.seller_uid}`);
+          const sellerSnap = await tx.get(sellerRef);
+          if (!sellerSnap.exists) {
+            logger.warn(`Seller ${A.seller_uid} not found for auction ${auctionId}. Marking as failed.`);
+            tx.update(ref, { status: 'settle_failed', reason: 'seller_not_found' });
+            return;
+          }
+
+          if (A.topBid?.uid) {
+            const winnerRef = db.doc(`users/${A.topBid.uid}`);
+            const winnerSnap = await tx.get(winnerRef);
+            if (!winnerSnap.exists) {
+                logger.warn(`Winner ${A.topBid.uid} not found for auction ${auctionId}. Refunding seller.`);
+                 _addItemToUser(tx, sellerRef, A.item); // 판매자에게 아이템 환불
+                 tx.update(ref, { status: 'settle_failed', reason: 'winner_not_found' });
+                return;
+            }
+            _capture(tx, winnerRef, winnerSnap, Number(A.topBid.amount || 0));
+            _give(tx, sellerRef, Number(A.topBid.amount || 0));
+            _addItemToUser(tx, winnerRef, A.item);
+            tx.update(ref, { status: 'sold', buyer_uid: A.topBid.uid, soldAt: nowTs() });
+          } else {
+            // 입찰자가 없는 경우: 아이템을 판매자에게 돌려주고 경매를 'unsold' 상태로 변경
+             _addItemToUser(tx, sellerRef, A.item);
+             tx.update(ref, { status: 'unsold', soldAt: nowTs() });
+          }
+        });
+        settledCount++;
+      } catch (error) {
+        logger.error(`Failed to settle auction ${auctionId}:`, error);
+        errors.push({ auctionId, error: error.message });
+        // 실패한 경매는 상태를 변경하여 다음 번에 다시 시도하지 않도록 할 수 있습니다.
+        await ref.update({ status: 'settle_failed', reason: 'transaction_error' }).catch(()=>{});
+      }
+    }
+
+    return { ok: true, settledCount, errors };
+  });
 
   return {
     tradeCreateListing,
@@ -514,5 +600,6 @@ const auctionListMyBids = onCall({ region:'us-central1' }, async (req)=>{
     auctionBid,
     auctionSettle,
     auctionListMyBids,
+    adminSettleAllEndedAuctions, // [ADD] export
   };
 };
