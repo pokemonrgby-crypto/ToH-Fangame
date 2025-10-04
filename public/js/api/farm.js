@@ -1,4 +1,4 @@
-// /public/js/api/farm.js (신규 파일)
+// /public/js/api/farm.js
 import { func } from './firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 
@@ -15,3 +15,6 @@ export const plantSeedOnTile = (data) => call('plantSeedOnTile')(data);
 
 // 토지에 캐릭터 할당
 export const assignCharacterToFarm = (data) => call('assignCharacterToFarm')(data);
+
+// [추가] 수확 함수
+export const harvestTiles = (data) => call('harvestTiles')(data);
