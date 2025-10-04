@@ -27,7 +27,7 @@ export const routes = {
   '#/manage': () => import('./tabs/manage.js').then(m => (m.showManage || m.default)()),
   '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
   '#/land': () => import('./tabs/land_detail.js').then(m => m.showLandDetail()),
-  '#/land-management': () => import('./tabs/farm_plot.js').then(m => m.showLandManagement()),
+  '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
 };
 
 export function highlightTab() {
