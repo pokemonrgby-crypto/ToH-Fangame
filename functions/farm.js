@@ -307,14 +307,24 @@ module.exports = (admin) => {
       const cur = plotSnap.exists ? (plotSnap.data()||{}) : {};
       const tiles = cur.tiles || {};
 
-      // [추가] 심을 타일이 이미 점유되어 있는지 확인
       for (const i of tileIndices) {
         if (tiles[String(i)]) {
           throw new HttpsError('failed-precondition', `이미 작물이 심어져 있는 타일(${i})이 포함되어 있습니다.`);
         }
       }
       
-      const now = Date.now();
+      // ANCHOR: [작업 큐] 시작
+      // 이 플롯에서 "심기" 작업 중인 마지막 타일의 종료 시각을 찾습니다.
+      let lastPlantingEndsAt = Date.now();
+      for (const key in tiles) {
+          const tile = tiles[key];
+          // plantingEndsAt이 미래인 타일들 (즉, 아직 심고 있거나 심기 예약된 타일들) 중에서 가장 늦은 시간을 찾습니다.
+          if (tile && tile.plantingEndsAt > lastPlantingEndsAt) {
+              lastPlantingEndsAt = Number(tile.plantingEndsAt);
+          }
+      }
+      // ANCHOR_END
+      
       const rarity = String(seed.rarity || 'normal').toLowerCase();
       
       let gardeningLv = 0;
@@ -323,7 +333,6 @@ module.exports = (admin) => {
               const cSnap = await tx.get(db.doc(`chars/${charId}`));
               if (cSnap.exists) {
                   const skills = cSnap.data()?.skills;
-                  // [수정] 스킬 데이터 구조 변경에 따른 레벨 접근 방식 수정
                   gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
               }
           } catch (_) {}
@@ -337,7 +346,10 @@ module.exports = (admin) => {
       let cumulativePlantingTime = 0;
       for (const i of tileIndices) {
         const key = String(i);
-        const plantingStartsAt = now + cumulativePlantingTime;
+        // ANCHOR: [작업 큐] 시작 시점 계산 수정
+        // 작업 시작 시점을 'now'가 아닌, 큐의 마지막 작업 종료 시점부터 계산합니다.
+        const plantingStartsAt = lastPlantingEndsAt + cumulativePlantingTime;
+        // ANCHOR_END
         const plantingEndsAt = plantingStartsAt + plantMs;
         const readyAt = plantingEndsAt + growMs;
 
@@ -361,7 +373,7 @@ module.exports = (admin) => {
         tx.update(userRef, { items_all: remain });
       }
 
-      tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
+      tx.set(plotRef, { tiles, updatedAt: Date.now() }, { merge: true });
     });
 
     await _awardFarmExp(uid, 5 * n);
@@ -383,7 +395,6 @@ module.exports = (admin) => {
 
     if (charId) {
       const charRef = db.doc(`chars/${charId}`);
-      // [수정] 기본 스킬 구조를 새 포맷(객체)으로 변경
       const DEFAULT_SKILLS = {
         gardening: { level: 0, exp: 0, nextExp: 1 },
         construction: { level: 0, exp: 0, nextExp: 1 },
@@ -404,7 +415,6 @@ module.exports = (admin) => {
         let skills = cData.skills || {};
         let needsUpdate = false;
 
-        // [수정] 레거시 호환 및 데이터 구조 정상화 로직 강화
         for (const key of Object.keys(DEFAULT_SKILLS)) {
           if (!skills[key] || typeof skills[key] === 'number') {
             const level = Number(skills[key] || 0);
@@ -453,7 +463,7 @@ module.exports = (admin) => {
     let rewards = {};
     let newItemsForUser = [];
     let totalCharExpGain = 0;
-    let totalSkillExpGain = 0; // [추가] 스킬 경험치 합산 변수
+    let totalSkillExpGain = 0;
     let charToAwardExp = null;
 
     await db.runTransaction(async (tx) => {
@@ -488,7 +498,6 @@ module.exports = (admin) => {
                   const charSnap = await tx.get(db.doc(`chars/${String(t.plantedByChar).replace(/^chars\//,'')}`));
                   if(charSnap.exists) {
                     const skills = charSnap.data()?.skills;
-                    // [수정] 스킬 데이터 구조 변경에 따른 레벨 접근 방식 수정
                     const g = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
                     levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
                   }
@@ -502,12 +511,39 @@ module.exports = (admin) => {
               if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
               
               currentRewards[rule.itemId] = (currentRewards[rule.itemId] || 0) + qty;
-              totalCharExpGain += 10; // 타일당 캐릭터 경험치 10
-              totalSkillExpGain += 15; // [추가] 타일당 원예 스킬 경험치 15
+              totalCharExpGain += 10;
+              totalSkillExpGain += 15;
             }
           }
         }
-        delete tiles[key];
+        
+        // ANCHOR: [다년생 작물] 시작
+        // 다년생 작물인지 확인합니다.
+        if (seed?.isPerennial) {
+          // 다년생이면 타일을 삭제하는 대신, 다음 수확 시간을 다시 설정합니다.
+          const growMs = (seed.growthTimeMinutes || 30) * 60 * 1000;
+          let gardeningLv = 0;
+          
+          if (t.plantedByChar) {
+            const charSnap = await tx.get(db.doc(`chars/${t.plantedByChar}`));
+            if (charSnap.exists) {
+              const skills = charSnap.data()?.skills;
+              gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
+            }
+          }
+          
+          const slotMult = deviceSpeedMult(d.device_slots || []);
+          const regrowMs = Math.floor(growMs * levelSpeedMult(gardeningLv) * slotMult);
+          
+          // 다음 수확 준비 시간과, UI 프로그레스바 계산 기준점을 업데이트합니다.
+          tiles[key].readyAt = now + regrowMs;
+          tiles[key].plantingEndsAt = now; // 프로그레스바 시작점을 현재로 리셋
+          
+        } else {
+          // 다년생이 아니면 기존처럼 타일 정보를 삭제합니다.
+          delete tiles[key];
+        }
+        // ANCHOR_END
       }
 
       if (Object.keys(currentRewards).length > 0) {
@@ -547,7 +583,6 @@ module.exports = (admin) => {
       }
 
       if(charToAwardExp) {
-        // [수정] 캐릭터 경험치와 스킬 경험치를 별도로 지급
         if (totalCharExpGain > 0) {
           await _awardCharExp(tx, charToAwardExp, totalCharExpGain, `farm_harvest:${plotId}`);
         }
