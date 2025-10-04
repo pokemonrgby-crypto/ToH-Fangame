@@ -32,11 +32,39 @@ module.exports = (admin) => {
     });
   }
 
+  // 캐릭터 경험치 지급 및 코인 전환 로직
+  async function _awardCharExp(tx, charId, expToAdd, note) {
+    if (!charId || expToAdd <= 0) return;
+    const charRef = db.doc(`chars/${charId}`);
+    const charSnap = await tx.get(charRef);
+    if (!charSnap.exists) return;
+    
+    const charData = charSnap.data();
+    const ownerUid = charData.owner_uid;
+    if (!ownerUid) return;
+
+    const currentExp = Number(charData.exp || 0);
+    const newTotalExp = currentExp + expToAdd;
+    const coinsToMint = Math.floor(newTotalExp / 100);
+    const finalExp = newTotalExp % 100;
+
+    tx.update(charRef, {
+      exp_total: FieldValue.increment(expToAdd),
+      exp: finalExp,
+      updatedAt: Timestamp.now()
+    });
+
+    if (coinsToMint > 0) {
+      const userRef = db.doc(`users/${ownerUid}`);
+      tx.set(userRef, { coins: FieldValue.increment(coinsToMint) }, { merge: true });
+    }
+  }
+
+
   function plotIdFrom({ mapId, x, y, microX, microY }) {
     return `${mapId}_${x}_${y}_${microX}_${microY}`;
   }
 
-  // [ADD] 등급별 심기 시간(ms)
   const RARITY_PLANT_MS = {
     normal:   5 * 60 * 1000,
     rare:    10 * 60 * 1000,
@@ -46,13 +74,11 @@ module.exports = (admin) => {
     aether: 160 * 60 * 1000,
   };
 
-  // [ADD] 캐릭터 레벨 보정 (0~30 → 30이면 10% 남김)
   function levelSpeedMult(gardeningLv = 0) {
     const lv = Math.max(0, Math.min(30, Number(gardeningLv || 0)));
-    return 1 - 0.9 * (lv / 30); // 1.0 → 0.1
+    return 1 - 0.9 * (lv / 30);
   }
 
-  // [ADD] 장치(최대 2개) 보정: 각 슬롯 speedMult 곱셈 (기본 1.0)
   function deviceSpeedMult(deviceSlots = []) {
     if (!Array.isArray(deviceSlots)) return 1.0;
     return deviceSlots
@@ -61,9 +87,6 @@ module.exports = (admin) => {
       .reduce((a, b) => a * (isFinite(b) && b > 0 ? b : 1.0), 1.0);
   }
   
-  
-  // 땅 소유권 확인
-  // 땅 소유권 확인
   async function _isOwner(uid, { mapId, x, y, microX, microY }) {
     if (!uid) return false;
     const microDoc = `${microY}_${microX}`;
@@ -73,7 +96,6 @@ module.exports = (admin) => {
     return snap.exists && snap.data()?.owner_uid === uid;
   }
 
-  // 여러 씨앗 데이터 파일을 읽어와 하나로 합치는 로더 (안정성 강화)
   let _seedsDataCache = null;
   const loadSeedsData = async () => {
       if (_seedsDataCache) return _seedsDataCache;
@@ -81,7 +103,6 @@ module.exports = (admin) => {
           const seedsDir = path.join(__dirname, './assets/seeds');
           const files = await fs.readdir(seedsDir);
           const allSeeds = [];
-          logger.info(`Loading seeds from: ${seedsDir}`);
           for (const file of files) {
               if (file.endsWith('.json')) {
                   try {
@@ -90,14 +111,12 @@ module.exports = (admin) => {
                       if (Array.isArray(seedsFromFile)) {
                           allSeeds.push(...seedsFromFile);
                       }
-                      logger.info(`Successfully loaded ${seedsFromFile.length} seeds from ${file}.`);
                   } catch (e) {
                       logger.error(`Failed to parse seed file: ${file}`, e);
                   }
               }
           }
           _seedsDataCache = allSeeds;
-          logger.info(`Total seeds loaded: ${_seedsDataCache.length}`);
           return _seedsDataCache;
       } catch (error) {
           logger.error("Failed to load seeds data from directory", error);
@@ -207,15 +226,6 @@ module.exports = (admin) => {
 
     const allSeeds = await loadSeedsData();
     
-    // [추가] 커스텀 씨앗 디버깅을 위한 로그
-    if (allSeeds.length === 0) {
-        logger.error("[plantSeedOnTile] No seeds loaded from any file.");
-    } else {
-        const allSeedIds = allSeeds.map(s => s.id);
-        logger.info(`[plantSeedOnTile] Available seed IDs (${allSeedIds.length}): ${JSON.stringify(allSeedIds)}`);
-    }
-    logger.info(`[plantSeedOnTile] Client requested to plant seedId: "${seedId}"`);
-
     let seed = allSeeds.find(s => s.id === seedId);
     if (!seed) {
       logger.warn(`[plantSeedOnTile] Seed not found in seeds data; will try fallback from inventory seedInfo: "${seedId}"`);
@@ -233,7 +243,6 @@ module.exports = (admin) => {
       const items = Array.isArray(u.items_all) ? u.items_all : [];
 
       const seedItem = items.find(it => it.id === seedItemId);
-      // [추가] 커스텀 씨앗 fallback: 서버 메타에 없으면 seedItem.seedInfo 사용
       if (!seed) {
         const si = seedItem?.seedInfo;
         if (si && (String(si.id) === String(seedId) || String(seedId).includes(String(si.id)))) {
@@ -248,13 +257,12 @@ module.exports = (admin) => {
                   max: Math.max(1, Number(h.max ?? 1)),
                   probability: Math.min(1, Math.max(0, Number(h.probability ?? 1)))
                 }))
-              // 기본 “하나 심으면 하나 남” — 커스텀에 harvest 없으면 1개 고정
               : [{ itemId: String(si.defaultHarvestItemId || seedId), min: 1, max: 1, probability: 1 }],
             season_bonus: si.season_bonus || {}
           };
         }
       }
-if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정의가 없습니다: ${seedId}`);
+      if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정의가 없습니다: ${seedId}`);
 
       if (!seedItem) throw new HttpsError('failed-precondition', '인벤토리에 해당 씨앗이 없습니다.');
       const uses = Number(seedItem.uses ?? 1);
@@ -264,38 +272,39 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
       const cur = plotSnap.exists ? (plotSnap.data()||{}) : {};
       const tiles = cur.tiles || {};
       const now = Date.now();
-      const growMin = Math.max(1, Number(seed.growthTimeMinutes || 5));
-      const readyAt = now + growMin*60*1000;
       const rarity = String(seed.rarity || 'normal').toLowerCase();
-
-      // 캐릭터 원예레벨 읽기 (레벨 보정용)
+      
       let gardeningLv = 0;
-      try {
-        const cSnap = await tx.get(db.doc(`chars/${charId}`));
-        gardeningLv = cSnap.exists ? Number(cSnap.data()?.skills?.gardening || 0) : 0;
-      } catch (_) {}
+      if (charId) {
+          try {
+              const cSnap = await tx.get(db.doc(`chars/${charId}`));
+              gardeningLv = cSnap.exists ? Number(cSnap.data()?.skills?.gardening || 0) : 0;
+          } catch (_) {}
+      }
 
-      // 플롯 장치 보정(최대 2개 슬롯 곱)
       const slotMult = deviceSpeedMult((cur.device_slots || []));
-
-      // 등급별 기본 심기시간 → 레벨보정 × 장치보정
       const plantBaseMs = RARITY_PLANT_MS[rarity] || 5*60*1000;
       const plantMs = Math.floor(plantBaseMs * levelSpeedMult(gardeningLv) * slotMult);
+      const growMs = Math.max(1, Number(seed.growthTimeMinutes || 5)) * 60 * 1000;
 
-
+      let cumulativePlantingTime = 0;
       for (const i of tileIndices) {
         const key = String(i);
+        const plantingStartsAt = now + cumulativePlantingTime;
+        const plantingEndsAt = plantingStartsAt + plantMs;
+        const readyAt = plantingEndsAt + growMs;
+
         tiles[key] = {
           seedId: String(seed.id),
           rarity,
           plantedByChar: charId || null,
-          plantedAt: now,                 // 성장 시작
-          plantingEndsAt: now + plantMs,  // 심기 작업 종료시각
-          readyAt,                        // 수확 가능 시각
-          status: 'planting',             // planting → growing → ready (클라는 시간 비교로 표기)
+          plantedAt: plantingStartsAt,
+          plantingEndsAt: plantingEndsAt,
+          readyAt: readyAt,
+          status: 'planting',
         };
+        cumulativePlantingTime += plantMs;
       }
-
 
       if (uses === n) {
         const remain = items.filter(it => it.id !== seedItemId);
@@ -340,17 +349,14 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
 
         let nextSkills = null;
 
-        // 1) skills가 없거나, null/undefined
         if (!cData.skills) {
           nextSkills = { ...DEFAULT_SKILLS };
         }
-        // 2) skills가 배열인 레거시 → 객체로 매핑
         else if (Array.isArray(cData.skills)) {
           const arr = cData.skills;
           nextSkills = {};
           KEY_ORDER.forEach((k, i) => { nextSkills[k] = Number(arr[i] ?? 0) || 0; });
         }
-        // 3) skills가 객체인데 몇몇 키가 없음 → 부족한 키만 채움
         else if (typeof cData.skills === 'object') {
           nextSkills = { ...cData.skills };
           for (const k of Object.keys(DEFAULT_SKILLS)) {
@@ -362,7 +368,6 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
           tx.set(charRef, { skills: nextSkills, updatedAt: now }, { merge: true });
         }
 
-        // 배정 자체
         tx.set(plotRef, { assigned_char_id: charId, updatedAt: now }, { merge: true });
       });
     } else {
@@ -394,6 +399,8 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
 
     let rewards = {};
     let newItemsForUser = [];
+    let totalExpGain = 0;
+    let charToAwardExp = null;
 
     await db.runTransaction(async (tx) => {
       const plotSnap = await tx.get(plotRef);
@@ -403,12 +410,14 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
       const now = Date.now();
       
       const currentRewards = {};
-
+      
       for (const i of tileIndices) {
         const key = String(i);
         const t = tiles[key];
         if (!t) continue; 
         if ((t.readyAt || 0) > now) continue;
+
+        charToAwardExp = t.plantedByChar; // 마지막으로 수확한 타일의 캐릭터에게 경험치 부여
 
         const seed = allSeeds.find(s => s.id === t.seedId);
         if (seed && Array.isArray(seed.harvest)) {
@@ -419,7 +428,6 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
               const max = Math.max(min, Number(rule.max||min));
               let qty = Math.floor(Math.random()*(max-min+1)) + min;
 
-              // [추가] 캐릭터 원예 레벨 보너스: 10레벨마다 +1
               let levelBonus = 0;
               try {
                 if (t.plantedByChar) {
@@ -427,16 +435,16 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
                   const g = charSnap.exists ? Number(charSnap.data()?.skills?.gardening || 0) : 0;
                   levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
                 }
-              } catch (_) { /* 없으면 보너스 0 */ }
+              } catch (_) { }
 
               qty += levelBonus;
-
 
               const seasonBonus = seed.season_bonus?.[currentSeason];
               if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
               if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
               
               currentRewards[rule.itemId] = (currentRewards[rule.itemId] || 0) + qty;
+              totalExpGain += 10; // 타일당 10 EXP
             }
           }
         }
@@ -465,7 +473,7 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
           const newItem = {
             id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
             name: meta.name || itemId,
-            description: meta.description || '', // [수정] 설명 추가
+            description: meta.description || '',
             rarity: (meta.rarity || 'normal').toLowerCase(),
             type: meta.type || 'material',
             isConsumable: false,
@@ -479,17 +487,16 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
         tx.update(userRef, { items_all: itemsAll });
       }
 
+      // 캐릭터에게 경험치 지급
+      if(charToAwardExp && totalExpGain > 0) {
+        await _awardCharExp(tx, charToAwardExp, totalExpGain, `farm_harvest:${plotId}`);
+      }
+
       tx.set(plotRef, { tiles, updatedAt: Date.now() }, { merge: true });
     });
-
-    if(Object.keys(rewards).length > 0) {
-        await _awardFarmExp(uid, 12);
-    }
     
     return { ok: true, rewards: newItemsForUser };
   });
-
-
 
 const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid || req.auth?.token?.uid;
@@ -514,7 +521,6 @@ const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
     if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
 
     const now = Date.now();
-    // plantingEndsAt이 아직 안 지났을 때만 취소 가능 (씨앗 미반환)
     if (!t.plantingEndsAt || now >= t.plantingEndsAt) {
       throw new HttpsError('failed-precondition', '이미 심기 완료 상태로 취소할 수 없습니다.');
     }
@@ -525,10 +531,6 @@ const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
 
   return { ok: true };
 });
-
-
-
-  
 
   return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting };
 };
