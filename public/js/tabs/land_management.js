@@ -1,6 +1,6 @@
 // /public/js/tabs/land_management.js (기존 파일 전체 교체)
 import { auth, db, fx } from '../api/firebase.js';
-import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles } from '../api/farm.js';
+import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting } from '../api/farm.js';
 import { getUserInventory } from '../api/user.js';
 import { getUserCharacters } from '../api/char.js';
 import { showToast } from '../ui/toast.js';
@@ -153,12 +153,40 @@ export async function showLandManagement() {
             tile.dataset.index = i;
             const tileData = state.plotData.tiles?.[i];
             if (tileData) {
-                if ((tileData.readyAt || 0) <= now) {
-                    tile.classList.add('ready');
-                } else {
-                    tile.classList.add('planted');
-                }
+              const rAt  = Number(tileData.readyAt || 0);
+              const pEnd = Number(tileData.plantingEndsAt || 0);
+              const pAt  = Number(tileData.plantedAt || 0);
+
+              if (rAt <= now) {
+                tile.classList.add('ready');
+             } else if (pEnd > now) {
+                tile.classList.add('planted'); // 심는 중
+              } else {
+                tile.classList.add('planted'); // 자라는 중
+              }
+
+              // 진행바 DOM
+              const bar = document.createElement('div');
+              bar.className = 'tile-progress';
+              const inner = document.createElement('div');
+              inner.className = 'inner';
+              bar.appendChild(inner);
+              tile.appendChild(bar);
+
+              // 진행률 계산 (1단계: 심는 중 / 2단계: 자라는 중)
+              let pct = 0;
+              if (pEnd > now) {
+                const denom = Math.max(1, pEnd - pAt);
+                pct = Math.floor(((now - pAt) * 100) / denom);
+              } else if (rAt > now) {
+                const denom = Math.max(1, rAt - pAt);
+                pct = Math.floor(((now - pAt) * 100) / denom);
+              } else {
+                pct = 100;
+              }
+              inner.style.width = Math.max(0, Math.min(100, pct)) + '%';
             }
+
             if (state.selectedTiles.has(i)) {
                 tile.classList.add('selected');
             }
@@ -229,22 +257,43 @@ export async function showLandManagement() {
     };
 
 
-    const handleTileClick = async (index) => {
-        const tileData = state.plotData.tiles?.[index];
-        if (!tileData) {
-            showToast(`(${index % COLS}, ${Math.floor(index/COLS)}) 비어있는 타일입니다.`);
-            return;
-        }
+    const tileData = state.plotData.tiles?.[index];
+if (!tileData) {
+  showToast(`(${index % COLS}, ${Math.floor(index/COLS)}) 비어있는 타일입니다.`);
+  return;
+}
 
-        if (tileData.readyAt <= Date.now()) {
-            if (await confirmModal({title: "수확 확인", lines: ["이 타일의 작물을 수확하시겠습니까?"]})) {
-                executeHarvest([index]);
-            }
-        } else {
-            const remaining = tileData.readyAt - Date.now();
-            showToast(`남은 시간: ${formatRemainingTime(remaining)}`);
-        }
-    };
+const now = Date.now();
+const rAt  = Number(tileData.readyAt || 0);
+const pEnd = Number(tileData.plantingEndsAt || 0);
+
+if (rAt <= now) {
+  if (await confirmModal({title: "수확 확인", lines: ["이 타일의 작물을 수확하시겠습니까?"]})) {
+    executeHarvest([index]);
+  }
+  return;
+}
+
+if (pEnd > now) {
+  const ok = await confirmModal({
+    title: "작업 중",
+    lines: ["이 타일은 현재 심는 중입니다.", "작업을 취소하시겠습니까? (씨앗은 돌아오지 않습니다)"]
+  });
+  if (ok) {
+    try {
+      await cancelPlanting({ ...plotInfo, tileIndex: index });
+      showToast("작업을 취소했습니다.");
+    } catch (e) {
+      showToast(e.message || "취소 실패");
+    }
+  }
+  return;
+}
+
+// 자라는 중: 남은 시간 안내
+const remain = rAt - now;
+showToast(`남은 시간: ${formatRemainingTime(remain)}`);
+
 
     const toggleTileSelection = (index) => {
         if (state.selectedTiles.has(index)) {
@@ -322,86 +371,43 @@ export async function showLandManagement() {
     };
 
     const executePlanting = async () => {
-        if (state.selectedTiles.size === 0) {
-            showToast('심을 타일을 1개 이상 선택해주세요.');
-            return;
-        }
-        if (state.selectedTiles.size > state.selectedSeed.uses) {
-            showToast(`씨앗이 부족합니다. (필요: ${state.selectedTiles.size}, 보유: ${state.selectedSeed.uses})`);
-            return;
-        }
-        
-        state.mode = 'working'; // 작업 시작, UI 비활성화
-        
-        const managementPanel = root.querySelector('#management-panel');
-        const plantBtn = managementPanel.querySelector('#btn-confirm-plant');
-        const cancelBtn = managementPanel.querySelector('#btn-cancel-plant');
-        if (plantBtn) plantBtn.disabled = true;
-        if (cancelBtn) cancelBtn.disabled = true;
+  if (state.selectedTiles.size === 0) {
+    showToast('심을 타일을 1개 이상 선택해주세요.');
+    return;
+  }
+  if (state.selectedTiles.size > state.selectedSeed.uses) {
+    showToast(`씨앗이 부족합니다. (필요: ${state.selectedTiles.size}, 보유: ${state.selectedSeed.uses})`);
+    return;
+  }
 
-        const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
-        const rarity = state.selectedSeed.rarity || 'normal';
-        const plantTime = RARITY_PLANT_TIMES[rarity] || 500;
-        
-        // 실제 파종 루프 시작
-        for (let i = 0; i < sortedTiles.length; i++) {
-            const index = sortedTiles[i];
-            const tileNode = gridContainer.children[index];
-            if (tileNode) {
-                tileNode.classList.add('planted'); // 즉시 UI에 반영
-                tileNode.style.transform = 'scale(0.8)';
-                setTimeout(() => tileNode.style.transform = 'scale(1)', 50);
-            }
-            if (plantBtn) {
-                plantBtn.textContent = `심는 중... (${i + 1}/${sortedTiles.length})`;
-            }
-            // [레벨 보정] 0~30레벨, 30레벨이면 10%만 남게 (90% 감소)
-            const lvl = Math.max(0, Math.min(30, Number(state.assignedChar?.skills?.gardening || 0)));
-            const speedMult = 1 - 0.9 * (lvl / 30);
-            const adjTime = Math.floor(plantTime * speedMult);
-            
-            // [작은 진행바 표시]
-            const tileEl = gridContainer.children[index];
-            let bar = tileEl?.querySelector('.tile-progress');
-            if (!bar && tileEl) {
-              bar = document.createElement('div');
-              bar.className = 'tile-progress';
-              bar.innerHTML = '<div class="inner"></div>';
-              tileEl.appendChild(bar);
-            }
-            const inner = bar?.querySelector('.inner');
-            
-            const start = Date.now(), end = start + adjTime;
-            await new Promise((resolve) => {
-              const iv = setInterval(() => {
-                const now = Date.now();
-                const pct = Math.max(0, Math.min(100, Math.floor(((now - start) * 100) / (end - start || 1))));
-                if (inner) inner.style.width = pct + '%';
-                if (now >= end) { clearInterval(iv); if (bar) bar.remove(); resolve(); }
-              }, 200);
-            });
-        }
+  state.mode = 'working';
+  const managementPanel = root.querySelector('#management-panel');
+  const plantBtn = managementPanel.querySelector('#btn-confirm-plant');
+  const cancelBtn = managementPanel.querySelector('#btn-cancel-plant');
+  if (plantBtn) plantBtn.disabled = true;
+  if (cancelBtn) cancelBtn.disabled = true;
 
-        // 모든 타일에 대한 시간 소요 후, 백엔드에 한번에 전송
-        try {
-            await plantSeedOnTile({
-                ...plotInfo,
-                charId: state.assignedChar.id,
-                seedItemId: state.selectedSeed.id,
-                seedId: state.selectedSeed.seedInfo.id,
-                tileIndices: sortedTiles
-            });
-            showToast(`${sortedTiles.length}개의 씨앗을 성공적으로 심었습니다.`);
-        } catch (e) {
-            showToast(`심기 실패: ${e.message}`);
-        } finally {
-            // 상태 초기화 및 데이터 리로드
-            state.mode = 'view';
-            state.selectedSeed = null;
-            state.selectedTiles.clear();
-            loadPlotData();
-        }
-    };
+  const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
+
+  try {
+    await plantSeedOnTile({
+      ...plotInfo,
+      charId: state.assignedChar.id,
+      seedItemId: state.selectedSeed.id,
+      seedId: state.selectedSeed.seedInfo.id,
+      tileIndices: sortedTiles
+    });
+    showToast(`${sortedTiles.length}개 타일에 심기 예약 완료!`);
+  } catch (e) {
+    showToast(`심기 실패: ${e.message}`);
+  } finally {
+    state.mode = 'view';
+    state.selectedSeed = null;
+    state.selectedTiles.clear();
+    render(); // 실시간 구독이 이후 상태를 가져옴
+  }
+};
+
     
     const handleHarvestAll = async () => {
         const now = Date.now();
