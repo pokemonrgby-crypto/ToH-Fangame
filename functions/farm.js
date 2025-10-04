@@ -326,6 +326,19 @@ if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정�
               const max = Math.max(min, Number(rule.max||min));
               let qty = Math.floor(Math.random()*(max-min+1)) + min;
 
+              // [추가] 캐릭터 원예 레벨 보너스: 10레벨마다 +1
+              let levelBonus = 0;
+              try {
+                if (t.plantedByChar) {
+                  const charSnap = await tx.get(db.doc(`chars/${String(t.plantedByChar).replace(/^chars\//,'')}`));
+                  const g = charSnap.exists ? Number(charSnap.data()?.skills?.gardening || 0) : 0;
+                  levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
+                }
+              } catch (_) { /* 없으면 보너스 0 */ }
+
+              qty += levelBonus;
+
+
               const seasonBonus = seed.season_bonus?.[currentSeason];
               if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
               if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
