@@ -196,6 +196,45 @@ export async function showLandManagement() {
         attachButtonEvents();
     };
 
+    const handleTileClick = async (index) => {
+        const tileData = state.plotData.tiles?.[index];
+        if (!tileData) {
+          showToast(`(${index % COLS}, ${Math.floor(index/COLS)}) 비어있는 타일입니다.`);
+          return;
+        }
+
+        const now = Date.now();
+        const rAt  = Number(tileData.readyAt || 0);
+        const pEnd = Number(tileData.plantingEndsAt || 0);
+
+        if (rAt <= now) {
+          if (await confirmModal({title: "수확 확인", lines: ["이 타일의 작물을 수확하시겠습니까?"]})) {
+            executeHarvest([index]);
+          }
+          return;
+        }
+
+        if (pEnd > now) {
+          const ok = await confirmModal({
+            title: "작업 중",
+            lines: ["이 타일은 현재 심는 중입니다.", "작업을 취소하시겠습니까? (씨앗은 돌아오지 않습니다)"]
+          });
+          if (ok) {
+            try {
+              await cancelPlanting({ ...plotInfo, tileIndex: index });
+              showToast("작업을 취소했습니다.");
+            } catch (e) {
+              showToast(e.message || "취소 실패");
+            }
+          }
+          return;
+        }
+
+        // 자라는 중: 남은 시간 안내
+        const remain = rAt - now;
+        showToast(`남은 시간: ${formatRemainingTime(remain)}`);
+    };
+
     const attachGridEvents = () => {
       if (gridContainer.__bound) return;
       gridContainer.__bound = true;
@@ -255,45 +294,6 @@ export async function showLandManagement() {
         gridContainer.addEventListener('mouseup', endDrag);
         gridContainer.addEventListener('mouseleave', endDrag);
     };
-
-
-    const tileData = state.plotData.tiles?.[index];
-if (!tileData) {
-  showToast(`(${index % COLS}, ${Math.floor(index/COLS)}) 비어있는 타일입니다.`);
-  return;
-}
-
-const now = Date.now();
-const rAt  = Number(tileData.readyAt || 0);
-const pEnd = Number(tileData.plantingEndsAt || 0);
-
-if (rAt <= now) {
-  if (await confirmModal({title: "수확 확인", lines: ["이 타일의 작물을 수확하시겠습니까?"]})) {
-    executeHarvest([index]);
-  }
-  return;
-}
-
-if (pEnd > now) {
-  const ok = await confirmModal({
-    title: "작업 중",
-    lines: ["이 타일은 현재 심는 중입니다.", "작업을 취소하시겠습니까? (씨앗은 돌아오지 않습니다)"]
-  });
-  if (ok) {
-    try {
-      await cancelPlanting({ ...plotInfo, tileIndex: index });
-      showToast("작업을 취소했습니다.");
-    } catch (e) {
-      showToast(e.message || "취소 실패");
-    }
-  }
-  return;
-}
-
-// 자라는 중: 남은 시간 안내
-const remain = rAt - now;
-showToast(`남은 시간: ${formatRemainingTime(remain)}`);
-
 
     const toggleTileSelection = (index) => {
         if (state.selectedTiles.has(index)) {
@@ -371,42 +371,42 @@ showToast(`남은 시간: ${formatRemainingTime(remain)}`);
     };
 
     const executePlanting = async () => {
-  if (state.selectedTiles.size === 0) {
-    showToast('심을 타일을 1개 이상 선택해주세요.');
-    return;
-  }
-  if (state.selectedTiles.size > state.selectedSeed.uses) {
-    showToast(`씨앗이 부족합니다. (필요: ${state.selectedTiles.size}, 보유: ${state.selectedSeed.uses})`);
-    return;
-  }
+      if (state.selectedTiles.size === 0) {
+        showToast('심을 타일을 1개 이상 선택해주세요.');
+        return;
+      }
+      if (state.selectedTiles.size > state.selectedSeed.uses) {
+        showToast(`씨앗이 부족합니다. (필요: ${state.selectedTiles.size}, 보유: ${state.selectedSeed.uses})`);
+        return;
+      }
 
-  state.mode = 'working';
-  const managementPanel = root.querySelector('#management-panel');
-  const plantBtn = managementPanel.querySelector('#btn-confirm-plant');
-  const cancelBtn = managementPanel.querySelector('#btn-cancel-plant');
-  if (plantBtn) plantBtn.disabled = true;
-  if (cancelBtn) cancelBtn.disabled = true;
+      state.mode = 'working';
+      const managementPanel = root.querySelector('#management-panel');
+      const plantBtn = managementPanel.querySelector('#btn-confirm-plant');
+      const cancelBtn = managementPanel.querySelector('#btn-cancel-plant');
+      if (plantBtn) plantBtn.disabled = true;
+      if (cancelBtn) cancelBtn.disabled = true;
 
-  const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
+      const sortedTiles = Array.from(state.selectedTiles).sort((a,b) => a - b);
 
-  try {
-    await plantSeedOnTile({
-      ...plotInfo,
-      charId: state.assignedChar.id,
-      seedItemId: state.selectedSeed.id,
-      seedId: state.selectedSeed.seedInfo.id,
-      tileIndices: sortedTiles
-    });
-    showToast(`${sortedTiles.length}개 타일에 심기 예약 완료!`);
-  } catch (e) {
-    showToast(`심기 실패: ${e.message}`);
-  } finally {
-    state.mode = 'view';
-    state.selectedSeed = null;
-    state.selectedTiles.clear();
-    render(); // 실시간 구독이 이후 상태를 가져옴
-  }
-};
+      try {
+        await plantSeedOnTile({
+          ...plotInfo,
+          charId: state.assignedChar.id,
+          seedItemId: state.selectedSeed.id,
+          seedId: state.selectedSeed.seedInfo.id,
+          tileIndices: sortedTiles
+        });
+        showToast(`${sortedTiles.length}개 타일에 심기 예약 완료!`);
+      } catch (e) {
+        showToast(`심기 실패: ${e.message}`);
+      } finally {
+        state.mode = 'view';
+        state.selectedSeed = null;
+        state.selectedTiles.clear();
+        render(); // 실시간 구독이 이후 상태를 가져옴
+      }
+    };
 
     
     const handleHarvestAll = async () => {
