@@ -529,7 +529,7 @@ export async function showLandManagement() {
                 return `
                     <div class="kv-card" data-char-id="${char.id}" style="cursor:pointer;">
                         <div class="row" style="gap:10px">
-                            <img src="${char.thumb_url || char.image_url || ''}" onerror="this.src='https://via.placeholder.com/60'" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
+                            <img src="${char.thumb_url || char.image_url || ''}" onerror="this.style.display='none'" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
                             <div>
                                 <div style="font-weight:bold;">${esc(char.name)}</div>
                                 <div class="text-dim" style="font-size:11px; margin-top:4px; line-height: 1.4;">
