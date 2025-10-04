@@ -1,4 +1,4 @@
-// /functions/character.js (신규 파일)
+// /functions/character.js (수정)
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 
@@ -20,11 +20,17 @@ module.exports = (admin) => {
 
       const characters = charsSnap.docs.map(doc => {
         const data = doc.data();
-        // skills 필드가 없으면 기본값으로 초기화
+        // [수정] skills 필드가 없으면 새로운 능력치를 포함한 기본값으로 초기화
         const skills = data.skills || {
           gardening: 0,
           art: 0,
-          construction: 0
+          construction: 0,
+          speech: 0,
+          mining: 0,
+          cooking: 0,
+          processing: 0,
+          crafting: 0,
+          research: 0
         };
 
         return {
