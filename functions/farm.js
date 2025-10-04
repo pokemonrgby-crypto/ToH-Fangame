@@ -8,18 +8,7 @@ module.exports = (admin) => {
   const db = admin.firestore();
   const { FieldValue, Timestamp } = admin.firestore; // FieldValue와 Timestamp를 함께 선언
 
-  async function _isAdmin(uid) {
-    if (!uid) return false;
-    try {
-      const snap = await db.doc('configs/admins').get();
-      const d = snap.exists ? snap.data() : {};
-      const allow = Array.isArray(d.allow) ? d.allow : [];
-      if (allow.includes(uid)) return true;
-      const allowEmails = Array.isArray(d.allowEmails) ? d.allowEmails : [];
-      const user = await admin.auth().getUser(uid);
-      return !!(user?.email && allowEmails.includes(user.email));
-    } catch (_) { return false; }
-  }
+  // [제거] _isAdmin 함수 (더 이상 필요 없음)
 
   // 땅 소유권 확인
   async function _isOwner(uid, { mapId, x, y, microX, microY }) {
@@ -81,10 +70,10 @@ module.exports = (admin) => {
       }
   };
 
-  // [수정] 관리자용 씨앗 구매 함수 (중첩 로직 및 새 데이터 구조 적용)
   const buySeed = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
-    if (!await _isAdmin(uid)) throw new HttpsError('permission-denied', '관리자만 씨앗을 구매할 수 있습니다.');
+    // [제거] 관리자 확인 로직
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
     const { seedId, quantity } = req.data;
     const nQty = Math.floor(Number(quantity) || 0);
@@ -109,14 +98,11 @@ module.exports = (admin) => {
 
         let items = userData.items_all || [];
         
-        // 인벤토리에서 같은 종류의 씨앗(seedId)을 찾습니다.
         const existingSeedIndex = items.findIndex(item => (item.type === 'seed' && item.seedInfo?.id === seedId) || item.id === seedId);
 
         if (existingSeedIndex !== -1) {
-            // 이미 아이템이 있다면 수량(uses)만 증가시킵니다.
             items[existingSeedIndex].uses = (items[existingSeedIndex].uses || 1) + nQty;
         } else {
-            // 없다면 새로운 아이템 객체를 생성하여 추가합니다.
             const newSeedItem = {
                 id: seedInfo.isPromptUse ? seedId : `item_seed_${seedId}_${Date.now()}`,
                 name: seedInfo.name,
@@ -164,7 +150,6 @@ module.exports = (admin) => {
     const docRef = db.doc(`farm_plots/${plotId}`);
     const snap = await docRef.get();
 
-    // 소유자 확인
     let owner_uid = null;
     try {
       const own = await _isOwner(uid || '', { mapId, x, y, microX, microY });
@@ -176,7 +161,7 @@ module.exports = (admin) => {
       ok: true,
       owner_uid,
       assigned_char_id: d.assigned_char_id || null,
-      tiles: d.tiles || {}, // 희소맵: { "i": { seedId, rarity, plantedAt, readyAt, stage } }
+      tiles: d.tiles || {},
       updatedAt: d.updatedAt || 0
     };
   });
@@ -189,12 +174,9 @@ module.exports = (admin) => {
       throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
     }
 
-    // 권한: 소유자 또는 관리자
     const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
-    const isAdmin = await _isAdmin(uid);
-    if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에 심을 권한이 없습니다.');
+    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에 심을 권한이 없습니다.');
 
-    // 씨앗 정의 로드 및 검증
     const allSeeds = await loadSeedsData();
     const seed = allSeeds.find(s => s.id === seedId);
     if (!seed) throw new HttpsError('not-found', '존재하지 않는 씨앗입니다.');
@@ -215,22 +197,19 @@ module.exports = (admin) => {
       const uses = Number(seedItem.uses ?? 1);
       if (uses < n) throw new HttpsError('failed-precondition', `씨앗 사용 가능 횟수가 부족합니다. (필요: ${n}, 보유: ${uses})`);
 
-      // 플롯 문서 가져오기
       const plotSnap = await tx.get(plotRef);
       const cur = plotSnap.exists ? (plotSnap.data()||{}) : {};
       const tiles = cur.tiles || {};
       const now = Date.now();
-      const growMin = Math.max(1, Number(seed.growthTimeMinutes || 5)); // 씨앗 JSON의 성장시간
+      const growMin = Math.max(1, Number(seed.growthTimeMinutes || 5));
       const readyAt = now + growMin*60*1000;
       const rarity = String(seed.rarity || 'normal').toLowerCase();
 
-      // 각 타일 심기
       for (const i of tileIndices) {
         const key = String(i);
         tiles[key] = { seedId, rarity, plantedAt: now, readyAt, stage: 'growing', plantedByChar: charId || null };
       }
 
-      // 씨앗 uses 차감(0이면 제거)
       if (uses === n) {
         const remain = items.filter(it => it.id !== seedItemId);
         tx.update(userRef, { items_all: remain });
@@ -242,8 +221,7 @@ module.exports = (admin) => {
       tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
     });
 
-    // 경험치(간단): 심기 보상
-    await _awardFarmExp(uid, 5); // 1차 규칙
+    await _awardFarmExp(uid, 5);
 
     return { ok: true, planted: tileIndices.length };
   });
@@ -255,8 +233,7 @@ module.exports = (admin) => {
     if ([mapId,x,y,microX,microY].some(v=>v==null)) throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
 
     const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
-    const isAdmin = await _isAdmin(uid);
-    if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에 배정할 권한이 없습니다.');
+    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에 배정할 권한이 없습니다.');
 
     const plotId = plotIdFrom({ mapId, x, y, microX, microY });
     const plotRef = db.doc(`farm_plots/${plotId}`);
@@ -273,16 +250,19 @@ module.exports = (admin) => {
       throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
     }
     const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
-    const isAdmin = await _isAdmin(uid);
-    if (!isOwner && !isAdmin) throw new HttpsError('permission-denied', '이 토지에서 수확할 권한이 없습니다.');
+    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에서 수확할 권한이 없습니다.');
 
     const allSeeds = await loadSeedsData();
+    
+    // [추가] 현재 계절 정보 가져오기
+    const seasonSnap = await db.doc('configs/season').get();
+    const currentSeason = seasonSnap.exists ? seasonSnap.data().current : 'spring';
 
     const plotId = plotIdFrom({ mapId, x, y, microX, microY });
     const plotRef = db.doc(`farm_plots/${plotId}`);
     const userRef = db.doc(`users/${uid}`);
 
-    const rewards = {}; // { itemId: count }
+    const rewards = {}; 
 
     await db.runTransaction(async (tx) => {
       const plotSnap = await tx.get(plotRef);
@@ -291,14 +271,12 @@ module.exports = (admin) => {
       const tiles = d.tiles || {};
       const now = Date.now();
 
-      // 타일 순회
       for (const i of tileIndices) {
         const key = String(i);
         const t = tiles[key];
-        if (!t) continue; // 빈 타일
-        if ((t.readyAt || 0) > now) continue; // 아직 성장 중
+        if (!t) continue; 
+        if ((t.readyAt || 0) > now) continue;
 
-        // 수확
         const seed = allSeeds.find(s => s.id === t.seedId);
         if (seed && Array.isArray(seed.harvest)) {
           for (const rule of seed.harvest) {
@@ -306,22 +284,26 @@ module.exports = (admin) => {
             if (p >= 1 || Math.random() < p) {
               const min = Math.max(1, Number(rule.min||1));
               const max = Math.max(min, Number(rule.max||min));
-              const qty = Math.floor(Math.random()*(max-min+1)) + min;
+              let qty = Math.floor(Math.random()*(max-min+1)) + min;
+
+              // [추가] 계절 보너스 적용
+              const seasonBonus = seed.season_bonus?.[currentSeason];
+              if (seasonBonus === '수확량 소폭 증가') qty = Math.ceil(qty * 1.2);
+              if (seasonBonus === '수확량 대폭 증가') qty = Math.ceil(qty * 1.5);
+              
               rewards[rule.itemId] = (rewards[rule.itemId] || 0) + qty;
             }
           }
         }
-        delete tiles[key]; // 수확 후 비우기
+        delete tiles[key];
       }
 
-      // 인벤 반영
       if (Object.keys(rewards).length > 0) {
         const userSnap = await tx.get(userRef);
         if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보가 없습니다.');
         const u = userSnap.data()||{};
         const itemsAll = Array.isArray(u.items_all)? u.items_all : [];
 
-        // items.json에서 메타 로드
         const itemsMeta = await (async ()=>{
           if (!global.__ITEMS_META) {
             const p = path.join(__dirname, './assets/items.json');
@@ -350,7 +332,6 @@ module.exports = (admin) => {
       tx.set(plotRef, { tiles, updatedAt: Date.now() }, { merge: true });
     });
 
-    // 경험치(간단): 수확 보상
     await _awardFarmExp(uid, 12);
 
     return { ok: true, rewards };
