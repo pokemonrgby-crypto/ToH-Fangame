@@ -17,6 +17,12 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // 이미 있다면 재�
 const exploreV2 = require('./explore_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
+exports.buySeed            = farmFns.buySeed;
+exports.getFarmPlotDetail  = farmFns.getFarmPlotDetail;
+exports.plantSeedOnTile    = farmFns.plantSeedOnTile;
+exports.assignCharacterToFarm = farmFns.assignCharacterToFarm;
+exports.harvestTiles       = farmFns.harvestTiles; // (새로 추가할 함수)
+
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
