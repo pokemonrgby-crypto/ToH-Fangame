@@ -32,25 +32,25 @@ function renderRichLog(logText = '', party = []) {
 
     // 1. 대화 블록을 고유한 플레이스홀더로 먼저 분리합니다.
     const dialogues = [];
-    // [수정] 정규식을 「...」 형식에 맞게 변경합니다.
     body = body.replace(/\[대화:([^\]]+)\]「([^」]*)」/g, (match, name, line) => {
         dialogues.push({ name, line });
         return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
     });
 
-    // 2. HTML 이스케이프를 먼저 적용합니다.
+    // 2. 나머지 텍스트에 대해 HTML 이스케이프를 먼저 적용합니다.
     let narrativeBody = esc(body)
-        // 3. 이제 안전하게 리치 텍스트 태그들을 HTML 태그로 변환합니다.
-        .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
-        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
-        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
-        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
-        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
-        .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
-        .replace(/\[HEART x (.*?)\]/g, '<span class="heart">$1 BPM</span>')
-        .replace(/\[BREATH:([^\]]+)\]/g, (m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
+        // 3. 이제 안전하게 이스케이프된 특수 태그들을 HTML 태그로 되돌립니다.
+        //    - 주의: 정규식에서 이스케이프된 문자를 찾아야 합니다. (예: &lbrack;)
+        .replace(/&lbrack;CUT&rbrack;/g, '<div class="cut-scene" aria-hidden="true"></div>')
+        .replace(/&lbrack;SLOW&rbrack;([\s\S]*?)&lbrack;RESUME&rbrack;/g, '<span class="slow-motion">$1</span>')
+        .replace(/&lbrack;SFX&rbrack;([\s\S]*?)&lbrack;\/SFX&rbrack;/g, '<span class="sfx">$1</span>')
+        .replace(/&lbrack;VFX&rbrack;([\s\S]*?)&lbrack;\/VFX&rbrack;/g, '<span class="vfx">$1</span>')
+        .replace(/&lbrack;HUD&rbrack;([\s\S]*?)&lbrack;\/HUD&rbrack;/g, '<span class="hud">$1</span>')
+        .replace(/&lbrack;T\+(.*?)&rbrack;/g, '<span class="timestamp">$1</span>')
+        .replace(/&lbrack;HEART x (.*?)&rbrack;/g, '<span class="heart">$1 BPM</span>')
+        .replace(/&lbrack;BREATH:([^\]]+)&rbrack;/g, (m, state) => `<i class="breath" data-state="${state}"></i>`)
         .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
+        .replace(/&lbrack;ITEM:(normal|rare|epic|legend|myth|aether)&rbrack;([\s\S]*?)&lbrack;\/ITEM&rbrack;/g, (m, r, n) => {
             const color = rarityColors[r.toLowerCase()] || '#fff';
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
@@ -61,6 +61,7 @@ function renderRichLog(logText = '', party = []) {
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
         const character = party[charIndex] || { name: dialogue.name.trim(), thumb_url: '' };
         
+        // 대화 내용은 여기서 별도로 이스케이프하고 서식을 적용합니다.
         const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
         const bubbleHtml = `
@@ -83,13 +84,13 @@ function renderRichLog(logText = '', party = []) {
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
               return p;
           }
-          // [수정] 일반 단락의 줄바꿈(\n)도 <br>로 변환합니다.
           return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
       })
       .join('');
           
       return { title: esc(titleLine), body: paragraphs };
 }
+
 /**
  * 스크롤 애니메이션을 설정합니다.
  */
@@ -130,10 +131,7 @@ export async function showRaidLog() {
         const { title, body } = renderRichLog(log.log, log.party);
         const totalDamage = Number(log.totalDamage || 0);
 
-        // ▼▼▼ [수정된 부분] ▼▼▼
-        // 파티의 총 기여도를 계산합니다.
         const totalContribution = (log.contributions || []).reduce((sum, c) => sum + (c.contribution || 0), 0);
-        // ▲▲▲ [수정된 부분] ▲▲▲
 
         root.innerHTML = `
             <style>
@@ -204,10 +202,7 @@ export async function showRaidLog() {
                 <div class="contribution-grid">
                     ${(log.party || []).map((p, i) => {
                         const c = (log.contributions || []).find(con => con.charId === p.id) || { contribution: 0, exp: 0 };
-                        // ▼▼▼ [수정된 부분] ▼▼▼
-                        // 그래프 비율을 totalDamage가 아닌 totalContribution 기준으로 계산합니다.
                         const percentage = totalContribution > 0 ? (c.contribution / totalContribution) * 100 : 0;
-                        // ▲▲▲ [수정된 부분] ▲▲▲
                         return `
                             <a href="#/char/${esc(p.id)}" style="text-decoration: none; color: inherit;">
                                 <div class="contrib-card" style="transition-delay: ${i * 100}ms;">
@@ -229,7 +224,6 @@ export async function showRaidLog() {
             </section>
         `;
         
-        // 렌더링 후 스크롤 애니메이션 설정
         setupScrollAnimations();
 
     } catch (e) {
