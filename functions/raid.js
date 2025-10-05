@@ -172,7 +172,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             .limit(100) // 더 많은 후보군 확보
             .get();
 
-        q1.docs.forEach(doc => candidates.set(doc.id, doc.data()));
+        q1.docs.forEach(doc => candidates.set(doc.id, { id: doc.id, ...doc.data() }));
 
         if (candidates.size < 100) {
             const q2 = await poolCol
@@ -180,12 +180,13 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 .orderBy(admin.firestore.FieldPath.documentId())
                 .limit(100)
                 .get();
-            q2.docs.forEach(doc => candidates.set(doc.id, doc.data()));
+            q2.docs.forEach(doc => candidates.set(doc.id, { id: doc.id, ...doc.data() }));
         }
 
         // 자기 자신, 자기의 다른 캐릭터, 그리고 같은 길드원은 제외
         const filteredCandidates = Array.from(candidates.values()).filter(c => {
-            const charId = c.char?.replace('chars/', '');
+            const charId = (c.char?.replace('chars/', '')) || c.id;
+            if (!charId) return false;
             if (charId === myCharId || c.owner_uid === myCharOwner) {
                 return false;
             }
@@ -207,7 +208,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             party.push(available.splice(randomIndex, 1)[0]);
         }
 
-        return { partyCharIds: party.map(p => p.char.replace('chars/', '')) };
+        return { partyCharIds: party.map(p => (p.char ? p.char.replace('chars/', '') : p.id)) };
     });
 
     // [신규] 길드원 중에서 레이드 파티 찾기
