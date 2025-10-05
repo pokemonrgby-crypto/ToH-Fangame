@@ -1,4 +1,4 @@
-// /public/js/tabs/land_management.js (기존 파일 전체 교체)
+// /public/js/tabs/land_management.js (전체 교체)
 import { auth, db, fx } from '../api/firebase.js';
 import { getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting } from '../api/farm.js';
 import { getUserInventory } from '../api/user.js';
@@ -69,13 +69,6 @@ export async function showLandManagement() {
 
     const gridContainer = root.querySelector('#farm-grid-container');
     const COLS = 32, ROWS = 32, TILE_COUNT = COLS * ROWS;
-
-    // ▼▼▼ [수정된 부분] ▼▼▼
-    // 불필요한 초기 그리드 생성 루프를 삭제했습니다.
-    // for (let i = 0; i < TILE_COUNT; i++) {
-    //     gridContainer.appendChild(document.createElement('div'));
-    // }
-    // ▲▲▲ [수정된 부분] ▲▲▲
 
     const state = {
         plotData: {},
