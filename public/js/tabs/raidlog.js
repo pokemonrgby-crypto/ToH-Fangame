@@ -18,28 +18,40 @@ function renderRichLog(logText, party) {
     // [수정] 먼저 전체를 이스케이프하지 않고, 각 태그를 처리하면서 내용만 이스케이프합니다.
     let html = logText || '';
 
-    // 1. 강조: **text** -> <strong>text</strong> (내용만 이스케이프하도록 콜백 함수 사용)
+    // 1. 강조: **text** -> <strong>text</strong>
     html = html.replace(/\*\*(.*?)\*\*/g, (match, content) => `<strong>${esc(content)}</strong>`);
     
-    // 2. 대사: <1>text</1> -> <div class="dialogue c1"><name>: text</div> (기존 로직이 이미 안전하게 처리 중)
-    html = html.replace(/<(\d)>(.*?)<\/\1>/g, (match, charIndex, text) => {
-        const char = party[parseInt(charIndex, 10) - 1];
-        if (!char) return `<div>${esc(text)}</div>`; // 혹시 모를 오류 방지
+    // 2. 대사: [대화:이름]"대사" -> <div class="dialogue"><name>: text</div>
+    // AI 프롬프트와 일치하도록 정규식을 수정하고, 이름으로 캐릭터를 찾습니다.
+    html = html.replace(/\[대화:(.*?)\]"(.*?)"/g, (match, charName, text) => {
+        const char = party.find(p => p.name === charName.trim());
+        const charIndex = party.findIndex(p => p.name === charName.trim()) + 1;
+        
+        if (!char) {
+            // 파티 목록에 없는 이름이면 이름만 표시
+            return `<div class="dialogue"><b>${esc(charName)}:</b> ${esc(text)}</div>`;
+        }
+        // 파티에 있으면 c1, c2, c3, c4 클래스로 색상 부여
         return `<div class="dialogue c${charIndex}"><b>${esc(char.name)}:</b> ${esc(text)}</div>`;
     });
 
-    // 3. 아이템: [ITEM:rarity]name[/ITEM] (기존 로직이 이미 안전하게 처리 중)
+    // 3. 아이템: [ITEM:rarity]name[/ITEM]
     html = html.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\](.*?)\[\/ITEM\]/g, (match, rarity, itemName) => {
         const color = rarityColors[rarity.toLowerCase()] || '#fff';
         return `<strong style="color: ${color}; text-shadow: 0 0 4px ${color}80;">${esc(itemName)}</strong>`;
     });
 
-    // 4. 나머지 텍스트의 HTML 특수 문자를 이스케이프하고 줄바꿈을 <br>로 변경합니다.
-    return esc(html).replace(/\n/g, '<br>');
+    // 4. 줄바꿈 처리: 최종적으로 남은 텍스트의 줄바꿈만 <br>로 변경합니다.
+    // [수정] 마지막에 전체를 esc()로 감싸던 부분을 제거했습니다.
+    return html.replace(/\n/g, '<br>');
 }
 
 
+
 export async function showRaidLog() {
+    // (이 함수 내의 다른 부분은 수정할 필요가 없습니다.)
+// (기존 내용과 동일)
+// ...
     const root = document.getElementById('view');
     const logId = parseLogId();
     if (!logId) {
