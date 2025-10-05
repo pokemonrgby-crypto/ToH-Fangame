@@ -17,24 +17,27 @@ const rarityColors = {
 function renderRichLog(logText, party) {
     let html = esc(logText || '');
 
-    html = html.replace(/&#91;CUT&#93;/g, '<div class="cut-scene"></div>');
-    html = html.replace(/&#91;SLOW&#93;(.*?)&#91;RESUME&#93;/gs, (m, c) => `<span class="slow-motion">${c}</span>`);
-    html = html.replace(/&#91;SFX&#93;(.*?)&#91;\/SFX&#93;/g, (m, c) => `<span class="sfx">${c}</span>`);
-    html = html.replace(/&#91;VFX&#93;(.*?)&#91;\/VFX&#93;/g, (m, c) => `<span class="vfx">${c}</span>`);
-    html = html.replace(/&#91;HUD&#93;(.*?)&#91;\/HUD&#93;/g, (m, c) => `<span class="hud">${c}</span>`);
-    html = html.replace(/&#91;T\+(.*?)&#93;/g, (m, c) => `<span class="timestamp">${c}</span>`);
-    html = html.replace(/&#91;HEART x (.*?)&#93;/g, (m, c) => `<span class="heart">${c} BPM</span>`);
-    html = html.replace(/&#91;BREATH:(.*?)&#93;/g, (m, c) => `<span class="breath">${c}</span>`);
+    // [수정] HTML 엔티티 코드( &#91; ) 대신 실제 괄호( \[ )를 찾도록 정규식을 수정했습니다.
+    html = html.replace(/\[CUT\]/g, '<div class="cut-scene"></div>');
+    html = html.replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/gs, (m, c) => `<span class="slow-motion">${c}</span>`);
+    html = html.replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, (m, c) => `<span class="sfx">${c}</span>`);
+    html = html.replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, (m, c) => `<span class="vfx">${c}</span>`);
+    html = html.replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, (m, c) => `<span class="hud">${c}</span>`);
+    html = html.replace(/\[T\+(.*?)\]/g, (m, c) => `<span class="timestamp">${c}</span>`);
+    html = html.replace(/\[HEART x (.*?)\]/g, (m, c) => `<span class="heart">${c} BPM</span>`);
+    html = html.replace(/\[BREATH:(.*?)\]/g, (m, c) => `<span class="breath">${c}</span>`);
     
-    // ANCHOR: [수정] 강조 처리 시, 앞뒤에 있을 수 있는 불필요한 문자(` ' ")를 함께 처리합니다.
-    html = html.replace(/(?:&#96;|'|&quot;)?&#42;&#42;(.*?)&#42;&#42;(?:&#96;|'|&quot;)?/g, '<strong>$1</strong>');
+    // [수정] **굵게** 처리를 위한 정규식에서 HTML 엔티티 코드(&#42;) 대신 실제 별표(\*)를 찾도록 수정했습니다.
+    html = html.replace(/(?:`|'|")?\*\*([\s\S]*?)\*\*(?:`|'|")?/g, '<strong>$1</strong>');
 
-    html = html.replace(/&#91;ITEM:(normal|rare|epic|legend|myth|aether)&#93;(.*?)&#91;\/ITEM&#93;/g, (m, r, n) => {
+    // [수정] ITEM 태그 정규식 수정
+    html = html.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
         const color = rarityColors[r.toLowerCase()] || '#fff';
         return `<strong class="item-highlight" style="color: ${color}; text-shadow: 0 0 5px ${color}80;">${n}</strong>`;
     });
 
-    html = html.replace(/&#91;대화:(.*?)&#93;&quot;(.*?)&quot;/g, (match, charName, text) => {
+    // [수정] 대화 태그 정규식 수정
+    html = html.replace(/\[대화:(.*?)\]\s*"(.*?)"/g, (match, charName, text) => {
         const char = party.find(p => p.name === charName.trim());
         const charIndex = party.findIndex(p => p.name === charName.trim()) + 1;
         const dialogueContent = text; 
@@ -65,7 +68,7 @@ export async function showRaidLog() {
     }
     const log = logSnap.data();
 
-    // ANCHOR: [수정] 제목에서 "배틀로그: " 접두사를 제거합니다.
+    // [수정] 제목에서 "배틀로그: " 접두사를 제거하는 로직을 강화했습니다.
     const title = (log.raidName || '').replace(/^배틀로그:\s*/, '');
 
     root.innerHTML = `
