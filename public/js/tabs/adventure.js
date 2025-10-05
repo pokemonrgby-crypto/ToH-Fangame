@@ -111,7 +111,7 @@ export async function viewWorldPick(root){
       <div class="book-card">
         <div class="bookmarks">
           <button class="bookmark active" disabled>탐험</button>
-          <button class="bookmark ghost" disabled>레이드(준비중)</button>
+          <a href="#/raid" class="bookmark ghost" style="text-decoration: none;">⚔️ 레이드</a>
           <button class="bookmark ghost" id="btnInventory">가방</button>
         </div>
         <div class="bookview p12" id="viewW">
