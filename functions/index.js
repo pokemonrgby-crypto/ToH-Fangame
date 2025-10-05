@@ -715,6 +715,7 @@ exports.getActiveRaidBoss = raidFns.getActiveRaidBoss;
 exports.getRaidRankings = raidFns.getRaidRankings;
 // exports.setupNewRaidBoss = raidFns.setupNewRaidBoss; // onSchedule이므로 직접 export하지 않음
 exports.findRandomPartyForRaid = raidFns.findRandomPartyForRaid;
+exports.findGuildPartyForRaid = raidFns.findGuildPartyForRaid;
 exports.adminSetupNewRaidBoss = raidFns.adminSetupNewRaidBoss;
 
 
