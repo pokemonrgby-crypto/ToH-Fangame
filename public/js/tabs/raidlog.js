@@ -15,33 +15,39 @@ const rarityColors = {
 };
 
 function renderRichLog(logText, party) {
-    let html = logText || '';
+    // 1. 잠재적인 HTML 코드를 모두 안전하게 이스케이프 처리합니다.
+    let html = esc(logText || '');
 
-    // 1. 강조: **text** -> <strong>text</strong>
-    // 이 처리가 먼저 실행되어야 대사 안의 강조도 반영됩니다.
-    html = html.replace(/\*\*(.*?)\*\*/g, (match, content) => `<strong>${esc(content)}</strong>`);
+    // 2. 이스케이프된 특수 토큰들을 다시 세련된 HTML 태그로 변환합니다.
+    html = html.replace(/&#91;CUT&#93;/g, '<div class="cut-scene"></div>');
+    html = html.replace(/&#91;SLOW&#93;(.*?)&#91;RESUME&#93;/gs, (m, c) => `<span class="slow-motion">${c}</span>`);
+    html = html.replace(/&#91;SFX&#93;(.*?)&#91;\/SFX&#93;/g, (m, c) => `<span class="sfx">${c}</span>`);
+    html = html.replace(/&#91;VFX&#93;(.*?)&#91;\/VFX&#93;/g, (m, c) => `<span class="vfx">${c}</span>`);
+    html = html.replace(/&#91;HUD&#93;(.*?)&#91;\/HUD&#93;/g, (m, c) => `<span class="hud">${c}</span>`);
+    html = html.replace(/&#91;T\+(.*?)&#93;/g, (m, c) => `<span class="timestamp">${c}</span>`);
+    html = html.replace(/&#91;HEART x (.*?)&#93;/g, (m, c) => `<span class="heart">${c} BPM</span>`);
+    html = html.replace(/&#91;BREATH:(.*?)&#93;/g, (m, c) => `<span class="breath">${c}</span>`);
+    
+    // 기존 서식 토큰 (강조, 아이템)
+    html = html.replace(/&#42;&#42;(.*?)&#42;&#42;/g, '<strong>$1</strong>');
+    html = html.replace(/&#91;ITEM:(normal|rare|epic|legend|myth|aether)&#93;(.*?)&#91;\/ITEM&#93;/g, (m, r, n) => {
+        const color = rarityColors[r.toLowerCase()] || '#fff';
+        return `<strong class="item-highlight" style="color: ${color}; text-shadow: 0 0 5px ${color}80;">${n}</strong>`;
+    });
 
-    // 2. 대사: [대화:이름]"대사" -> <div class="dialogue"><name>: text</div>
-    html = html.replace(/\[대화:(.*?)\]"(.*?)"/g, (match, charName, text) => {
+    // 대사 토큰
+    html = html.replace(/&#91;대화:(.*?)&#93;&quot;(.*?)&quot;/g, (match, charName, text) => {
         const char = party.find(p => p.name === charName.trim());
         const charIndex = party.findIndex(p => p.name === charName.trim()) + 1;
-        
-        // ANCHOR: [수정] 대사 내용(text)을 esc()로 감싸지 않아 내부의 <strong> 태그가 유지되도록 합니다.
         const dialogueContent = text; 
 
         if (!char) {
-            return `<div class="dialogue"><b>${esc(charName)}:</b> ${dialogueContent}</div>`;
+            return `<div class="dialogue"><b>${charName}:</b> ${dialogueContent}</div>`;
         }
-        return `<div class="dialogue c${charIndex}"><b>${esc(char.name)}:</b> ${dialogueContent}</div>`;
+        return `<div class="dialogue c${charIndex}"><b>${char.name}:</b> ${dialogueContent}</div>`;
     });
 
-    // 3. 아이템: [ITEM:rarity]name[/ITEM]
-    html = html.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\](.*?)\[\/ITEM\]/g, (match, rarity, itemName) => {
-        const color = rarityColors[rarity.toLowerCase()] || '#fff';
-        return `<strong style="color: ${color}; text-shadow: 0 0 4px ${color}80;">${esc(itemName)}</strong>`;
-    });
-
-    // 4. 줄바꿈 처리
+    // 3. 줄바꿈을 <br>로 변경합니다.
     return html.replace(/\n/g, '<br>');
 }
 
@@ -75,6 +81,33 @@ export async function showRaidLog() {
             .contrib-card { display: flex; align-items: center; gap: 10px; background: #151922; padding: 10px; border-radius: 10px; transition: background-color 0.2s; }
             .contrib-card:hover { background-color: #1f2738; }
             .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #0e1116; flex-shrink: 0; }
+            
+            /* ANCHOR: [수정] 새로운 연출 토큰 스타일 */
+            .sfx, .vfx, .hud, .timestamp, .heart, .breath {
+                display: inline;
+                font-size: 0.9em;
+                opacity: 0.7;
+            }
+            .sfx { font-style: italic; }
+            .vfx { font-style: italic; color: #7dd3fc; }
+            .hud { font-family: 'SF Mono', 'Roboto Mono', Menlo, monospace; font-weight: 600; color: #a7f3d0; background: rgba(6, 78, 59, 0.4); padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3); }
+            .timestamp::before { content: 'T+'; }
+            .timestamp, .heart { font-family: 'SF Mono', 'Roboto Mono', Menlo, monospace; color: #9ca3af; }
+            .breath::before { content: '['; }
+            .breath::after { content: ']'; }
+            
+            .cut-scene {
+                text-align: center; margin: 2em 0;
+                height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
+            }
+            .slow-motion {
+                font-style: italic;
+                letter-spacing: 0.5px;
+            }
+            .item-highlight {
+                font-weight: 800;
+                text-shadow: 0 0 6px var(--color-shadow, rgba(255,255,255,0.5));
+            }
         </style>
         <section class="container narrow">
             <div class="card p16">
@@ -86,7 +119,6 @@ export async function showRaidLog() {
                     <div class="contribution-grid">
                         ${(log.contributions || []).map(c => {
                             const p = (log.party || []).find(p => p.id === c.charId) || { id: c.charId, name: 'Unknown', thumb_url: '' };
-                            // ANCHOR: [수정] a 태그로 카드 전체를 감싸서 링크로 만듭니다.
                             return `
                                 <a href="#/char/${esc(p.id)}" style="text-decoration: none; color: inherit;">
                                     <div class="contrib-card">
@@ -103,7 +135,6 @@ export async function showRaidLog() {
                         }).join('')}
                     </div>
                 </div>
-
                 <hr style="margin: 24px 0; border-color: #2a2f36;">
                 
                 <h3 class="mt12" style="text-align:center;">${esc(log.raidName)} 전투 기록</h3>
