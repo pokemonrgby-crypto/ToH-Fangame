@@ -30,10 +30,10 @@ function renderRichLog(logText = '', party = []) {
     let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
     let body = lines.join('\n').trim();
 
-    // 1. 먼저 대화 블록을 고유한 플레이스홀더로 분리합니다.
-    // 이렇게 하면 일반 서술부와 대화부를 안전하게 분리하여 처리할 수 있습니다.
+    // 1. 대화 블록을 고유한 플레이스홀더로 분리합니다.
+    // [수정] 정규식을 「」 에 맞게 변경합니다.
     const dialogues = [];
-    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (match, name, line) => {
+    body = body.replace(/\[대화:([^\]]+)\]「([^」]*)」/g, (match, name, line) => {
         dialogues.push({ name, line });
         return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
     });
@@ -60,19 +60,18 @@ function renderRichLog(logText = '', party = []) {
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
         const character = party[charIndex] || { name: dialogue.name.trim(), thumb_url: '' };
         
-        // 대화 내용(line)에 대해서만 **굵은 글씨** 처리를 적용합니다.
         const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
+        // [수정] 말풍선 따옴표를 「」로 변경하여 일관성을 유지합니다.
         const bubbleHtml = `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
             <div class="dialogue-bubble">
               <div class="dialogue-name">${esc(character.name)}</div>
-              <div class="dialogue-text">“${processedLine}”</div>
+              <div class="dialogue-text">「${processedLine}」</div>
             </div>
           </div>
         `;
-        // 플레이스홀더를 완성된 HTML 말풍선으로 교체합니다.
         narrativeBody = narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`, bubbleHtml);
     });
 
@@ -81,7 +80,6 @@ function renderRichLog(logText = '', party = []) {
       .map(p => p.trim())
       .filter(p => p)
       .map(p => {
-          // 이미 HTML 태그로 변환된 내용이므로, 추가적인 esc() 처리 없이 그대로 반환합니다.
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
               return p;
           }
@@ -91,7 +89,6 @@ function renderRichLog(logText = '', party = []) {
           
       return { title: esc(titleLine), body: paragraphs };
 }
-
 /**
  * 스크롤 애니메이션을 설정합니다.
  */
