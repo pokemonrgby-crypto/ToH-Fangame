@@ -714,7 +714,8 @@ exports.startRaid = raidFns.startRaid;
 exports.getActiveRaidBoss = raidFns.getActiveRaidBoss; // 프론트엔드에서 호출할 수 있도록 추가
 exports.getRaidRankings = raidFns.getRaidRankings; // 프론트엔드에서 호출할 수 있도록 추가
 exports.setupNewRaidBoss = raidFns.setupNewRaidBoss;
-
+exports.findRandomPartyForRaid = raidFns.findRandomPartyForRaid; // 파티 찾기 함수
+exports.adminSetupNewRaidBoss = raidFns.adminSetupNewRaidBoss; // 관리자용 보스 생성 함수ㄴ
 
 
 
