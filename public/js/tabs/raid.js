@@ -3,9 +3,41 @@ import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
-import { ensureModalCss } from '../ui/modal.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+
+// [수정] raid.js 전용 모달 스타일 주입 함수
+function ensureRaidModalCss() {
+  if (document.getElementById('toh-raid-modal-css')) return;
+  const st = document.createElement('style');
+  st.id = 'toh-raid-modal-css';
+  st.textContent = `
+    .modal-back{
+      position:fixed; inset:0; z-index:9990;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.6); backdrop-filter:blur(4px);
+    }
+    .modal-card{
+      background:#0e1116; border:1px solid #273247; border-radius:14px;
+      padding:16px; width:92vw; max-width:500px; max-height:90vh; overflow-y:auto;
+    }
+    .manage-col { display: flex; flex-direction: column; gap: 12px; }
+    .manage-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+    .manage-label { font-size:13px; color:var(--muted); margin-bottom: 4px; display: block; }
+    .manage-select {
+        flex: 1;
+        background: var(--bg, #0c0f14);
+        color: var(--text, #eef1f6);
+        border: 1px solid var(--bd, #212a36);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 14px;
+        width: 100%;
+    }
+  `;
+  document.head.appendChild(st);
+}
+
 
 function showLoading(show = true, text = '처리 중...') {
     let overlay = document.getElementById('toh-loading-overlay');
@@ -23,6 +55,7 @@ function showLoading(show = true, text = '처리 중...') {
     }
 }
 
+
 async function getActiveRaidBoss() {
     try {
         const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
@@ -35,7 +68,7 @@ async function getActiveRaidBoss() {
 }
 
 async function openBossDetailModal(raidBoss) {
-    ensureModalCss();
+    ensureRaidModalCss();
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
@@ -99,10 +132,10 @@ export async function showRaid() {
                 <div class="bookview p12">
                     <div class="kv-card" id="raid-boss-card" style="cursor: pointer;">
                         <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
-                            <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 64px; height: 64px; border-radius: 10px; object-fit: cover;">
+                            <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #111;">
                             <div>
-                                <h3>${esc(raidBoss.name)}</h3>
-                                <p class="text-dim" style="font-size: 13px;">${esc(raidBoss.description)}</p>
+                                <h3 style="margin:0;">${esc(raidBoss.name)}</h3>
+                                <p class="text-dim" style="font-size: 13px; margin: 4px 0 0;">${esc(raidBoss.description)}</p>
                             </div>
                         </div>
                         <div style="height:12px; background:#1a2230; border-radius:8px; overflow:hidden; border:1px solid #2a3346;">
@@ -137,7 +170,7 @@ export async function showRaid() {
 }
 
 async function openPartySetupModal(raidBoss) {
-    ensureModalCss();
+    ensureRaidModalCss(); // [수정] raid.js 전용 CSS 주입 함수 호출
     const myChars = await fetchMyChars(auth.currentUser.uid);
     if (myChars.length === 0) {
         showToast('레이드에 참여할 내 캐릭터가 없습니다.');
@@ -151,15 +184,19 @@ async function openPartySetupModal(raidBoss) {
         <div class="modal-card" style="max-width: 500px;">
             <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드 파티 구성</div>
             <div class="manage-col">
-                <label class="manage-label">내 캐릭터 선택:</label>
-                <select id="my-char-select" class="manage-select">
-                    ${myChars.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
-                </select>
-                <label class="manage-label" style="margin-top:12px;">파티원 구성 방식:</label>
-                <select id="party-method-select" class="manage-select">
-                    <option value="guild" disabled>길드원 중에서 (준비 중)</option>
-                    <option value="random" selected>랜덤 매칭</option>
-                </select>
+                <div>
+                    <label class="manage-label">내 캐릭터 선택:</label>
+                    <select id="my-char-select" class="manage-select">
+                        ${myChars.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+                    </select>
+                </div>
+                <div>
+                    <label class="manage-label">파티원 구성 방식:</label>
+                    <select id="party-method-select" class="manage-select">
+                        <option value="guild" disabled>길드원 중에서 (준비 중)</option>
+                        <option value="random" selected>랜덤 매칭</option>
+                    </select>
+                </div>
             </div>
             <div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px;">
                 <button class="btn ghost" id="modal-close">취소</button>
@@ -171,6 +208,8 @@ async function openPartySetupModal(raidBoss) {
     document.body.appendChild(back);
     const closeModal = () => back.remove();
     back.querySelector('#modal-close').onclick = closeModal;
+    back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+
     back.querySelector('#modal-start').onclick = async () => {
         const myCharId = back.querySelector('#my-char-select').value;
         const method = back.querySelector('#party-method-select').value;
