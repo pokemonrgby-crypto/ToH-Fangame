@@ -1,4 +1,4 @@
-// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3817634fe4bd22d3cff873690d80130ec120c435/public/js/tabs/raid.js
+// /public/js/tabs/raid.js
 import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
