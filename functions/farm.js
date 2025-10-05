@@ -420,7 +420,7 @@ module.exports = (admin) => {
             skills[key] = {
               level,
               exp: 0,
-              nextExp: Math.floor(200 ** (Math.sqrt(level)))
+              nextExp: Math.floor(200 * (2 ** Math.sqrt(level)))
             };
             needsUpdate = true;
           }
@@ -643,6 +643,42 @@ module.exports = (admin) => {
     
     return { ok: true, rewards: newItemsForUser };
   });
+
+
+  const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid || req.auth?.token?.uid;
+    const { mapId, x, y, microX, microY, tileIndex } = req.data || {};
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+    if ([mapId,x,y,microX,microY,tileIndex].some(v=>v==null)) {
+      throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+    }
+
+    const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
+    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에서 작업을 취소할 권한이 없습니다.');
+
+    const plotId = plotIdFrom({ mapId, x, y, microX, microY });
+    const plotRef = db.doc(`farm_plots/${plotId}`);
+
+    await db.runTransaction(async (tx) => {
+      const snap = await tx.get(plotRef);
+      if (!snap.exists) throw new HttpsError('not-found', 'plot not found');
+      const d = snap.data() || {};
+      const tiles = d.tiles || {};
+      const t = tiles[String(tileIndex)];
+      if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
+
+      const now = Date.now();
+      if (!t.readyAt || now >= t.readyAt) {
+        throw new HttpsError('failed-precondition', '이미 수확 준비가 완료된 작물은 취소할 수 없습니다.');
+      }
+
+      delete tiles[String(tileIndex)];
+      tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
+    });
+
+    return { ok: true };
+  });
+
 
   return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting };
 };
