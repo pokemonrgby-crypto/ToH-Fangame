@@ -35,7 +35,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
               // "additionalProperties": false,  // <-- 이 줄 제거
               required: ["log", "totalDamage", "contributions"],
               properties: {
-                log: { type: "string", maxLength: 8000 },
+                log: { type: "string", maxLength: 16000 },
                 totalDamage: { type: "integer", minimum: 1, maximum: 10000 },
                 contributions: {
                   type: "array",
