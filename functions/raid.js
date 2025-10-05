@@ -92,7 +92,12 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         try {
           return JSON.parse(clean);
         } catch (e) {
-          logger.error("Gemini JSON parse failed (after clean)", { rawText: text, cleaned: clean, error: e });
+          logger.error("Gemini JSON parse failed (after clean)", {
+            rawLen: text?.length ?? 0,
+            cleanLen: clean?.length ?? 0,
+            // raw/clean 전문은 너무 길어서 생략 (로그 오염 방지)
+            error: e
+          });
           throw new HttpsError('internal', 'AI 응답 파싱에 실패했습니다.');
         }
 
@@ -343,6 +348,8 @@ ${JSON.stringify(partyForAI, null, 2)}
         `;
 
         const aiResult = await callGemini(systemPrompt, userPrompt);
+        let totalDamage = 1; // 블록 밖에서 잡아두고, 아래 보정 블록에서 할당
+
         {
           // 로그 토큰 교정: [/SLOW] → [RESUME]
           if (aiResult && typeof aiResult.log === 'string') {
