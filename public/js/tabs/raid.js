@@ -1,10 +1,11 @@
 // /public/js/tabs/raid.js
+
 import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
 
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // ... (ensureRaidModalCss, showLoading, getActiveRaidBoss, openBossDetailModal 함수는 기존과 동일) ...
 function ensureRaidModalCss() {
@@ -189,6 +190,59 @@ export async function showRaid() {
     document.getElementById('btn-start-raid').onclick = () => openPartySetupModal(raidBoss);
 }
 
+// [신규] 레이드용 캐릭터 선택 모달
+async function openCharPickerForRaid(onSelect) {
+    ensureRaidModalCss();
+    const myChars = await fetchMyChars(auth.currentUser.uid);
+    if (myChars.length === 0) {
+        showToast('레이드에 참여할 캐릭터가 없습니다.');
+        return;
+    }
+
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.innerHTML = `
+        <div class="modal-card" style="max-width: 720px;">
+          <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드에 참여할 캐릭터 선택</div>
+          <div class="grid3" style="gap:10px; max-height: 400px; overflow-y: auto;">
+            ${myChars.map(char => `
+              <button class="kv-card" data-char-id="${char.id}" data-guild-id="${char.guildId || ''}" style="text-align:left; cursor:pointer;">
+                <div class="row" style="gap:10px; align-items:center;">
+                    <img src="${esc(char.thumb_url || char.image_url)}" onerror="this.style.display='none'" style="width:56px; height:56px; border-radius:8px; object-fit:cover;">
+                    <div>
+                        <div style="font-weight:700;">${esc(char.name)}</div>
+                        <div class="text-dim" style="font-size:12px;">Elo: ${char.elo || 1000}</div>
+                    </div>
+                </div>
+              </button>
+            `).join('')}
+          </div>
+          <div style="text-align:right; margin-top:12px;">
+            <button class="btn ghost" id="mClose">닫기</button>
+          </div>
+        </div>
+    `;
+
+    document.body.appendChild(back);
+
+    const closeModal = () => back.remove();
+    back.querySelector('#mClose').onclick = closeModal;
+    back.addEventListener('click', e => {
+        if (e.target === back) closeModal();
+    });
+
+    back.querySelectorAll('button[data-char-id]').forEach(btn => {
+        btn.onclick = () => {
+            const selectedChar = {
+                id: btn.dataset.charId,
+                guildId: btn.dataset.guildId,
+                name: btn.querySelector('div[style*="font-weight:700"]').textContent
+            };
+            closeModal();
+            onSelect(selectedChar);
+        };
+    });
+}
 
 async function openPartySetupModal(raidBoss) {
     ensureRaidModalCss();
@@ -198,44 +252,59 @@ async function openPartySetupModal(raidBoss) {
         return;
     }
 
+    let selectedChar = myChars[0]; // 기본으로 첫 번째 캐릭터 선택
+
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
-    back.innerHTML = `
-        <div class="modal-card" style="max-width: 500px;">
-            <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드 파티 구성</div>
-            <div class="manage-col">
-                <div>
-                    <label class="manage-label">내 캐릭터 선택:</label>
-                    <select id="my-char-select" class="manage-select">
-                        ${myChars.map(c => `<option value="${c.id}" data-guild-id="${c.guildId || ''}">${esc(c.name)}</option>`).join('')}
-                    </select>
+
+    const render = () => {
+        back.innerHTML = `
+            <div class="modal-card" style="max-width: 500px;">
+                <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드 파티 구성</div>
+                <div class="manage-col">
+                    <div>
+                        <label class="manage-label">내 캐릭터:</label>
+                        <div class="kv-card" id="selected-char-card" style="cursor:pointer;">
+                           <div class="row" style="gap:10px; align-items:center;">
+                                <img src="${esc(selectedChar.thumb_url || selectedChar.image_url)}" onerror="this.style.display='none'" style="width:48px; height:48px; border-radius:8px; object-fit:cover;">
+                                <div>
+                                    <div style="font-weight:700;">${esc(selectedChar.name)}</div>
+                                    <div class="text-dim" style="font-size:12px;">클릭하여 변경</div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div>
+                        <label class="manage-label">파티원 구성 방식:</label>
+                        <select id="party-method-select" class="manage-select">
+                            <option value="guild">길드원 중에서</option>
+                            <option value="random" selected>랜덤 매칭</option>
+                        </select>
+                    </div>
                 </div>
-                <div>
-                    <label class="manage-label">파티원 구성 방식:</label>
-                    <select id="party-method-select" class="manage-select">
-                        <option value="guild">길드원 중에서</option>
-                        <option value="random" selected>랜덤 매칭</option>
-                    </select>
+                <div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px;">
+                    <button class="btn ghost" id="modal-close">취소</button>
+                    <button class="btn primary" id="modal-start">레이드 시작</button>
                 </div>
             </div>
-            <div class="row" style="justify-content:flex-end; gap:8px; margin-top:16px;">
-                <button class="btn ghost" id="modal-close">취소</button>
-                <button class="btn primary" id="modal-start">레이드 시작</button>
-            </div>
-        </div>
-    `;
+        `;
 
-    document.body.appendChild(back);
-    const closeModal = () => back.remove();
-    back.querySelector('#modal-close').onclick = closeModal;
-    back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+        back.querySelector('#selected-char-card').onclick = () => {
+            openCharPickerForRaid((char) => {
+                selectedChar = myChars.find(c => c.id === char.id) || myChars[0];
+                render(); // 선택 후 모달 다시 렌더링
+            });
+        };
 
-    back.querySelector('#modal-start').onclick = async () => {
-        const charSelect = back.querySelector('#my-char-select');
-        const myCharId = charSelect.value;
-        const selectedOption = charSelect.options[charSelect.selectedIndex];
-        const myGuildId = selectedOption.dataset.guildId;
+        back.querySelector('#modal-close').onclick = closeModal;
+        back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+        back.querySelector('#modal-start').onclick = startRaid;
+    };
+    
+    const startRaid = async () => {
+        const myCharId = selectedChar.id;
+        const myGuildId = selectedChar.guildId;
         const method = back.querySelector('#party-method-select').value;
         
         closeModal();
@@ -264,8 +333,8 @@ async function openPartySetupModal(raidBoss) {
             const partyResult = await findPartyFn(payload);
             
             showLoading(true, '레이드 전투 생성 중...');
-            const startRaid = httpsCallable(func, 'startRaid');
-            const result = await startRaid({ myCharId, partyCharIds: partyResult.data.partyCharIds });
+            const startRaidFn = httpsCallable(func, 'startRaid');
+            const result = await startRaidFn({ myCharId, partyCharIds: partyResult.data.partyCharIds });
 
             showToast('레이드 전투 시작!');
             location.hash = `#/raidlog/${result.data.logId}`;
@@ -276,4 +345,9 @@ async function openPartySetupModal(raidBoss) {
             showLoading(false);
         }
     };
+
+    const closeModal = () => back.remove();
+    
+    render();
+    document.body.appendChild(back);
 }
