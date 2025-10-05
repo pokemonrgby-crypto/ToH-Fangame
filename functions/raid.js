@@ -8,14 +8,18 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
     const RAID_COOLDOWN_MS = 10 * 60 * 1000; // 10분
-    const MAX_RAID_DAMAGE = 10000;
+    const MAX_RAID_DAMAGE = 10000; // 최대 데미지 제한
+    const MAX_EXP_PER_RAID = 1000; // 최대 경험치(기여도) 제한
 
     // --- Helper Functions ---
 
     async function callGemini(systemText, userText) {
-        // ... (functions/battle/index.js 또는 encounter_v2.js에서 Gemini 호출 함수를 가져옵니다)
-        const model = 'gemini-2.5-flash'; // 또는 다른 적절한 모델
+        const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+        const model = 'gemini-2.5-flash';
         const apiKey = GEMINI_API_KEY.value();
+        if (!apiKey) {
+            throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
+        }
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const body = {
           systemInstruction: { role: 'system', parts: [{ text: systemText }] },
@@ -34,7 +38,13 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const json = await res.json();
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (!text) throw new HttpsError('internal', `Gemini response was empty.`);
-        return JSON.parse(text);
+
+        try {
+            return JSON.parse(text);
+        } catch (e) {
+            logger.error("Gemini JSON parse failed", { rawText: text, error: e });
+            throw new HttpsError('internal', 'AI 응답 파싱에 실패했습니다.');
+        }
     }
 
     async function getActiveRaid() {
@@ -47,6 +57,19 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const bossRef = db.doc(`raids/${activeRaidId}`);
         const bossSnap = await bossRef.get();
         return bossSnap.exists ? { id: bossSnap.id, ...bossSnap.data() } : null;
+    }
+    
+    async function _isAdmin(uid) {
+        if (!uid) return false;
+        try {
+          const snap = await db.doc('configs/admins').get();
+          const d = snap.exists ? snap.data() : {};
+          const allow = Array.isArray(d.allow) ? d.allow : [];
+          if (allow.includes(uid)) return true;
+          const allowEmails = Array.isArray(d.allowEmails) ? d.allowEmails : [];
+          const user = await admin.auth().getUser(uid);
+          return !!(user?.email && allowEmails.includes(user.email));
+        } catch (_) { return false; }
     }
 
     // --- Callable Functions ---
@@ -68,19 +91,17 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     
     const findRandomPartyForRaid = onCall({ region: 'us-central1' }, async (req) => {
         const { myCharId } = req.data;
-        // char_pool에서 can_match가 true이고, 내 캐릭터가 아닌 3명을 무작위로 찾습니다.
-        // 실제 구현에서는 더 정교한 매칭 로직이 필요할 수 있습니다 (예: Elo 기반)
-        const q = db.collection('char_pool').where('can_match', '==', true).limit(50);
+        const q = db.collection('char_pool')
+            .where('can_match', '==', true)
+            .where(admin.firestore.FieldPath.documentId(), '!=', myCharId);
+        
         const snap = await q.get();
-        const candidates = snap.docs
-            .map(doc => ({ id: doc.id, ...doc.data() }))
-            .filter(char => char.id !== myCharId);
+        const candidates = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         if (candidates.length < 3) {
-            throw new HttpsError('not-found', '매칭할 파티원을 찾을 수 없습니다.');
+            throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다.');
         }
 
-        // 3명을 무작위로 선택
         const party = [];
         while (party.length < 3 && candidates.length > 0) {
             const randomIndex = Math.floor(Math.random() * candidates.length);
@@ -134,36 +155,18 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
         const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system || 'You are a battle narrator.');
         
-        const partyForAI = partyChars.map((c, index) => {
-            // 인벤토리에서 장착 아이템 정보 가져오기
-            const userItems = c.owner_uid === uid ? userData.items_all : []; // 임시방편
-            const items = (c.items_equipped || [])
-              .map(itemId => {
-                  const item = userItems.find(i => i.id === itemId);
-                  if (!item) return null;
-                  return {
-                      name: item.name,
-                      description: item.description,
-                      properties: item.properties,
-                      rarity: item.rarity
-                  };
-              })
-              .filter(Boolean);
-        
-            return {
-                charIndex: index + 1,
-                name: c.name,
-                summary: c.summary,
-                items: items,
-            };
-        });
+        const partyForAI = partyChars.map((c, index) => ({
+            charId: c.id,
+            name: c.name,
+            summary: c.summary,
+        }));
 
         const userPrompt = `
-            # 보스 정보
-            ${JSON.stringify({ name: raidBoss.name, description: raidBoss.description }, null, 2)}
-            
-            # 파티 정보
-            ${JSON.stringify(partyForAI, null, 2)}
+# 보스 정보
+${JSON.stringify({ name: raidBoss.name, description: raidBoss.description, skills: raidBoss.skills }, null, 2)}
+
+# 파티 정보 (charId를 기준으로 기여도를 반환해야 함)
+${JSON.stringify(partyForAI, null, 2)}
         `;
 
         const aiResult = await callGemini(systemPrompt, userPrompt);
@@ -172,7 +175,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const logRef = db.collection('raid_logs').doc();
         const contribRef = db.collection('raids').doc(raidBoss.id).collection('contributions');
         
-        const partyIds = partyChars.map(c => c.id); // For the log
+        const partyIds = partyChars.map(c => c.id);
 
         await db.runTransaction(async tx => {
             const bossDoc = await tx.get(db.doc(`raids/${raidBoss.id}`));
@@ -182,10 +185,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             tx.update(bossDoc.ref, { currentHp: finalHp });
             tx.set(logRef, {
                 raidId: raidBoss.id,
-                raidName: raidBoss.name, // For timeline display
+                raidName: raidBoss.name,
                 log: aiResult.log,
                 party: partyChars.map(c => ({ id: c.id, name: c.name, owner_uid: c.owner_uid })),
-                party_ids: partyIds, // For char history query
+                party_ids: partyIds,
                 totalDamage,
                 contributions: aiResult.contributions,
                 createdAt: FieldValue.serverTimestamp()
@@ -194,18 +197,17 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             for (const char of partyChars) {
                 const charContribData = (aiResult.contributions || []).find(con => con.charId === char.id);
                 if (charContribData) {
-                    const exp = Math.min(1000, charContribData.exp || 0);
-                     // Add exp to character
+                    const exp = Math.min(MAX_EXP_PER_RAID, charContribData.exp || 0);
+                    
                     tx.update(db.doc(`chars/${char.id}`), {
                         exp_total: FieldValue.increment(exp),
-                        exp: FieldValue.increment(exp), // Assuming exp overflows elsewhere
-                        raid_count: FieldValue.increment(1) // Increment raid count
+                        exp: FieldValue.increment(exp),
+                        raid_count: FieldValue.increment(1)
                     });
 
-                    // Update total contribution
                     tx.set(contribRef.doc(char.id), {
                         charId: char.id,
-                        totalContribution: FieldValue.increment(charContribData.contribution),
+                        totalContribution: FieldValue.increment(exp), // 기여도 = 경험치
                         owner_uid: char.owner_uid,
                         charName: char.name,
                         lastUpdated: FieldValue.serverTimestamp()
@@ -217,26 +219,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         });
 
         return { ok: true, logId: logRef.id };
-    });
-
-    const setupNewRaidBoss = onSchedule({ schedule: 'every 72 hours', timeZone: 'Asia/Seoul' }, async () => {
-        logger.info('Setting up a new raid boss.');
-        const activeRaid = await getActiveRaid();
-        if (activeRaid) {
-            await distributeRaidRewards(activeRaid.id);
-        }
-
-        const newBoss = {
-            name: "파멸의 군주, 모르고스",
-            description: "차원의 틈새에서 나타난 고대의 존재입니다. 그의 숨결은 현실을 부패시킵니다.",
-            totalHp: 10000000,
-            currentHp: 10000000,
-            startsAt: FieldValue.serverTimestamp(),
-            endsAt: Timestamp.fromMillis(Date.now() + 3 * 24 * 60 * 60 * 1000),
-        };
-        const newBossRef = await db.collection('raids').add(newBoss);
-        await db.doc('raid/status').set({ activeRaidId: newBossRef.id });
-        logger.info(`New raid boss ${newBossRef.id} has been created.`);
     });
     
     async function distributeRaidRewards(raidId) {
@@ -279,31 +261,30 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         logger.info(`${rank - 1} users have been sent raid rewards.`);
     }
-    
-    // [신규] 관리자용 보스 추가 함수
+
     const adminSetupNewRaidBoss = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
-        if (!await _isAdmin(uid)) { // 관리자 확인 헬퍼 함수 필요
+        if (!await _isAdmin(uid)) {
             throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
         }
 
-        const { name, description, totalHp, durationDays } = req.data;
-        if (!name || !description || !totalHp || !durationDays) {
-            throw new HttpsError('invalid-argument', '보스 정보가 올바르지 않습니다.');
+        const { name, description, totalHp, durationDays, imageUrl, skills } = req.data;
+        if (!name || !description || !totalHp || !durationDays || !Array.isArray(skills) || skills.length !== 4) {
+            throw new HttpsError('invalid-argument', '보스 정보(이름, 설명, HP, 기간, 이미지, 스킬 4개)가 올바르지 않습니다.');
         }
         
-        // 현재 진행중인 레이드 종료 및 보상 지급
         const activeRaid = await getActiveRaid();
         if (activeRaid) {
             await distributeRaidRewards(activeRaid.id);
         }
 
-        // 새 보스 생성
         const newBoss = {
             name: String(name),
             description: String(description),
             totalHp: Number(totalHp),
             currentHp: Number(totalHp),
+            imageUrl: String(imageUrl || ''),
+            skills: skills,
             startsAt: FieldValue.serverTimestamp(),
             endsAt: Timestamp.fromMillis(Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000),
         };
@@ -314,18 +295,5 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         return { ok: true, bossId: newBossRef.id };
     });
 
-    async function _isAdmin(uid) {
-        if (!uid) return false;
-        try {
-          const snap = await db.doc('configs/admins').get();
-          const d = snap.exists ? snap.data() : {};
-          const allow = Array.isArray(d.allow) ? d.allow : [];
-          if (allow.includes(uid)) return true;
-          const allowEmails = Array.isArray(d.allowEmails) ? d.allowEmails : [];
-          const user = await admin.auth().getUser(uid);
-          return !!(user?.email && allowEmails.includes(user.email));
-        } catch (_) { return false; }
-      }
-
-    return { startRaid, setupNewRaidBoss, getActiveRaidBoss, getRaidRankings, findRandomPartyForRaid, adminSetupNewRaidBoss };
+    return { startRaid, getActiveRaidBoss, getRaidRankings, findRandomPartyForRaid, adminSetupNewRaidBoss };
 };
