@@ -26,7 +26,24 @@ const rarityColors = {
 function renderRichLog(logText = '', party = []) {
     if (typeof logText !== 'string') logText = String(logText ?? '');
 
-    const lines = logText.split('\n');
+  // [추가] 0) 줄바꿈/엔티티 정규화 (AI가 '\n'을 문자로 주는 케이스 방지)
+let txt = String(logText ?? '');
+// CRLF -> LF
+txt = txt.replace(/\r\n?/g, '\n');
+// 리터럴 '\n'을 실제 줄바꿈으로
+if (txt.includes('\\n')) txt = txt.replace(/\\n/g, '\n');
+// 안전한 범위의 HTML 엔티티만 복원 (이후 esc()로 다시 이스케이프됨)
+txt = txt
+  .replace(/&quot;/g, '"')
+  .replace(/&#39;/g, "'")
+  .replace(/&lt;/g, '<')
+  .replace(/&gt;/g, '>')
+  .replace(/&amp;/g, '&');
+
+
+    const lines = txt.split('\n');
+while (lines.length && !lines[0].trim()) lines.shift();
+
     let titleLine = (lines.shift() || '레이드 기록').replace(/^\[AI가 생성한 제목\]/, '').trim();
     let body = lines.join('\n').trim();
 
