@@ -1,4 +1,5 @@
-// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3bbd7a1bf0b950aca9a2babdcfd7e50786e52afc/functions/raid.js
+// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3817634fe4bd22d3cff873690d80130ec120c435/functions/raid.js
+
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
@@ -100,42 +101,49 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         if (!myCharSnap.exists) {
             throw new HttpsError('not-found', '내 캐릭터 정보를 찾을 수 없습니다.');
         }
-        const myCharOwner = myCharSnap.data().owner_uid;
+        const myCharData = myCharSnap.data();
+        const myCharOwner = myCharData.owner_uid;
+        const myGuildId = myCharData.guildId; // 내 길드 ID 확인
 
         const poolCol = db.collection('char_pool');
         const candidates = new Map();
         
-        // Firestore에서 랜덤 조회를 위해 랜덤 ID를 생성하고 그 지점부터 스캔합니다.
         const randomKey = poolCol.doc().id;
         const q1 = await poolCol
             .where('can_match', '==', true)
             .orderBy(admin.firestore.FieldPath.documentId())
             .startAt(randomKey)
-            .limit(50)
+            .limit(100) // 더 많은 후보군 확보
             .get();
 
         q1.docs.forEach(doc => candidates.set(doc.id, doc.data()));
 
-        if (candidates.size < 50) {
+        if (candidates.size < 100) {
             const q2 = await poolCol
                 .where('can_match', '==', true)
                 .orderBy(admin.firestore.FieldPath.documentId())
-                .limit(50)
+                .limit(100)
                 .get();
             q2.docs.forEach(doc => candidates.set(doc.id, doc.data()));
         }
 
-        // 자기 자신과 자기의 다른 캐릭터는 제외하고 필터링합니다.
+        // 자기 자신, 자기의 다른 캐릭터, 그리고 같은 길드원은 제외
         const filteredCandidates = Array.from(candidates.values()).filter(c => {
             const charId = c.char?.replace('chars/', '');
-            return charId !== myCharId && c.owner_uid !== myCharOwner;
+            if (charId === myCharId || c.owner_uid === myCharOwner) {
+                return false;
+            }
+            // 길드 ID가 있는 경우, 내 길드와 다른 경우에만 포함
+            if (myGuildId && c.guildId === myGuildId) {
+                return false;
+            }
+            return true;
         });
 
         if (filteredCandidates.length < 3) {
-            throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다.');
+            throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다. (길드원 제외)');
         }
 
-        // 필터링된 후보 중에서 무작위로 3명을 선택합니다.
         const party = [];
         const available = [...filteredCandidates];
         while (party.length < 3 && available.length > 0) {
@@ -144,6 +152,43 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
 
         return { partyCharIds: party.map(p => p.char.replace('chars/', '')) };
+    });
+
+    // [신규] 길드원 중에서 레이드 파티 찾기
+    const findGuildPartyForRaid = onCall({ region: 'us-central1' }, async (req) => {
+        const { myCharId, guildId } = req.data;
+        const myUid = req.auth?.uid;
+        if (!myCharId || !guildId || !myUid) {
+            throw new HttpsError('invalid-argument', '캐릭터 ID, 길드 ID, 인증 정보가 필요합니다.');
+        }
+
+        // 길드 멤버 목록 조회
+        const membersSnap = await db.collection('guild_members')
+            .where('guildId', '==', guildId)
+            .get();
+
+        if (membersSnap.empty) {
+            throw new HttpsError('not-found', '길드원을 찾을 수 없습니다.');
+        }
+        
+        // 자기 자신을 제외한 길드원 필터링
+        const guildMemberCharIds = membersSnap.docs
+            .map(doc => doc.data().charId)
+            .filter(id => id !== myCharId);
+
+        if (guildMemberCharIds.length < 3) {
+            throw new HttpsError('failed-precondition', '파티를 구성할 길드원이 3명 이상 필요합니다.');
+        }
+        
+        // 길드원 중에서 무작위로 3명 선택
+        const party = [];
+        const available = [...guildMemberCharIds];
+        while (party.length < 3 && available.length > 0) {
+            const randomIndex = Math.floor(Math.random() * available.length);
+            party.push(available.splice(randomIndex, 1)[0]);
+        }
+
+        return { partyCharIds: party };
     });
 
     const startRaid = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
@@ -330,5 +375,12 @@ ${JSON.stringify(partyForAI, null, 2)}
         return { ok: true, bossId: newBossRef.id };
     });
 
-    return { startRaid, getActiveRaidBoss, getRaidRankings, findRandomPartyForRaid, adminSetupNewRaidBoss };
+    return { 
+        startRaid, 
+        getActiveRaidBoss, 
+        getRaidRankings, 
+        findRandomPartyForRaid, 
+        findGuildPartyForRaid, // [추가]
+        adminSetupNewRaidBoss 
+    };
 };
