@@ -222,6 +222,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         // 길드 멤버 목록 조회
         const membersSnap = await db.collection('guild_members')
             .where('guildId', '==', guildId)
+            .where('leftAt', '==', null) // [수정] 이 줄을 추가하여 탈퇴한 멤버를 제외합니다.
             .get();
 
         if (membersSnap.empty) {
