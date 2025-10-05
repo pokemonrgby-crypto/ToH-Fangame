@@ -1065,7 +1065,9 @@ async function bindRaidBossEvents() {
             const fileInput = document.getElementById('raid-boss-image');
             const file = fileInput.files[0];
             if (file) {
-                const randomId = db.collection('raids').doc().id;
+                // ▼▼▼ [수정된 부분] ▼▼▼
+                const randomId = fx.doc(fx.collection(db, 'raids')).id;
+                // ▲▲▲ [수정된 부분] ▲▲▲
                 const storageRef = sx.ref(storage, `raid_boss_images/${randomId}.webp`);
                 
                 // 1:1 리사이징
