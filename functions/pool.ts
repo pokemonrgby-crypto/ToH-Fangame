@@ -30,11 +30,12 @@ export const syncCharPool = onDocumentWritten('chars/{id}', async (e)=>{
     locked_until,
     can_match,
     world_id: after.world_id || null,
+    guildId: after.guildId || null, // [수정] 이 줄을 추가합니다.
     updatedAt: admin.firestore.FieldValue.serverTimestamp()
   }, { merge:true });
 });
 
-export const onCharDeleteCleanup = onDocumentDeleted('chars/{charId}', async (event) => {
+export const onCharDeleteCleanup = onDocumentWritten('chars/{charId}', async (event) => {
   const charId = event.params.charId;
   // 삭제 직전의 캐릭터 데이터를 가져옵니다.
   const deletedChar = event.data.data();
