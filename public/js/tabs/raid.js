@@ -7,9 +7,6 @@ import { ensureModalCss } from '../ui/modal.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-let raidBossCache = null;
-
-// 로딩 오버레이 함수 추가
 function showLoading(show = true, text = '처리 중...') {
     let overlay = document.getElementById('toh-loading-overlay');
     if (show) {
@@ -26,19 +23,51 @@ function showLoading(show = true, text = '처리 중...') {
     }
 }
 
-
 async function getActiveRaidBoss() {
-    // 캐시를 사용하지 않고 항상 새로 불러옵니다.
     try {
         const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
         const result = await getRaidBoss();
-        raidBossCache = result.data;
-        return raidBossCache;
+        return result.data;
     } catch (e) {
         console.error("Error fetching raid boss:", e);
         return null;
     }
 }
+
+async function openBossDetailModal(raidBoss) {
+    ensureModalCss();
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.style.zIndex = 10000;
+    
+    const skillsHtml = (raidBoss.skills || []).map(skill => `
+        <div class="kv-card" style="padding: 10px;">
+            <div style="font-weight: 700;">${esc(skill.name)}</div>
+            <div class="text-dim" style="font-size: 12px; margin-top: 4px;">${esc(skill.description)}</div>
+        </div>
+    `).join('');
+
+    back.innerHTML = `
+        <div class="modal-card" style="max-width: 500px;">
+            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+                <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 2px solid #ff5b66;">
+                <div style="font-weight:900; font-size:20px;">${esc(raidBoss.name)}</div>
+                <p class="text-dim" style="text-align: center; margin: 0;">${esc(raidBoss.description)}</p>
+            </div>
+            <div class="kv-label" style="margin-top: 16px;">보스 스킬</div>
+            <div class="col" style="gap: 8px;">
+                ${skillsHtml}
+            </div>
+            <button class="btn ghost" id="modal-close" style="margin-top: 16px;">닫기</button>
+        </div>
+    `;
+
+    document.body.appendChild(back);
+    const closeModal = () => back.remove();
+    back.querySelector('#modal-close').onclick = closeModal;
+    back.addEventListener('click', e => { if (e.target === back) closeModal(); });
+}
+
 
 export async function showRaid() {
     const root = document.getElementById('view');
@@ -68,9 +97,14 @@ export async function showRaid() {
                     <a href="#/raid" class="bookmark active">⚔️ 레이드</a>
                 </div>
                 <div class="bookview p12">
-                    <div class="kv-card">
-                        <h3>${esc(raidBoss.name)}</h3>
-                        <p class="text-dim">${esc(raidBoss.description)}</p>
+                    <div class="kv-card" id="raid-boss-card" style="cursor: pointer;">
+                        <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 12px;">
+                            <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 64px; height: 64px; border-radius: 10px; object-fit: cover;">
+                            <div>
+                                <h3>${esc(raidBoss.name)}</h3>
+                                <p class="text-dim" style="font-size: 13px;">${esc(raidBoss.description)}</p>
+                            </div>
+                        </div>
                         <div style="height:12px; background:#1a2230; border-radius:8px; overflow:hidden; border:1px solid #2a3346;">
                             <div style="width:${hpPercent}%; height:100%; background:#ff7a7a; transition: width 0.5s ease;"></div>
                         </div>
@@ -98,11 +132,12 @@ export async function showRaid() {
         </section>
     `;
 
+    document.getElementById('raid-boss-card').onclick = () => openBossDetailModal(raidBoss);
     document.getElementById('btn-start-raid').onclick = () => openPartySetupModal(raidBoss);
 }
 
 async function openPartySetupModal(raidBoss) {
-    ensureModalCss(); // 모달 CSS 주입
+    ensureModalCss();
     const myChars = await fetchMyChars(auth.currentUser.uid);
     if (myChars.length === 0) {
         showToast('레이드에 참여할 내 캐릭터가 없습니다.');
@@ -122,7 +157,7 @@ async function openPartySetupModal(raidBoss) {
                 </select>
                 <label class="manage-label" style="margin-top:12px;">파티원 구성 방식:</label>
                 <select id="party-method-select" class="manage-select">
-                    <option value="guild">길드원 중에서 (곧 지원 예정)</option>
+                    <option value="guild" disabled>길드원 중에서 (준비 중)</option>
                     <option value="random" selected>랜덤 매칭</option>
                 </select>
             </div>
@@ -141,13 +176,13 @@ async function openPartySetupModal(raidBoss) {
         const method = back.querySelector('#party-method-select').value;
         
         closeModal();
-        showLoading(true, '레이드 전투 생성 중...');
+        showLoading(true, '랜덤 파티원 찾는 중...');
         
         try {
-            // 현재는 랜덤 매칭만 지원
             const findParty = httpsCallable(func, 'findRandomPartyForRaid');
             const partyResult = await findParty({ myCharId });
             
+            showLoading(true, '레이드 전투 생성 중...');
             const startRaid = httpsCallable(func, 'startRaid');
             const result = await startRaid({ myCharId, partyCharIds: partyResult.data.partyCharIds });
 
