@@ -16,7 +16,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
     async function callGemini(systemText, userText) {
         const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-        const model = 'gemini-2.5-pro';
+        const model = 'gemini-2.5-flash';
         const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) {
             throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
