@@ -1,13 +1,10 @@
-// functions/raid.js
-
-const admin = require('firebase-admin');
-try { admin.app(); } catch { admin.initializeApp(); }
+// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3bbd7a1bf0b950aca9a2babdcfd7e50786e52afc/functions/raid.js
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 
-// 이 함수는 functions/index.js에서 logger, GEMINI_API_KEY와 함께 호출됩니다.
-module.exports = ({ logger, GEMINI_API_KEY }) => {
+// 이 함수는 functions/index.js에서 admin, logger, GEMINI_API_KEY와 함께 호출됩니다.
+module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
     const RAID_COOLDOWN_MS = 10 * 60 * 1000; // 10분
