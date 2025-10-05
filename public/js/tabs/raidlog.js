@@ -2,7 +2,7 @@
 import { db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
+function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 function parseLogId() {
     const m = location.hash.match(/^#\/raidlog\/([^/]+)$/);
@@ -50,7 +50,7 @@ export async function showRaidLog() {
 
     root.innerHTML = `
         <style>
-            .dialogue { margin: 1em 0; padding: 0.8em 1em; border-radius: 8px; background: #222; border-left: 3px solid #555; }
+            .dialogue { margin: 1em 0; padding: 0.8em 1em; border-radius: 8px; background: #1a1f2c; border-left: 3px solid #555; }
             .dialogue.c1 { border-color: #4CAF50; }
             .dialogue.c2 { border-color: #2196F3; }
             .dialogue.c3 { border-color: #FFC107; }
@@ -59,16 +59,16 @@ export async function showRaidLog() {
         <section class="container narrow">
             <div class="card p16">
                 <button class="btn ghost" onclick="history.back()">← 뒤로가기</button>
-                <h3 class="mt12">레이드 전투 기록</h3>
+                <h3 class="mt12">레이드 전투 기록: ${esc(log.raidName)}</h3>
                 <div class="log-content mt12" style="white-space: pre-wrap; line-height: 1.7;">
                     ${renderRichLog(log.log, log.party)}
                 </div>
                 <div class="mt16">
                     <h4>전투 결과</h4>
-                    <p>총 피해량: ${log.totalDamage.toLocaleString()}</p>
+                    <p>총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></p>
                     <h5>개별 기여도:</h5>
                     <ul>
-                        ${log.contributions.map(c => `<li>${esc(log.party.find(p => p.id === c.charId)?.name || 'Unknown')}: ${c.contribution} (EXP +${c.exp})</li>`).join('')}
+                        ${log.contributions.map(c => `<li><strong>${esc(log.party.find(p => p.id === c.charId)?.name || 'Unknown')}</strong>: ${c.contribution.toLocaleString()} (EXP +${c.exp})</li>`).join('')}
                     </ul>
                 </div>
             </div>
