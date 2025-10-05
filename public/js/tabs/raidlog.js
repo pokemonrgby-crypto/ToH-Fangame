@@ -193,11 +193,30 @@ export async function showRaidLog() {
                 .dialogue-bubble-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 1.5rem 0; max-width: 85%; }
                 .dialogue-bubble-wrap[data-side="right"] { margin-left: auto; flex-direction: row-reverse; }
                 .dialogue-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-                .dialogue-bubble { background: #232a3b; padding: 12px 16px; border-radius: 18px; position: relative; }
+                .dialogue-bubble {
+                  background: #232a3b;
+                  padding: 12px 16px;
+                  border-radius: 18px;
+                  position: relative;
+                  max-width: min(560px, 90vw); /* 너무 좁아지지 않도록 상한 설정 */
+                }
+
                 .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble { border-top-left-radius: 6px; }
                 .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble { border-top-right-radius: 6px; background: #3b3a61; }
                 .dialogue-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; }
                 .dialogue-text { line-height: 1.7; }
+                /* CJK(한글) 줄 양쪽정렬로 글자 벌어지는 문제 방지 */
+                .log-paragraph,
+                .dialogue-text {
+                  text-align: start !important;    /* 상위의 justify를 덮어쓴다 */
+                  text-justify: auto !important;   /* distribute 등 강제 분배 방지 */
+                  letter-spacing: normal !important;
+                  word-spacing: normal !important;
+                  white-space: normal !important;
+                  word-break: keep-all;            /* 한글 단어 단위로 줄바꿈 */
+                  overflow-wrap: anywhere;         /* 긴 토큰(아이템명 등)만 적당히 줄바꿈 */
+                }
+
                 
                 /* 말풍선 꼬리 */
                 .dialogue-bubble::before {
