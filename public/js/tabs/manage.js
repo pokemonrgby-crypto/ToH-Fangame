@@ -1,7 +1,7 @@
 // /public/js/tabs/manage.js
 // 관리자 도구: [메일 발송] / [검색] / [버전 관리] / [후원자 목록] / [서비스 점검] / [경제 관리] 탭 UI
 
-import { auth, db, func, storage, sx, fx, getDocFromServer } from '../api/firebase.js';
+import { auth, db, func, storage, sx, fx } from '../api/firebase.js';
 import { ensureAdmin, isAdminCached } from '../api/admin.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
