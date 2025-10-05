@@ -6,7 +6,7 @@ import { fetchMyChars } from '../api/store.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-// [수정] raid.js 전용 모달 스타일 주입 함수
+// [수정] raid.js에서 사용하는 모든 모달의 스타일을 포함하도록 강화
 function ensureRaidModalCss() {
   if (document.getElementById('toh-raid-modal-css')) return;
   const st = document.createElement('style');
@@ -21,8 +21,13 @@ function ensureRaidModalCss() {
       background:#0e1116; border:1px solid #273247; border-radius:14px;
       padding:16px; width:92vw; max-width:500px; max-height:90vh; overflow-y:auto;
     }
+    /* --- 공용 레이아웃 --- */
+    .col{ display:flex; flex-direction:column; }
+    .row{ display:flex; align-items:center; }
+    .text-dim{ color: var(--muted, #7a828e); }
+
+    /* --- 파티 구성 모달용 스타일 --- */
     .manage-col { display: flex; flex-direction: column; gap: 12px; }
-    .manage-row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
     .manage-label { font-size:13px; color:var(--muted); margin-bottom: 4px; display: block; }
     .manage-select {
         flex: 1;
@@ -33,6 +38,21 @@ function ensureRaidModalCss() {
         padding: 10px;
         font-size: 14px;
         width: 100%;
+    }
+
+    /* --- [추가] 보스 정보 모달용 스타일 --- */
+    .kv-card {
+        background: var(--panel-quote, #181e29);
+        border: 1px solid var(--bd, #212a36);
+        border-radius: 10px;
+        padding: 12px;
+        color: var(--text, #eef1f6);
+    }
+    .kv-label {
+        color: var(--muted, #7a828e);
+        font-size: 13px;
+        margin-bottom: 8px;
+        font-weight: 500;
     }
   `;
   document.head.appendChild(st);
@@ -68,7 +88,7 @@ async function getActiveRaidBoss() {
 }
 
 async function openBossDetailModal(raidBoss) {
-    ensureRaidModalCss();
+    ensureRaidModalCss(); // [수정] 강화된 CSS 주입 함수 호출
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
@@ -87,7 +107,7 @@ async function openBossDetailModal(raidBoss) {
                 <div style="font-weight:900; font-size:20px;">${esc(raidBoss.name)}</div>
                 <p class="text-dim" style="text-align: center; margin: 0;">${esc(raidBoss.description)}</p>
             </div>
-            <div class="kv-label" style="margin-top: 16px;">보스 스킬</div>
+            <div class="kv-label" style="margin-top: 24px;">보스 스킬</div>
             <div class="col" style="gap: 8px;">
                 ${skillsHtml}
             </div>
@@ -170,7 +190,7 @@ export async function showRaid() {
 }
 
 async function openPartySetupModal(raidBoss) {
-    ensureRaidModalCss(); // [수정] raid.js 전용 CSS 주입 함수 호출
+    ensureRaidModalCss();
     const myChars = await fetchMyChars(auth.currentUser.uid);
     if (myChars.length === 0) {
         showToast('레이드에 참여할 내 캐릭터가 없습니다.');
