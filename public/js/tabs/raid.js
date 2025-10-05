@@ -3,13 +3,32 @@ import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
+import { ensureModalCss } from '../ui/modal.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
 let raidBossCache = null;
 
+// 로딩 오버레이 함수 추가
+function showLoading(show = true, text = '처리 중...') {
+    let overlay = document.getElementById('toh-loading-overlay');
+    if (show) {
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'toh-loading-overlay';
+            overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;color:white;`;
+            document.body.appendChild(overlay);
+        }
+        overlay.innerHTML = `<div>${text}</div>`;
+        overlay.style.display = 'flex';
+    } else {
+        if (overlay) overlay.style.display = 'none';
+    }
+}
+
+
 async function getActiveRaidBoss() {
-    if (raidBossCache) return raidBossCache;
+    // 캐시를 사용하지 않고 항상 새로 불러옵니다.
     try {
         const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
         const result = await getRaidBoss();
@@ -55,7 +74,7 @@ export async function showRaid() {
                         <div style="height:12px; background:#1a2230; border-radius:8px; overflow:hidden; border:1px solid #2a3346;">
                             <div style="width:${hpPercent}%; height:100%; background:#ff7a7a; transition: width 0.5s ease;"></div>
                         </div>
-                        <div class="row between" style="font-size:12px; margin-top: 6px;">
+                        <div class="row" style="justify-content:space-between; font-size:12px; margin-top: 6px;">
                             <span>HP: ${raidBoss.currentHp.toLocaleString()} / ${raidBoss.totalHp.toLocaleString()}</span>
                             <span class="text-dim">남은 시간: ${days}일 ${hours}시간</span>
                         </div>
@@ -64,7 +83,7 @@ export async function showRaid() {
                         <h4>기여도 랭킹 (Top 10)</h4>
                         <div class="col" style="gap: 8px;">
                             ${rankings.length > 0 ? rankings.map((r, i) => `
-                                <div class="row between">
+                                <div class="row" style="justify-content:space-between">
                                     <span>${i + 1}. ${esc(r.charName)}</span>
                                     <span>${r.totalContribution.toLocaleString()}</span>
                                 </div>
@@ -83,6 +102,7 @@ export async function showRaid() {
 }
 
 async function openPartySetupModal(raidBoss) {
+    ensureModalCss(); // 모달 CSS 주입
     const myChars = await fetchMyChars(auth.currentUser.uid);
     if (myChars.length === 0) {
         showToast('레이드에 참여할 내 캐릭터가 없습니다.');
