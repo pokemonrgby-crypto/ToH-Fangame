@@ -23,6 +23,9 @@ const rarityColors = {
 /* ------------------------------
  * 로그 텍스트 → 리치 HTML 변환
  * ------------------------------ */
+/* ------------------------------
+ * 로그 텍스트 → 리치 HTML 변환
+ * ------------------------------ */
 function renderRichLog(logText = '', party = []) {
     if (typeof logText !== 'string') logText = String(logText ?? '');
 
@@ -31,6 +34,7 @@ function renderRichLog(logText = '', party = []) {
     let body = lines.join('\n').trim();
 
     // 1. 사용자 정의 태그를 HTML로 변환합니다.
+    // **굵은 글씨**가 <strong> 태그로 먼저 변환됩니다.
     body = esc(body)
         .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
         .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
@@ -46,19 +50,21 @@ function renderRichLog(logText = '', party = []) {
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
 
-    // 2. 대화 부분을 말풍선 HTML로 변환합니다. (정규식 수정)
-    // ANCHOR: [수정] 닫는 태그인 [/대화]를 선택적으로 처리하도록 정규식을 개선했습니다.
-    body = body.replace(/\[대화:([^\]]+)\]\s*"?(.*?)"?\s*(?:\[\/대화\])?/g, (m, name, line) => {
+    // 2. 대화 부분을 말풍선 HTML로 변환합니다.
+    // ANCHOR: [수정] 정규식을 수정하고, 대사 내용(line)의 이중 esc() 처리를 제거했습니다.
+    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
         const charIndex = party.findIndex(p => p.name === name.trim());
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
         const character = party[charIndex] || { name, thumb_url: '' };
         
+        // 'line' 변수는 이미 이전 단계에서 <strong> 태그 등을 포함하고 있으므로,
+        // 여기서 esc() 처리를 하면 태그가 깨집니다. 따라서 esc()를 제거합니다.
         return `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
             <div class="dialogue-bubble">
               <div class="dialogue-name">${esc(character.name)}</div>
-              <div class="dialogue-text">“${esc(line)}”</div>
+              <div class="dialogue-text">“${line}”</div>
             </div>
           </div>
         `;
