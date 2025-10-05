@@ -19,6 +19,7 @@ const rarityColors = {
   legend: '#ffe9ad', myth: '#ffc9ce', aether: '#d6fff7'
 };
 
+
 /* ------------------------------
  * 로그 텍스트 → 리치 HTML 변환
  * ------------------------------ */
@@ -46,7 +47,7 @@ function renderRichLog(logText = '', party = []) {
         });
 
     // 2. 대화 부분을 말풍선 HTML로 변환합니다. (정규식 수정)
-    // [수정] 닫는 태그인 [/대화]를 선택적으로 처리하도록 정규식을 개선했습니다.
+    // ANCHOR: [수정] 닫는 태그인 [/대화]를 선택적으로 처리하도록 정규식을 개선했습니다.
     body = body.replace(/\[대화:([^\]]+)\]\s*"?(.*?)"?\s*(?:\[\/대화\])?/g, (m, name, line) => {
         const charIndex = party.findIndex(p => p.name === name.trim());
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
@@ -77,7 +78,6 @@ function renderRichLog(logText = '', party = []) {
           
       return { title: titleLine, body: paragraphs };
 }
-
 
 /**
  * 스크롤 애니메이션을 설정합니다.
