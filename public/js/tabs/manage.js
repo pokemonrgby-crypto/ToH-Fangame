@@ -1,7 +1,7 @@
 // /public/js/tabs/manage.js
 // 관리자 도구: [메일 발송] / [검색] / [버전 관리] / [후원자 목록] / [서비스 점검] / [경제 관리] 탭 UI
 
-import { func, db, fx } from '../api/firebase.js';
+import { func, db, fx, storage, sx } from '../api/firebase.js';
 import { ensureAdmin, isAdminCached } from '../api/admin.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
@@ -254,6 +254,7 @@ function economyTpl() {
         <button class="manage-tab" data-subtab="world-event">세계관 사건 관리</button>
         <button class="manage-tab" data-subtab="random-event">랜덤 사건 생성</button>
         <button class="manage-tab" data-subtab="auction-settle">경매 일괄 정산</button>
+        <button class="manage-tab" data-subtab="raid-boss">레이드 보스 관리</button>
         <button class="manage-tab" data-subtab="emergency">일괄 폐지/가격상향</button>
     </div>
     <div id="economy-sub-content" class="manage-card" style="border-top-left-radius:0;"></div>
@@ -262,12 +263,29 @@ function economyTpl() {
 }
 
 function economyRaidBossTpl() {
+  let skillInputs = '';
+  for (let i = 1; i <= 4; i++) {
+    skillInputs += `
+      <div class="manage-card" style="padding: 10px;">
+        <label class="manage-label">스킬 ${i}</label>
+        <input id="raid-boss-skill-${i}-name" class="manage-input" placeholder="스킬 ${i} 이름">
+        <textarea id="raid-boss-skill-${i}-desc" class="manage-textarea" rows="2" placeholder="스킬 ${i} 설명"></textarea>
+      </div>
+    `;
+  }
+
   return `
     <h5 style="margin-top:0;">신규 레이드 보스 생성</h5>
     <div class="manage-hint">새로운 레이드 보스를 즉시 생성합니다. 기존에 진행 중인 레이드가 있다면 종료되고 보상이 지급됩니다.</div>
     <div class="manage-col" style="margin-top: 12px;">
       <input id="raid-boss-name" class="manage-input" placeholder="보스 이름 (예: 파멸의 군주, 모르고스)">
       <textarea id="raid-boss-desc" class="manage-textarea" rows="3" placeholder="보스 설명 (예: 차원의 틈새에서 나타난 고대의 존재...)"></textarea>
+      
+      <div class="manage-row">
+        <label class="manage-label">보스 이미지 (1:1)</label>
+        <input id="raid-boss-image" type="file" accept="image/*" class="manage-input">
+      </div>
+
       <div class="manage-row">
         <label class="manage-label">총 HP</label>
         <input id="raid-boss-hp" type="number" min="100000" value="10000000" class="manage-input">
@@ -276,7 +294,13 @@ function economyRaidBossTpl() {
         <label class="manage-label">진행 기간 (일)</label>
         <input id="raid-boss-days" type="number" min="1" max="7" value="3" class="manage-input">
       </div>
-      <div class="manage-row" style="justify-content:flex-end">
+      
+      <h5 style="margin-top:12px; margin-bottom: 0;">보스 스킬 (4개 필수)</h5>
+      <div class="manage-grid2">
+        ${skillInputs}
+      </div>
+
+      <div class="manage-row" style="justify-content:flex-end; margin-top: 12px;">
         <button id="btn-create-raid-boss" class="btn primary">신규 보스 생성</button>
       </div>
     </div>
@@ -1006,27 +1030,65 @@ async function bindRaidBossEvents() {
     if (!btn) return;
 
     btn.addEventListener('click', async () => {
+        const skills = [];
+        for (let i = 1; i <= 4; i++) {
+            const name = document.getElementById(`raid-boss-skill-${i}-name`).value.trim();
+            const desc = document.getElementById(`raid-boss-skill-${i}-desc`).value.trim();
+            if (!name || !desc) {
+                showToast(`스킬 ${i}의 이름과 설명을 모두 입력해주세요.`);
+                return;
+            }
+            skills.push({ name, description: desc });
+        }
+
         const payload = {
             name: document.getElementById('raid-boss-name').value.trim(),
             description: document.getElementById('raid-boss-desc').value.trim(),
             totalHp: Number(document.getElementById('raid-boss-hp').value),
-            durationDays: Number(document.getElementById('raid-boss-days').value)
+            durationDays: Number(document.getElementById('raid-boss-days').value),
+            skills: skills,
+            imageUrl: '' // 이미지 URL은 업로드 후 채워짐
         };
 
         if (!payload.name || !payload.description || payload.totalHp <= 0 || payload.durationDays <= 0) {
             showToast('모든 필드를 올바르게 입력해주세요.');
             return;
         }
-
-        if (!confirm(`정말로 '${payload.name}' 보스를 생성하시겠습니까? 기존 레이드는 종료됩니다.`)) return;
+        
+        if (!confirm(`정말로 '${payload.name}' 보스를 생성하시겠습니까?`)) return;
 
         btn.disabled = true;
         btn.textContent = '생성 중...';
+
         try {
+            // 이미지 업로드
+            const fileInput = document.getElementById('raid-boss-image');
+            const file = fileInput.files[0];
+            if (file) {
+                const randomId = db.collection('raids').doc().id;
+                const storageRef = sx.ref(storage, `raid_boss_images/${randomId}.webp`);
+                
+                // 1:1 리사이징
+                const bmp = await createImageBitmap(file);
+                const side = Math.min(bmp.width, bmp.height);
+                const cropX = (bmp.width - side) / 2;
+                const cropY = (bmp.height - side) / 2;
+                const canvas = document.createElement('canvas');
+                canvas.width = 512;
+                canvas.height = 512;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(bmp, cropX, cropY, side, side, 0, 0, 512, 512);
+                const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/webp', 0.9));
+
+                await sx.uploadBytes(storageRef, blob);
+                payload.imageUrl = await sx.getDownloadURL(storageRef);
+            }
+
             const setupFn = httpsCallable(func, 'adminSetupNewRaidBoss');
             const res = await setupFn(payload);
             const d = res?.data || {};
             showToast(`신규 레이드 보스(ID: ${d.bossId})가 생성되었습니다.`);
+
         } catch (e) {
             showToast(`실패: ${e.message}`);
         } finally {
