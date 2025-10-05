@@ -370,6 +370,10 @@ async function openPartySetupModal(raidBoss) {
         const myCharId = selectedChar.id;
         const myGuildId = selectedChar.guildId;
         const method = back.querySelector('#party-method-select').value;
+
+                // 👇 버튼을 미리 가져와서 비활성화 준비
+        const startButton = back.querySelector('#modal-start');
+        if (startButton) startButton.disabled = true;
         
         closeModal();
         
@@ -405,8 +409,12 @@ async function openPartySetupModal(raidBoss) {
 
         } catch(e) {
             showToast(`레이드 시작 실패: ${e.message}`);
+            // 👇 실패 시 버튼을 다시 활성화해야 하므로, 모달을 다시 열어줍니다. (선택적)
+            // openPartySetupModal(raidBoss); 
         } finally {
             showLoading(false);
+            // 👇 성공/실패 여부와 관계없이 버튼 비활성화 상태는 유지되거나,
+            //    모달이 닫혔으므로 별도 처리가 필요 없습니다.
         }
     };
 
