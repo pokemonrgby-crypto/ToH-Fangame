@@ -22,7 +22,7 @@ const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger,
 const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
 const charFns = require('./character')(admin); // [추가] character.js 로드
-
+const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -708,6 +708,16 @@ exports.advBattleActionV2 = exploreV2.advBattleActionV2; // 추가
 exports.advBattleFleeV2 = exploreV2.advBattleFleeV2;     // 추가
 exports.startEncounter = encounterV2.startEncounter;
 
+
+// Raid exports
+exports.startRaid = raidFns.startRaid;
+exports.getActiveRaidBoss = raidFns.getActiveRaidBoss; // 프론트엔드에서 호출할 수 있도록 추가
+exports.getRaidRankings = raidFns.getRaidRankings; // 프론트엔드에서 호출할 수 있도록 추가
+exports.setupNewRaidBoss = raidFns.setupNewRaidBoss;
+
+
+
+
 const guildFns = require('./guild')(admin, { onCall, HttpsError, logger });
 Object.assign(exports, guildFns);
 exports.kickGuildMember = guildFns.kickFromGuild;
@@ -835,9 +845,9 @@ exports.getCooldownStatus = onCall({ region:'us-central1' }, async (req) => {
 
   const remainMs   = Math.max(0, allSec*1000 - nowMs);
   const exploreMs  = Math.max(0, (data?.cooldown_explore_until?.toMillis?.() || 0) - nowMs);
+  const raidMs  = Math.max(0, (data?.cooldown_raid_until?.toMillis?.() || 0) - nowMs);
 
-  // 프론트가 mode별 키를 읽으므로 동일 값으로 뿌려줌
-  return { ok: true, battle: remainMs, encounter: remainMs, explore: exploreMs };
+  return { ok: true, battle: remainMs, encounter: remainMs, explore: exploreMs, raid: raidMs }; // raid 추가
 });
 
 // /functions/index.js
