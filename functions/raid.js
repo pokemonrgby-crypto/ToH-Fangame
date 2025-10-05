@@ -14,9 +14,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
     // --- Helper Functions ---
 
+
     async function callGemini(systemText, userText) {
         const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-        const model = 'gemini-2.5-flash';
+        const model = 'gemini-2.5-pro';
         const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) {
             throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
@@ -57,8 +58,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_UNSPECIFIED", threshold: "BLOCK_NONE" }
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" }
           ]
           // ANCHOR_END
         };
