@@ -93,25 +93,60 @@ module.exports = ({ logger, GEMINI_API_KEY }) => {
     });
     
     const findRandomPartyForRaid = onCall({ region: 'us-central1' }, async (req) => {
-        const { myCharId } = req.data;
-        const q = db.collection('char_pool')
-            .where('can_match', '==', true)
-            .where(admin.firestore.FieldPath.documentId(), '!=', myCharId);
-        
-        const snap = await q.get();
-        const candidates = snap.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        const myCharId = req.data?.myCharId;
+        const myUid = req.auth?.uid;
+        if (!myCharId || !myUid) {
+            throw new HttpsError('invalid-argument', '캐릭터 ID와 인증 정보가 필요합니다.');
+        }
 
-        if (candidates.length < 3) {
+        const myCharSnap = await db.doc(`chars/${myCharId}`).get();
+        if (!myCharSnap.exists) {
+            throw new HttpsError('not-found', '내 캐릭터 정보를 찾을 수 없습니다.');
+        }
+        const myCharOwner = myCharSnap.data().owner_uid;
+
+        const poolCol = db.collection('char_pool');
+        const candidates = new Map();
+        
+        // Firestore에서 랜덤 조회를 위해 랜덤 ID를 생성하고 그 지점부터 스캔합니다.
+        const randomKey = poolCol.doc().id;
+        const q1 = await poolCol
+            .where('can_match', '==', true)
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .startAt(randomKey)
+            .limit(50)
+            .get();
+
+        q1.docs.forEach(doc => candidates.set(doc.id, doc.data()));
+
+        if (candidates.size < 50) {
+            const q2 = await poolCol
+                .where('can_match', '==', true)
+                .orderBy(admin.firestore.FieldPath.documentId())
+                .limit(50)
+                .get();
+            q2.docs.forEach(doc => candidates.set(doc.id, doc.data()));
+        }
+
+        // 자기 자신과 자기의 다른 캐릭터는 제외하고 필터링합니다.
+        const filteredCandidates = Array.from(candidates.values()).filter(c => {
+            const charId = c.char?.replace('chars/', '');
+            return charId !== myCharId && c.owner_uid !== myCharOwner;
+        });
+
+        if (filteredCandidates.length < 3) {
             throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다.');
         }
 
+        // 필터링된 후보 중에서 무작위로 3명을 선택합니다.
         const party = [];
-        while (party.length < 3 && candidates.length > 0) {
-            const randomIndex = Math.floor(Math.random() * candidates.length);
-            party.push(candidates.splice(randomIndex, 1)[0]);
+        const available = [...filteredCandidates];
+        while (party.length < 3 && available.length > 0) {
+            const randomIndex = Math.floor(Math.random() * available.length);
+            party.push(available.splice(randomIndex, 1)[0]);
         }
-        
-        return { partyCharIds: party.map(p => p.id) };
+
+        return { partyCharIds: party.map(p => p.char.replace('chars/', '')) };
     });
 
     const startRaid = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
