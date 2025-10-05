@@ -7,7 +7,15 @@ import { fetchMyChars } from '../api/store.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
-// ... (ensureRaidModalCss, showLoading, getActiveRaidBoss, openBossDetailModal 함수는 기존과 동일) ...
+// [신규] 레이드 설명용 리치 텍스트 렌더러
+function renderRaidRichText(text) {
+    if (!text) return '';
+    return esc(text)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **굵게** 처리
+        .replace(/\n/g, '<br>'); // 줄바꿈 처리
+}
+
+
 function ensureRaidModalCss() {
   if (document.getElementById('toh-raid-modal-css')) return;
   const st = document.createElement('style');
@@ -20,7 +28,7 @@ function ensureRaidModalCss() {
     }
     .modal-card{
       background:#0e1116; border:1px solid #273247; border-radius:14px;
-      padding:16px; width:92vw; max-width:500px; max-height:90vh; overflow-y:auto;
+      padding:16px; width:92vw; max-width:560px; max-height:90vh; overflow-y:auto;
     }
     /* --- 공용 레이아웃 --- */
     .col{ display:flex; flex-direction:column; }
@@ -41,7 +49,7 @@ function ensureRaidModalCss() {
         width: 100%;
     }
 
-    /* --- [추가] 보스 정보 모달용 스타일 --- */
+    /* --- 보스 정보 모달용 스타일 --- */
     .kv-card {
         background: var(--panel-quote, #181e29);
         border: 1px solid var(--bd, #212a36);
@@ -55,10 +63,29 @@ function ensureRaidModalCss() {
         margin-bottom: 8px;
         font-weight: 500;
     }
+    .boss-skill-card {
+      padding: 10px;
+      background: var(--panel, #11151c);
+    }
+    .boss-phase-card {
+      padding: 12px;
+      border-left: 3px solid var(--bd, #212a36);
+    }
+    .boss-phase-card[data-phase="1"] { border-color: #f59e0b; }
+    .boss-phase-card[data-phase="2"] { border-color: #ef4444; }
+    .boss-phase-card[data-phase="3"] { border-color: #8b5cf6; }
+
+    /* [추가] 메인 카드 설명 3줄 요약 스타일 */
+    .description-truncate {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
   `;
   document.head.appendChild(st);
 }
-
 
 function showLoading(show = true, text = '처리 중...') {
     let overlay = document.getElementById('toh-loading-overlay');
@@ -76,7 +103,6 @@ function showLoading(show = true, text = '처리 중...') {
     }
 }
 
-
 async function getActiveRaidBoss() {
     try {
         const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
@@ -88,31 +114,68 @@ async function getActiveRaidBoss() {
     }
 }
 
+// ANCHOR: [전체 교체] openBossDetailModal
 async function openBossDetailModal(raidBoss) {
     ensureRaidModalCss();
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
     
+    // 보스 설명 텍스트를 페이즈별로 분리
+    const descText = raidBoss.description || '';
+    const phase1Match = descText.match(/\[페이즈 1: 홍염의 용광로\]([\s\S]*?)(\[페이즈 2:|$)/);
+    const phase2Match = descText.match(/\[페이즈 2: 격동하는 거신\]([\s\S]*?)(\[페이즈 3:|$)/);
+    const phase3Match = descText.match(/\[페이즈 3: 탈출하라, 거신의 화염에게\]([\s\S]*)/);
+    
+    const generalDesc = descText.split('[페이즈 1:')[0].trim();
+    const phase1Desc = phase1Match ? phase1Match[1].trim() : '';
+    const phase2Desc = phase2Match ? phase2Match[1].trim() : '';
+    const phase3Desc = phase3Match ? phase3Match[1].trim() : '';
+
     const skillsHtml = (raidBoss.skills || []).map(skill => `
-        <div class="kv-card" style="padding: 10px;">
+        <div class="kv-card boss-skill-card">
             <div style="font-weight: 700;">${esc(skill.name)}</div>
-            <div class="text-dim" style="font-size: 12px; margin-top: 4px;">${esc(skill.description)}</div>
+            <div class="text-dim" style="font-size: 12px; margin-top: 4px; line-height: 1.6;">${renderRaidRichText(skill.description)}</div>
         </div>
     `).join('');
 
     back.innerHTML = `
-        <div class="modal-card" style="max-width: 500px;">
-            <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
-                <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 2px solid #ff5b66;">
-                <div style="font-weight:900; font-size:20px;">${esc(raidBoss.name)}</div>
-                <p class="text-dim" style="text-align: center; margin: 0;">${esc(raidBoss.description)}</p>
+        <div class="modal-card">
+            <div class="col" style="gap: 16px;">
+                <div class="col" style="align-items: center; gap: 12px; text-align: center;">
+                    <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" 
+                         style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 2px solid #ff5b66;">
+                    <div style="font-weight:900; font-size:22px;">${esc(raidBoss.name)}</div>
+                    <p class="text-dim" style="margin: 0; line-height: 1.6;">${renderRaidRichText(generalDesc)}</p>
+                </div>
+                
+                <div>
+                    <div class="kv-label">핵심 스킬</div>
+                    <div class="col" style="gap: 8px;">${skillsHtml}</div>
+                </div>
+
+                <div>
+                    <div class="kv-label">페이즈 정보</div>
+                    <div class="col" style="gap: 12px;">
+                        ${phase1Desc ? `
+                        <div class="kv-card boss-phase-card" data-phase="1">
+                            <div style="font-weight: 700;">페이즈 1: 홍염의 용광로</div>
+                            <p class="text-dim" style="font-size: 13px; line-height: 1.6; margin: 6px 0 0;">${renderRaidRichText(phase1Desc)}</p>
+                        </div>` : ''}
+                        ${phase2Desc ? `
+                        <div class="kv-card boss-phase-card" data-phase="2">
+                            <div style="font-weight: 700;">페이즈 2: 격동하는 거신</div>
+                            <p class="text-dim" style="font-size: 13px; line-height: 1.6; margin: 6px 0 0;">${renderRaidRichText(phase2Desc)}</p>
+                        </div>` : ''}
+                        ${phase3Desc ? `
+                        <div class="kv-card boss-phase-card" data-phase="3">
+                            <div style="font-weight: 700;">페이즈 3: 탈출하라, 거신의 화염에게</div>
+                            <p class="text-dim" style="font-size: 13px; line-height: 1.6; margin: 6px 0 0;">${renderRaidRichText(phase3Desc)}</p>
+                        </div>` : ''}
+                    </div>
+                </div>
             </div>
-            <div class="kv-label" style="margin-top: 24px;">보스 스킬</div>
-            <div class="col" style="gap: 8px;">
-                ${skillsHtml}
-            </div>
-            <button class="btn ghost" id="modal-close" style="margin-top: 16px;">닫기</button>
+            <button class="btn ghost" id="modal-close" style="margin-top: 24px;">닫기</button>
         </div>
     `;
 
@@ -121,7 +184,6 @@ async function openBossDetailModal(raidBoss) {
     back.querySelector('#modal-close').onclick = closeModal;
     back.addEventListener('click', e => { if (e.target === back) closeModal(); });
 }
-
 
 export async function showRaid() {
     const root = document.getElementById('view');
@@ -156,7 +218,7 @@ export async function showRaid() {
                             <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" style="width: 64px; height: 64px; border-radius: 10px; object-fit: cover; background: #111;">
                             <div>
                                 <h3 style="margin:0;">${esc(raidBoss.name)}</h3>
-                                <p class="text-dim" style="font-size: 13px; margin: 4px 0 0;">${esc(raidBoss.description)}</p>
+                                <p class="text-dim description-truncate" style="font-size: 13px; margin: 4px 0 0;">${esc(raidBoss.description.split('[페이즈 1:')[0].trim())}</p>
                             </div>
                         </div>
                         <div style="height:12px; background:#1a2230; border-radius:8px; overflow:hidden; border:1px solid #2a3346;">
@@ -190,7 +252,8 @@ export async function showRaid() {
     document.getElementById('btn-start-raid').onclick = () => openPartySetupModal(raidBoss);
 }
 
-// [신규] 레이드용 캐릭터 선택 모달
+
+// ... (openCharPickerForRaid, openPartySetupModal 함수는 기존과 동일) ...
 async function openCharPickerForRaid(onSelect) {
     ensureRaidModalCss();
     const myChars = await fetchMyChars(auth.currentUser.uid);
@@ -201,7 +264,7 @@ async function openCharPickerForRaid(onSelect) {
 
     const back = document.createElement('div');
     back.className = 'modal-back';
-    back.style.zIndex = '10001'; // ◀◀◀ 수정된 부분
+    back.style.zIndex = '10001';
     back.innerHTML = `
         <div class="modal-card" style="max-width: 720px;">
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드에 참여할 캐릭터 선택</div>
