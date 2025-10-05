@@ -214,7 +214,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '캐릭터 ID, 길드 ID, 인증 정보가 필요합니다.');
         }
 
-        // 길드 멤버 목록 조회
+        // 길드 멤버 목록 조회 (leftAt 조건 없이 guildId로만 조회)
         const membersSnap = await db.collection('guild_members')
             .where('guildId', '==', guildId)
             .get();
@@ -223,10 +223,11 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('not-found', '길드원을 찾을 수 없습니다.');
         }
         
-        // 자기 자신을 제외한 길드원 필터링
+        // 자기 자신을 제외하고, 떠나지 않은(leftAt 필드가 null이거나 없는) 길드원만 코드에서 필터링
         const guildMemberCharIds = membersSnap.docs
-            .map(doc => doc.data().charId)
-            .filter(id => id !== myCharId);
+            .map(doc => doc.data())
+            .filter(member => member.charId !== myCharId && member.leftAt == null)
+            .map(member => member.charId);
 
         if (guildMemberCharIds.length < 3) {
             throw new HttpsError('failed-precondition', '파티를 구성할 길드원이 3명 이상 필요합니다.');
@@ -243,6 +244,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         return { partyCharIds: party };
     });
 
+    
     const startRaid = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
