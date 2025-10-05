@@ -15,20 +15,27 @@ const rarityColors = {
 };
 
 function renderRichLog(logText, party) {
-    let html = esc(logText);
-    // 1. 강조: **text** -> <strong>text</strong>
-    html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-    // 2. 대사: <1>text</1> -> <div class="dialogue c1"><name>: text</div>
+    // [수정] 먼저 전체를 이스케이프하지 않고, 각 태그를 처리하면서 내용만 이스케이프합니다.
+    let html = logText || '';
+
+    // 1. 강조: **text** -> <strong>text</strong> (내용만 이스케이프하도록 콜백 함수 사용)
+    html = html.replace(/\*\*(.*?)\*\*/g, (match, content) => `<strong>${esc(content)}</strong>`);
+    
+    // 2. 대사: <1>text</1> -> <div class="dialogue c1"><name>: text</div> (기존 로직이 이미 안전하게 처리 중)
     html = html.replace(/<(\d)>(.*?)<\/\1>/g, (match, charIndex, text) => {
         const char = party[parseInt(charIndex, 10) - 1];
+        if (!char) return `<div>${esc(text)}</div>`; // 혹시 모를 오류 방지
         return `<div class="dialogue c${charIndex}"><b>${esc(char.name)}:</b> ${esc(text)}</div>`;
     });
-    // 3. 아이템: [ITEM:rarity]name[/ITEM]
+
+    // 3. 아이템: [ITEM:rarity]name[/ITEM] (기존 로직이 이미 안전하게 처리 중)
     html = html.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\](.*?)\[\/ITEM\]/g, (match, rarity, itemName) => {
         const color = rarityColors[rarity.toLowerCase()] || '#fff';
         return `<strong style="color: ${color}; text-shadow: 0 0 4px ${color}80;">${esc(itemName)}</strong>`;
     });
-    return html.replace(/\n/g, '<br>');
+
+    // 4. 나머지 텍스트의 HTML 특수 문자를 이스케이프하고 줄바꿈을 <br>로 변경합니다.
+    return esc(html).replace(/\n/g, '<br>');
 }
 
 
