@@ -89,7 +89,7 @@ async function getActiveRaidBoss() {
 }
 
 async function openBossDetailModal(raidBoss) {
-    ensureRaidModalCss(); // [수정] 강화된 CSS 주입 함수 호출
+    ensureRaidModalCss();
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
@@ -201,6 +201,7 @@ async function openCharPickerForRaid(onSelect) {
 
     const back = document.createElement('div');
     back.className = 'modal-back';
+    back.style.zIndex = '10001'; // ◀◀◀ 수정된 부분
     back.innerHTML = `
         <div class="modal-card" style="max-width: 720px;">
           <div style="font-weight:900; font-size:18px; margin-bottom:12px;">레이드에 참여할 캐릭터 선택</div>
