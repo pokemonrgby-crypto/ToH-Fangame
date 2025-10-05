@@ -65,6 +65,30 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const rankings = contributionsSnap.docs.map(doc => doc.data());
         return { rankings };
     });
+    
+    const findRandomPartyForRaid = onCall({ region: 'us-central1' }, async (req) => {
+        const { myCharId } = req.data;
+        // char_pool에서 can_match가 true이고, 내 캐릭터가 아닌 3명을 무작위로 찾습니다.
+        // 실제 구현에서는 더 정교한 매칭 로직이 필요할 수 있습니다 (예: Elo 기반)
+        const q = db.collection('char_pool').where('can_match', '==', true).limit(50);
+        const snap = await q.get();
+        const candidates = snap.docs
+            .map(doc => ({ id: doc.id, ...doc.data() }))
+            .filter(char => char.id !== myCharId);
+
+        if (candidates.length < 3) {
+            throw new HttpsError('not-found', '매칭할 파티원을 찾을 수 없습니다.');
+        }
+
+        // 3명을 무작위로 선택
+        const party = [];
+        while (party.length < 3 && candidates.length > 0) {
+            const randomIndex = Math.floor(Math.random() * candidates.length);
+            party.push(candidates.splice(randomIndex, 1)[0]);
+        }
+        
+        return { partyCharIds: party.map(p => p.id) };
+    });
 
     const startRaid = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
@@ -111,11 +135,12 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system || 'You are a battle narrator.');
         
         const partyForAI = partyChars.map((c, index) => {
+            // 인벤토리에서 장착 아이템 정보 가져오기
+            const userItems = c.owner_uid === uid ? userData.items_all : []; // 임시방편
             const items = (c.items_equipped || [])
               .map(itemId => {
-                  // This is a simplification. In a real scenario, you'd fetch item details.
-                  // For now, we assume item details are somehow available or just use names.
-                  const item = (c.items_all || []).find(i => i.id === itemId) || {};
+                  const item = userItems.find(i => i.id === itemId);
+                  if (!item) return null;
                   return {
                       name: item.name,
                       description: item.description,
@@ -123,7 +148,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                       rarity: item.rarity
                   };
               })
-              .filter(i => i.name); // Filter out items that couldn't be found
+              .filter(Boolean);
         
             return {
                 charIndex: index + 1,
@@ -254,6 +279,53 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         logger.info(`${rank - 1} users have been sent raid rewards.`);
     }
+    
+    // [신규] 관리자용 보스 추가 함수
+    const adminSetupNewRaidBoss = onCall({ region: 'us-central1' }, async (req) => {
+        const uid = req.auth?.uid;
+        if (!await _isAdmin(uid)) { // 관리자 확인 헬퍼 함수 필요
+            throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+        }
 
-    return { startRaid, setupNewRaidBoss, getActiveRaidBoss, getRaidRankings };
+        const { name, description, totalHp, durationDays } = req.data;
+        if (!name || !description || !totalHp || !durationDays) {
+            throw new HttpsError('invalid-argument', '보스 정보가 올바르지 않습니다.');
+        }
+        
+        // 현재 진행중인 레이드 종료 및 보상 지급
+        const activeRaid = await getActiveRaid();
+        if (activeRaid) {
+            await distributeRaidRewards(activeRaid.id);
+        }
+
+        // 새 보스 생성
+        const newBoss = {
+            name: String(name),
+            description: String(description),
+            totalHp: Number(totalHp),
+            currentHp: Number(totalHp),
+            startsAt: FieldValue.serverTimestamp(),
+            endsAt: Timestamp.fromMillis(Date.now() + Number(durationDays) * 24 * 60 * 60 * 1000),
+        };
+        const newBossRef = await db.collection('raids').add(newBoss);
+        await db.doc('raid/status').set({ activeRaidId: newBossRef.id });
+        
+        logger.info(`관리자(${uid})가 새로운 레이드 보스 ${newBossRef.id}를 생성했습니다.`);
+        return { ok: true, bossId: newBossRef.id };
+    });
+
+    async function _isAdmin(uid) {
+        if (!uid) return false;
+        try {
+          const snap = await db.doc('configs/admins').get();
+          const d = snap.exists ? snap.data() : {};
+          const allow = Array.isArray(d.allow) ? d.allow : [];
+          if (allow.includes(uid)) return true;
+          const allowEmails = Array.isArray(d.allowEmails) ? d.allowEmails : [];
+          const user = await admin.auth().getUser(uid);
+          return !!(user?.email && allowEmails.includes(user.email));
+        } catch (_) { return false; }
+      }
+
+    return { startRaid, setupNewRaidBoss, getActiveRaidBoss, getRaidRankings, findRandomPartyForRaid, adminSetupNewRaidBoss };
 };
