@@ -1,4 +1,4 @@
-// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3817634fe4bd22d3cff873690d80130ec120c435/functions/raid.js
+// pokemonrgby-crypto/toh-fangame/ToH-Fangame-142a45d0c9062ca031b3d3579acc8b1e8abafaef/functions/raid.js
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
@@ -201,12 +201,11 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
 
         const allCharIds = [myCharId, ...partyCharIds];
-        let raidBoss, userSnap, myCharSnap;
+        let raidBoss, userSnap;
         try {
-            [raidBoss, userSnap, myCharSnap] = await Promise.all([
+            [raidBoss, userSnap] = await Promise.all([
                 getActiveRaid(),
-                db.doc(`users/${uid}`).get(),
-                db.doc(`chars/${myCharId}`).get()
+                db.doc(`users/${uid}`).get()
             ]);
         } catch (e) {
             throw new HttpsError('internal', '데이터 조회 중 오류 발생');
@@ -226,6 +225,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('failed-precondition', `레이드 쿨타임이 ${remaining}초 남았습니다.`);
         }
         
+        const myCharSnap = await db.doc(`chars/${myCharId}`).get();
         if (!myCharSnap.exists || myCharSnap.data().owner_uid !== uid) {
             throw new HttpsError('permission-denied', '자신의 캐릭터로만 레이드를 시작할 수 있습니다.');
         }
@@ -233,14 +233,57 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const charDocs = await db.collection('chars').where(admin.firestore.FieldPath.documentId(), 'in', allCharIds).get();
         const partyChars = charDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
+        // ANCHOR: AI에게 전달할 파티 정보 가공 (요청사항 반영)
+        const allOwnerUids = [...new Set(partyChars.map(c => c.owner_uid))];
+        const userInventories = new Map();
+
+        const userSnaps = await Promise.all(
+            allOwnerUids.map(ownerId => db.doc(`users/${ownerId}`).get())
+        );
+        userSnaps.forEach(snap => {
+            if (snap.exists) {
+                userInventories.set(snap.id, snap.data().items_all || []);
+            }
+        });
+
+        const partyForAI = partyChars.map((c) => {
+            const equippedSkills = (c.abilities_equipped || [])
+                .map(idx => (c.abilities_all || [])[idx])
+                .filter(Boolean)
+                .map(skill => ({
+                    name: skill.name,
+                    description: skill.desc_soft || skill.desc || ''
+                }));
+
+            const ownerInventory = userInventories.get(c.owner_uid) || [];
+            const equippedItems = (c.items_equipped || [])
+                .map(itemId => {
+                    const item = ownerInventory.find(i => i.id === itemId);
+                    if (!item) return null;
+                    return {
+                        name: item.name,
+                        description: item.description || item.desc || '',
+                        properties: item.properties || {},
+                        rarity: item.rarity
+                    };
+                })
+                .filter(Boolean);
+            
+            const latestNarrative = (c.narratives || []).sort((a,b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+
+            return {
+                charId: c.id,
+                name: c.name,
+                summary: c.summary,
+                narrative_long: latestNarrative?.long || c.summary || '',
+                skills: equippedSkills,
+                equipped_items: equippedItems
+            };
+        });
+        // ANCHOR_END
+
         const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system || 'You are a battle narrator.');
         
-        const partyForAI = partyChars.map((c, index) => ({
-            charId: c.id,
-            name: c.name,
-            summary: c.summary,
-        }));
-
         const userPrompt = `
 # 보스 정보
 ${JSON.stringify({ name: raidBoss.name, description: raidBoss.description, skills: raidBoss.skills }, null, 2)}
