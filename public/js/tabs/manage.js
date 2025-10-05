@@ -261,6 +261,29 @@ function economyTpl() {
   `;
 }
 
+function economyRaidBossTpl() {
+  return `
+    <h5 style="margin-top:0;">신규 레이드 보스 생성</h5>
+    <div class="manage-hint">새로운 레이드 보스를 즉시 생성합니다. 기존에 진행 중인 레이드가 있다면 종료되고 보상이 지급됩니다.</div>
+    <div class="manage-col" style="margin-top: 12px;">
+      <input id="raid-boss-name" class="manage-input" placeholder="보스 이름 (예: 파멸의 군주, 모르고스)">
+      <textarea id="raid-boss-desc" class="manage-textarea" rows="3" placeholder="보스 설명 (예: 차원의 틈새에서 나타난 고대의 존재...)"></textarea>
+      <div class="manage-row">
+        <label class="manage-label">총 HP</label>
+        <input id="raid-boss-hp" type="number" min="100000" value="10000000" class="manage-input">
+      </div>
+      <div class="manage-row">
+        <label class="manage-label">진행 기간 (일)</label>
+        <input id="raid-boss-days" type="number" min="1" max="7" value="3" class="manage-input">
+      </div>
+      <div class="manage-row" style="justify-content:flex-end">
+        <button id="btn-create-raid-boss" class="btn primary">신규 보스 생성</button>
+      </div>
+    </div>
+  `;
+}
+
+
 function economyCompanyTpl() {
   return `
     <h5 style="margin-top:0;">주식회사 목록</h5>
@@ -798,6 +821,9 @@ function bindEconomyEvents() {
         } else if (subTabId === 'random-event') { // 이 부분을 추가합니다.
             content.innerHTML = economyRandomEventTpl();
             bindRandomEventEvents();
+        } else if (subTabId === 'raid-boss') { // 이 부분을 추가합니다.
+            content.innerHTML = economyRaidBossTpl();
+            bindRaidBossEvents();
         }
     };
 
@@ -971,6 +997,41 @@ async function bindWorldEventEvents() {
             showToast(`사건 생성 실패: ${err.message}`);
         } finally {
             btn.disabled = false;
+        }
+    });
+}
+
+async function bindRaidBossEvents() {
+    const btn = document.getElementById('btn-create-raid-boss');
+    if (!btn) return;
+
+    btn.addEventListener('click', async () => {
+        const payload = {
+            name: document.getElementById('raid-boss-name').value.trim(),
+            description: document.getElementById('raid-boss-desc').value.trim(),
+            totalHp: Number(document.getElementById('raid-boss-hp').value),
+            durationDays: Number(document.getElementById('raid-boss-days').value)
+        };
+
+        if (!payload.name || !payload.description || payload.totalHp <= 0 || payload.durationDays <= 0) {
+            showToast('모든 필드를 올바르게 입력해주세요.');
+            return;
+        }
+
+        if (!confirm(`정말로 '${payload.name}' 보스를 생성하시겠습니까? 기존 레이드는 종료됩니다.`)) return;
+
+        btn.disabled = true;
+        btn.textContent = '생성 중...';
+        try {
+            const setupFn = httpsCallable(func, 'adminSetupNewRaidBoss');
+            const res = await setupFn(payload);
+            const d = res?.data || {};
+            showToast(`신규 레이드 보스(ID: ${d.bossId})가 생성되었습니다.`);
+        } catch (e) {
+            showToast(`실패: ${e.message}`);
+        } finally {
+            btn.disabled = false;
+            btn.textContent = '신규 보스 생성';
         }
     });
 }
