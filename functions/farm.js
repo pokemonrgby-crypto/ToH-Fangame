@@ -8,13 +8,12 @@ module.exports = (admin) => {
   const db = admin.firestore();
   const { FieldValue, Timestamp } = admin.firestore;
 
-  // ANCHOR: [추가] 등급별 경험치 테이블
   const SKILL_EXP_TABLE = {
     plant:  { normal: 2, rare: 5, epic: 15, legendary: 40, mythic: 100, aether: 250 },
     harvest:{ normal: 5, rare: 15, epic: 40, legendary: 100, mythic: 250, aether: 600 },
   };
 
-  // 농사 프로필(레벨/경험치) 읽기/업데이트
+  // 농사 프로필(레벨/경험치) 읽기/업데이트 - 최대 레벨 100으로 수정
   async function _getFarmProfile(uid) {
     const ref = db.doc(`farm_profiles/${uid}`);
     const snap = await ref.get();
@@ -29,7 +28,8 @@ module.exports = (admin) => {
       const snap = await tx.get(ref);
       let { level=1, exp=0, nextExp=100 } = snap.exists ? (snap.data()||{}) : {};
       exp += gain;
-      while (exp >= nextExp && level < 30) {
+      // ANCHOR: [수정] 농장 레벨업 상한을 100으로 변경
+      while (exp >= nextExp && level < 100) {
         exp -= nextExp;
         level += 1;
         nextExp = Math.round(100 + 50 * level);
@@ -66,7 +66,7 @@ module.exports = (admin) => {
     }
   }
 
-  // ANCHOR: 레거시 호환 로직이 포함된 스킬 경험치 함수
+  // 스킬 경험치 지급 및 레벨업 로직 - 최대 레벨 100으로 수정
   async function _awardSkillExp(tx, charId, skillName, expToAdd) {
     if (!charId || !skillName || expToAdd <= 0) return;
     const charRef = db.doc(`chars/${charId}`);
@@ -76,7 +76,6 @@ module.exports = (admin) => {
     const charData = charSnap.data() || {};
     let skills = charData.skills || {};
 
-    // [설명] 레거시 호환: 스킬 데이터가 숫자(레벨)이면 객체 형태로 변환
     if (typeof skills[skillName] === 'number' || skills[skillName] === undefined) {
       const currentLevel = Number(skills[skillName] || 0);
       skills[skillName] = {
@@ -89,7 +88,8 @@ module.exports = (admin) => {
     let { level, exp, nextExp } = skills[skillName];
     exp += expToAdd;
 
-    while (exp >= nextExp) {
+    // ANCHOR: [수정] 스킬 레벨업 상한을 100으로 변경
+    while (exp >= nextExp && level < 100) {
       exp -= nextExp;
       level += 1;
       nextExp = Math.floor(200 ** (Math.sqrt(level)));
@@ -113,9 +113,13 @@ module.exports = (admin) => {
     aether: 160 * 60 * 1000,
   };
 
+  // ANCHOR: [수정] 원예 스킬 시간 단축 공식 변경 (최대 레벨 100, 최대 99% 단축)
   function levelSpeedMult(gardeningLv = 0) {
-    const lv = Math.max(0, Math.min(30, Number(gardeningLv || 0)));
-    return 1 - 0.9 * (lv / 30);
+    // 1. 레벨 상한을 100으로 변경
+    const lv = Math.max(0, Math.min(100, Number(gardeningLv || 0)));
+    // 2. 최대 할인율을 0.99 (99%)로, 레벨 분모를 100으로 변경
+    //    레벨 100일 때: 1 - 0.99 * (100 / 100) = 0.01 (즉, 1%의 시간만 소요)
+    return 1 - 0.99 * (lv / 100);
   }
 
   function deviceSpeedMult(deviceSlots = []) {
