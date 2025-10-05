@@ -159,7 +159,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         const myCharData = myCharSnap.data();
         const myCharOwner = myCharData.owner_uid;
-        const myGuildId = myCharData.guildId; // 내 길드 ID 확인
 
         const poolCol = db.collection('char_pool');
         const candidates = new Map();
@@ -183,22 +182,18 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             q2.docs.forEach(doc => candidates.set(doc.id, { id: doc.id, ...doc.data() }));
         }
 
-        // 자기 자신, 자기의 다른 캐릭터, 그리고 같은 길드원은 제외
+        // 자기 자신과 자기의 다른 캐릭터만 제외
         const filteredCandidates = Array.from(candidates.values()).filter(c => {
             const charId = (c.char?.replace('chars/', '')) || c.id;
             if (!charId) return false;
             if (charId === myCharId || c.owner_uid === myCharOwner) {
                 return false;
             }
-            // 길드 ID가 있는 경우, 내 길드와 다른 경우에만 포함
-            if (myGuildId && c.guildId === myGuildId) {
-                return false;
-            }
             return true;
         });
 
         if (filteredCandidates.length < 3) {
-            throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다. (길드원 제외)');
+            throw new HttpsError('not-found', '매칭할 파티원을 3명 이상 찾을 수 없습니다.');
         }
 
         const party = [];
