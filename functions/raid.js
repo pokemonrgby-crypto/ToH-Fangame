@@ -29,10 +29,8 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             temperature: 0.70,
             maxOutputTokens: 16384,
             responseMimeType: "application/json",
-            // ANCHOR: [수정된 부분]
             responseSchema: {
               type: "object",
-              // "additionalProperties": false,  // <-- 이 줄 제거
               required: ["log", "totalDamage", "contributions"],
               properties: {
                 log: { type: "string", maxLength: 16000 },
@@ -43,7 +41,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                   maxItems: 4,
                   items: {
                     type: "object",
-                    // "additionalProperties": false,  // <-- 이 줄도 제거
                     required: ["charId", "contribution", "exp"],
                     properties: {
                       charId: { type: "string", minLength: 1 },
@@ -54,7 +51,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 }
               }
             }
-            // ANCHOR_END
           }
         };
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -66,42 +62,33 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (!text) throw new HttpsError('internal', 'Gemini response was empty.');
 
-        // --- 응답 세척 ---
-        // 1) ```json 코드펜스 제거
-        // 2) BOM/제로폭 제거
-        // 3) 가장 바깥 { ... }만 추출
-        // 4) "..." + "..." 식 문자열 이어붙이기 제거(내부 경계 쿼트+플러스+쿼트 삭제)
-        let clean = text
-          .replace(/\uFEFF/g, '')
-          .replace(/[\u200B-\u200D\u2060]/g, '')
-          .replace(/^[\uFEFF\s]*```(?:json)?\s*/i, '')
-          .replace(/\s*```\s*$/, '')
-          .trim();
-
-        // 바깥 JSON만 남기기(앞뒤 잡문 방지)
-        const firstBrace = clean.indexOf('{');
-        const lastBrace  = clean.lastIndexOf('}');
-        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-          clean = clean.slice(firstBrace, lastBrace + 1);
-        }
-
-        // "문자열"+"문자열" → 하나의 문자열로 합치기
-        // (닫는 쿼트 + 플러스 + 여는 쿼트 패턴 제거: "   +   ")
-        clean = clean.replace(/"\s*\+\s*"/g, '');
-        
-        // 최종 파싱
+        // ANCHOR: [수정된 부분] JSON 파싱 안정성 강화를 위한 전처리 로직
         try {
-          return JSON.parse(clean);
-        } catch (e) {
-          logger.error("Gemini JSON parse failed (after clean)", {
-            rawLen: text?.length ?? 0,
-            cleanLen: clean?.length ?? 0,
-            // raw/clean 전문은 너무 길어서 생략 (로그 오염 방지)
-            error: e
-          });
-          throw new HttpsError('internal', 'AI 응답 파싱에 실패했습니다.');
-        }
+            // 1. 코드 블록 및 앞뒤 공백 제거
+            let clean = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```\s*$/, '').trim();
 
+            // 2. JSON 객체 부분만 추출 (앞뒤에 불필요한 텍스트가 있는 경우 대비)
+            const firstBrace = clean.indexOf('{');
+            const lastBrace = clean.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace > firstBrace) {
+                clean = clean.slice(firstBrace, lastBrace + 1);
+            }
+
+            // 3. 후행 쉼표(trailing comma) 제거 (배열과 객체 모두)
+            clean = clean.replace(/,\s*([}\]])/g, '$1');
+            
+            // 4. 주석 제거
+            clean = clean.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+
+            return JSON.parse(clean);
+        } catch (e) {
+            logger.error("Gemini JSON parse failed (after robust cleaning)", {
+                rawText: text.slice(0, 500), // 로그에는 일부만 기록
+                error: e.message
+            });
+            throw new HttpsError('internal', 'AI 응답을 파싱하는 데 최종적으로 실패했습니다.');
+        }
+        // ANCHOR_END
     }
 
     async function getActiveRaid() {
@@ -287,7 +274,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const charDocs = await db.collection('chars').where(admin.firestore.FieldPath.documentId(), 'in', allCharIds).get();
         const partyChars = charDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        // ANCHOR: AI에게 전달할 파티 정보 가공 (요청사항 반영)
         const allOwnerUids = [...new Set(partyChars.map(c => c.owner_uid))];
         const userInventories = new Map();
 
@@ -334,7 +320,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 equipped_items: equippedItems
             };
         });
-        // ANCHOR_END
 
         const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system || 'You are a battle narrator.');
         
@@ -347,21 +332,16 @@ ${JSON.stringify(partyForAI, null, 2)}
         `;
 
         const aiResult = await callGemini(systemPrompt, userPrompt);
-        let totalDamage = 1; // 블록 밖에서 잡아두고, 아래 보정 블록에서 할당
+        let totalDamage = 1;
 
         {
-          // 로그 토큰 교정: [/SLOW] → [RESUME]
           if (aiResult && typeof aiResult.log === 'string') {
             aiResult.log = aiResult.log.replace(/\[\/SLOW\]/g, '[RESUME]');
           }
 
-          // totalDamage 정수화 + 범위(1~MAX) 클램프
           const tdRaw = Number(aiResult?.totalDamage);
-          // ▼▼▼ [수정된 부분] ▼▼▼
           totalDamage = Math.max(1, Math.min(MAX_RAID_DAMAGE, Number.isFinite(tdRaw) ? Math.round(tdRaw) : 1));
-          // ▲▲▲ [수정된 부분] ▲▲▲
 
-          // contributions 검사/보정
           if (!Array.isArray(aiResult?.contributions) || aiResult.contributions.length !== 4) {
             throw new HttpsError('internal', 'AI 응답의 contributions 길이가 4가 아닙니다.');
           }
@@ -369,7 +349,7 @@ ${JSON.stringify(partyForAI, null, 2)}
             const cid = String(c?.charId || '');
             const val = Math.round(Number(c?.contribution));
             const safe = Math.max(1, Math.min(MAX_EXP_PER_RAID, Number.isFinite(val) ? val : 1));
-            return { charId: cid, contribution: safe, exp: safe }; // 규칙: contribution===exp
+            return { charId: cid, contribution: safe, exp: safe };
           });
         }
 
@@ -392,7 +372,7 @@ ${JSON.stringify(partyForAI, null, 2)}
                     id: c.id, 
                     name: c.name, 
                     owner_uid: c.owner_uid,
-                    thumb_url: c.thumb_url || null // 썸네일 URL 추가
+                    thumb_url: c.thumb_url || null
                 })),
                 party_ids: partyIds,
                 totalDamage,
@@ -413,7 +393,7 @@ ${JSON.stringify(partyForAI, null, 2)}
 
                     tx.set(contribRef.doc(char.id), {
                         charId: char.id,
-                        totalContribution: FieldValue.increment(exp), // 기여도 = 경험치
+                        totalContribution: FieldValue.increment(exp),
                         owner_uid: char.owner_uid,
                         charName: char.name,
                         lastUpdated: FieldValue.serverTimestamp()
@@ -506,7 +486,7 @@ ${JSON.stringify(partyForAI, null, 2)}
         getActiveRaidBoss, 
         getRaidRankings, 
         findRandomPartyForRaid, 
-        findGuildPartyForRaid, // [추가]
+        findGuildPartyForRaid,
         adminSetupNewRaidBoss 
     };
 };
