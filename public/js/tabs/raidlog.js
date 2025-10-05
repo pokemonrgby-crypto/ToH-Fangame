@@ -21,25 +21,26 @@ const rarityColors = {
 
 
 /* ------------------------------
- * 로그 텍스트 → 리치 HTML 변환
+ * 로그 텍스트 → 리치 HTML 변환 (수정된 최종본)
  * ------------------------------ */
 function renderRichLog(logText = '', party = []) {
     if (typeof logText !== 'string') logText = String(logText ?? '');
 
     const lines = logText.split('\n');
-    let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
+    let titleLine = (lines.shift() || '레이드 기록').replace(/^\[AI가 생성한 제목\]/, '').trim();
     let body = lines.join('\n').trim();
 
-    // 1. 대화 블록을 고유한 플레이스홀더로 분리합니다.
-    // [수정] 정규식을 「」 에 맞게 변경합니다.
+    // 1. 대화 블록을 고유한 플레이스홀더로 먼저 분리합니다.
     const dialogues = [];
+    // [수정] 정규식을 「...」 형식에 맞게 변경합니다.
     body = body.replace(/\[대화:([^\]]+)\]「([^」]*)」/g, (match, name, line) => {
         dialogues.push({ name, line });
         return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
     });
 
-    // 2. 대화가 제거된 일반 서술부에 대해서만 모든 태그 변환 및 HTML 이스케이프를 적용합니다.
+    // 2. HTML 이스케이프를 먼저 적용합니다.
     let narrativeBody = esc(body)
+        // 3. 이제 안전하게 리치 텍스트 태그들을 HTML 태그로 변환합니다.
         .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
         .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
         .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
@@ -54,7 +55,7 @@ function renderRichLog(logText = '', party = []) {
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
 
-    // 3. 분리해두었던 대화 블록을 다시 HTML 말풍선으로 만들어 삽입합니다.
+    // 4. 분리해두었던 대화 블록을 다시 HTML 말풍선으로 만들어 삽입합니다.
     dialogues.forEach((dialogue, index) => {
         const charIndex = party.findIndex(p => p.name === dialogue.name.trim());
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
@@ -62,7 +63,6 @@ function renderRichLog(logText = '', party = []) {
         
         const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
 
-        // [수정] 말풍선 따옴표를 「」로 변경하여 일관성을 유지합니다.
         const bubbleHtml = `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
@@ -75,7 +75,7 @@ function renderRichLog(logText = '', party = []) {
         narrativeBody = narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`, bubbleHtml);
     });
 
-    // 4. 최종적으로 완성된 HTML을 단락으로 나누어 반환합니다.
+    // 5. 최종적으로 완성된 HTML을 단락으로 나누어 반환합니다.
     const paragraphs = narrativeBody.split(/\n{2,}/)
       .map(p => p.trim())
       .filter(p => p)
@@ -83,6 +83,7 @@ function renderRichLog(logText = '', party = []) {
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
               return p;
           }
+          // [수정] 일반 단락의 줄바꿈(\n)도 <br>로 변환합니다.
           return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
       })
       .join('');
