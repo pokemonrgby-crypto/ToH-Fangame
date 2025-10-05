@@ -15,24 +15,24 @@ const rarityColors = {
 };
 
 function renderRichLog(logText, party) {
-    // [수정] 먼저 전체를 이스케이프하지 않고, 각 태그를 처리하면서 내용만 이스케이프합니다.
     let html = logText || '';
 
     // 1. 강조: **text** -> <strong>text</strong>
+    // 이 처리가 먼저 실행되어야 대사 안의 강조도 반영됩니다.
     html = html.replace(/\*\*(.*?)\*\*/g, (match, content) => `<strong>${esc(content)}</strong>`);
-    
+
     // 2. 대사: [대화:이름]"대사" -> <div class="dialogue"><name>: text</div>
-    // AI 프롬프트와 일치하도록 정규식을 수정하고, 이름으로 캐릭터를 찾습니다.
     html = html.replace(/\[대화:(.*?)\]"(.*?)"/g, (match, charName, text) => {
         const char = party.find(p => p.name === charName.trim());
         const charIndex = party.findIndex(p => p.name === charName.trim()) + 1;
         
+        // ANCHOR: [수정] 대사 내용(text)을 esc()로 감싸지 않아 내부의 <strong> 태그가 유지되도록 합니다.
+        const dialogueContent = text; 
+
         if (!char) {
-            // 파티 목록에 없는 이름이면 이름만 표시
-            return `<div class="dialogue"><b>${esc(charName)}:</b> ${esc(text)}</div>`;
+            return `<div class="dialogue"><b>${esc(charName)}:</b> ${dialogueContent}</div>`;
         }
-        // 파티에 있으면 c1, c2, c3, c4 클래스로 색상 부여
-        return `<div class="dialogue c${charIndex}"><b>${esc(char.name)}:</b> ${esc(text)}</div>`;
+        return `<div class="dialogue c${charIndex}"><b>${esc(char.name)}:</b> ${dialogueContent}</div>`;
     });
 
     // 3. 아이템: [ITEM:rarity]name[/ITEM]
@@ -41,17 +41,12 @@ function renderRichLog(logText, party) {
         return `<strong style="color: ${color}; text-shadow: 0 0 4px ${color}80;">${esc(itemName)}</strong>`;
     });
 
-    // 4. 줄바꿈 처리: 최종적으로 남은 텍스트의 줄바꿈만 <br>로 변경합니다.
-    // [수정] 마지막에 전체를 esc()로 감싸던 부분을 제거했습니다.
+    // 4. 줄바꿈 처리
     return html.replace(/\n/g, '<br>');
 }
 
 
-
 export async function showRaidLog() {
-    // (이 함수 내의 다른 부분은 수정할 필요가 없습니다.)
-// (기존 내용과 동일)
-// ...
     const root = document.getElementById('view');
     const logId = parseLogId();
     if (!logId) {
@@ -74,21 +69,43 @@ export async function showRaidLog() {
             .dialogue.c2 { border-color: #2196F3; }
             .dialogue.c3 { border-color: #FFC107; }
             .dialogue.c4 { border-color: #E91E63; }
+            
+            /* ANCHOR: [추가] 기여도 카드 그리드 스타일 */
+            .contribution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+            @media (max-width: 500px) { .contribution-grid { grid-template-columns: 1fr; } }
+            .contrib-card { display: flex; align-items: center; gap: 10px; background: #151922; padding: 10px; border-radius: 10px; }
+            .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #0e1116; flex-shrink: 0; }
         </style>
         <section class="container narrow">
             <div class="card p16">
                 <button class="btn ghost" onclick="history.back()">← 뒤로가기</button>
-                <h3 class="mt12">레이드 전투 기록: ${esc(log.raidName)}</h3>
+                
+                <div class="mt16">
+                    <h3 style="margin-top:0; text-align:center;">전투 결과</h3>
+                    <div style="text-align:center; margin-bottom: 12px;">총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></div>
+                    <div class="contribution-grid">
+                        ${(log.contributions || []).map(c => {
+                            const p = (log.party || []).find(p => p.id === c.charId) || { name: 'Unknown', thumb_url: '' };
+                            return `
+                                <div class="contrib-card">
+                                    <img src="${esc(p.thumb_url)}" class="contrib-avatar" onerror="this.style.display='none'">
+                                    <div>
+                                        <div style="font-weight: 700;">${esc(p.name)}</div>
+                                        <div class="text-dim" style="font-size: 12px;">
+                                            기여도: ${c.contribution.toLocaleString()} (EXP +${c.exp})
+                                        </div>
+                                    </div>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                </div>
+
+                <hr style="margin: 24px 0; border-color: #2a2f36;">
+                
+                <h3 class="mt12" style="text-align:center;">${esc(log.raidName)} 전투 기록</h3>
                 <div class="log-content mt12" style="white-space: pre-wrap; line-height: 1.7;">
                     ${renderRichLog(log.log, log.party)}
-                </div>
-                <div class="mt16">
-                    <h4>전투 결과</h4>
-                    <p>총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></p>
-                    <h5>개별 기여도:</h5>
-                    <ul>
-                        ${log.contributions.map(c => `<li><strong>${esc(log.party.find(p => p.id === c.charId)?.name || 'Unknown')}</strong>: ${c.contribution.toLocaleString()} (EXP +${c.exp})</li>`).join('')}
-                    </ul>
                 </div>
             </div>
         </section>
