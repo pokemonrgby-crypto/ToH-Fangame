@@ -452,7 +452,6 @@ module.exports = (admin) => {
     if (!isOwner) throw new HttpsError('permission-denied', '이 토지에서 수확할 권한이 없습니다.');
 
     const allSeeds = await loadSeedsData();
-    
     const seasonSnap = await db.doc('configs/season').get();
     const currentSeason = seasonSnap.exists ? seasonSnap.data().current : 'spring';
 
@@ -461,10 +460,9 @@ module.exports = (admin) => {
     const userRef = db.doc(`users/${uid}`);
 
     let newItemsForUser = [];
-    let totalCharExpGain = 0;
-    let totalSkillExpGain = 0;
-
+    
     await db.runTransaction(async (tx) => {
+      // --- 1. 모든 읽기(Read) 작업을 트랜잭션 맨 위로 ---
       const plotSnap = await tx.get(plotRef);
       if (!plotSnap.exists) throw new HttpsError('failed-precondition', '심어진 작물이 없습니다.');
       
@@ -475,40 +473,46 @@ module.exports = (admin) => {
       const tiles = plotData.tiles || {};
       
       const charIdsToRead = new Set();
-      tileIndices.forEach(i => {
+      for (const i of tileIndices) {
         const tileData = tiles[String(i)];
-        if (tileData?.plantedByChar) charIdsToRead.add(String(tileData.plantedByChar).replace(/^chars\//,''));
-      });
+        if (tileData?.plantedByChar) {
+          charIdsToRead.add(String(tileData.plantedByChar).replace(/^chars\//,''));
+        }
+      }
       
       const charSnaps = new Map();
       if (charIdsToRead.size > 0) {
           const charRefs = Array.from(charIdsToRead).map(id => db.doc(`chars/${id}`));
           const charDocs = await tx.getAll(...charRefs);
-          charDocs.forEach(doc => { if (doc.exists) charSnaps.set(doc.id, doc.data()); });
+          charDocs.forEach(doc => {
+              if (doc.exists) charSnaps.set(doc.id, doc.data());
+          });
       }
 
+      // --- 2. 읽어온 데이터를 바탕으로 모든 쓰기(Write) 작업 준비 ---
       const now = Date.now();
       const currentRewards = {};
       const updates = {};
-      let finalCharToExp = null;
+      let totalCharExpGain = 0;
+      let totalSkillExpGainByChar = {}; // 캐릭터별로 스킬 경험치 누적
 
       for (const i of tileIndices) {
         const key = String(i);
         const t = tiles[key];
         if (!t || (t.readyAt || 0) > now) continue;
 
-        if (t.plantedByChar) finalCharToExp = String(t.plantedByChar).replace(/^chars\//,'');
+        const charId = t.plantedByChar ? String(t.plantedByChar).replace(/^chars\//,'') : null;
 
         const harvestItems = t.actualHarvest || [];
         for (const item of harvestItems) {
             let qty = item.count;
             let levelBonus = 0;
-            if (t.plantedByChar) {
-              const charData = charSnaps.get(String(t.plantedByChar).replace(/^chars\//,''));
+            if (charId) {
+              const charData = charSnaps.get(charId);
               if(charData) {
                 const skills = charData.skills;
                 const g = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
-                levelBonus = Math.floor(Math.max(0, Math.min(30, g)) / 10);
+                levelBonus = Math.floor(Math.max(0, Math.min(100, g)) / 10);
               }
             }
             qty += levelBonus;
@@ -520,19 +524,21 @@ module.exports = (admin) => {
 
             currentRewards[item.itemId] = (currentRewards[item.itemId] || 0) + qty;
         }
-
-        // ANCHOR: [수정] 수확 시 등급별 캐릭터/스킬 경험치 누적
-        const rarity = t.rarity || 'normal';
-        totalCharExpGain += 10;
-        totalSkillExpGain += SKILL_EXP_TABLE.harvest[rarity] || 5;
+        
+        if (charId) {
+          totalCharExpGain += 10;
+          const rarity = t.rarity || 'normal';
+          const skillExp = SKILL_EXP_TABLE.harvest[rarity] || 5;
+          totalSkillExpGainByChar[charId] = (totalSkillExpGainByChar[charId] || 0) + skillExp;
+        }
         
         if (t.isPerennial) {
           const seed = allSeeds.find(s => s.id === t.seedId);
           if (seed) {
             const growMs = (seed?.growthTimeMinutes || 30) * 60 * 1000;
             let gardeningLv = 0;
-            if (t.plantedByChar) {
-              const charData = charSnaps.get(String(t.plantedByChar).replace(/^chars\//,''));
+            if (charId) {
+              const charData = charSnaps.get(charId);
               if (charData) {
                 const skills = charData.skills;
                 gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
@@ -551,7 +557,6 @@ module.exports = (admin) => {
                   }
               }
             }
-
             updates[`tiles.${key}.readyAt`] = now + regrowMs;
             updates[`tiles.${key}.plantingEndsAt`] = now;
             updates[`tiles.${key}.actualHarvest`] = nextHarvest;
@@ -563,9 +568,9 @@ module.exports = (admin) => {
         }
       }
 
+      // --- 3. 모든 쓰기 작업을 한 번에 실행 ---
       if (Object.keys(currentRewards).length > 0) {
         let itemsAll = Array.isArray(userSnap.data().items_all) ? userSnap.data().items_all : [];
-
         const itemsMeta = await (async ()=>{
           if (!global.__ITEMS_META) {
             const p = path.join(__dirname, './assets/items.json');
@@ -576,7 +581,15 @@ module.exports = (admin) => {
         })();
         
         for (const [itemId, cnt] of Object.entries(currentRewards)) {
-          const meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0, description: '' };
+          // custom_items 컬렉션에서 아이템 정보 조회
+          const customItemSnap = await tx.get(db.doc(`custom_items/${itemId}`));
+          let meta;
+          if (customItemSnap.exists) {
+            meta = customItemSnap.data();
+          } else {
+            meta = itemsMeta[itemId] || { name: itemId, rarity: 'normal', type: 'material', placeable: false, aestheticValue: 0, description: '' };
+          }
+          
           const newItem = {
             id: `${itemId}_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
             name: meta.name || itemId,
@@ -593,11 +606,34 @@ module.exports = (admin) => {
         tx.update(userRef, { items_all: itemsAll });
       }
 
-      if (finalCharToExp) {
-        const charData = charSnaps.get(finalCharToExp);
+      // 캐릭터별 경험치 및 스킬 경험치 지급
+      for (const charId of Object.keys(totalSkillExpGainByChar)) {
+        const charData = charSnaps.get(charId);
         if (charData) {
-          if (totalCharExpGain > 0) await _awardCharExp(tx, finalCharToExp, totalCharExpGain, 'farming');
-          if (totalSkillExpGain > 0) await _awardSkillExp(tx, finalCharToExp, 'gardening', totalSkillExpGain);
+          // 캐릭터 경험치
+          const ownerUid = charData.owner_uid;
+          const currentExp = Number(charData.exp || 0);
+          const newTotalExp = currentExp + totalCharExpGain; // totalCharExpGain은 모든 캐릭터에 공통으로 적용
+          const coinsToMint = Math.floor(newTotalExp / 100);
+          const finalExp = newTotalExp % 100;
+          tx.update(db.doc(`chars/${charId}`), { exp_total: FieldValue.increment(totalCharExpGain), exp: finalExp });
+          if (coinsToMint > 0) tx.set(db.doc(`users/${ownerUid}`), { coins: FieldValue.increment(coinsToMint) }, { merge: true });
+          
+          // 원예 스킬 경험치
+          let skills = charData.skills || {};
+          const skillName = 'gardening';
+          if (typeof skills[skillName] !== 'object' || skills[skillName] === null) {
+              skills[skillName] = { level: 0, exp: 0, nextExp: 200 };
+          }
+          let { level, exp, nextExp } = skills[skillName];
+          exp += totalSkillExpGainByChar[charId];
+          while (exp >= nextExp && level < 100) {
+            exp -= nextExp;
+            level += 1;
+            nextExp = Math.floor(200 * (2 ** Math.sqrt(level)));
+          }
+          skills[skillName] = { level, exp, nextExp };
+          tx.update(db.doc(`chars/${charId}`), { skills });
         }
       }
       
@@ -606,40 +642,6 @@ module.exports = (admin) => {
     });
     
     return { ok: true, rewards: newItemsForUser };
-  });
-
-  const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid || req.auth?.token?.uid;
-    const { mapId, x, y, microX, microY, tileIndex } = req.data || {};
-    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
-    if ([mapId,x,y,microX,microY,tileIndex].some(v=>v==null)) {
-      throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
-    }
-
-    const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
-    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에서 작업을 취소할 권한이 없습니다.');
-
-    const plotId = plotIdFrom({ mapId, x, y, microX, microY });
-    const plotRef = db.doc(`farm_plots/${plotId}`);
-
-    await db.runTransaction(async (tx) => {
-      const snap = await tx.get(plotRef);
-      if (!snap.exists) throw new HttpsError('not-found', 'plot not found');
-      const d = snap.data() || {};
-      const tiles = d.tiles || {};
-      const t = tiles[String(tileIndex)];
-      if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
-
-      const now = Date.now();
-      if (!t.readyAt || now >= t.readyAt) {
-        throw new HttpsError('failed-precondition', '이미 수확 준비가 완료된 작물은 취소할 수 없습니다.');
-      }
-
-      delete tiles[String(tileIndex)];
-      tx.set(plotRef, { tiles, updatedAt: now }, { merge: true });
-    });
-
-    return { ok: true };
   });
 
   return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting };
