@@ -1,4 +1,4 @@
-// pokemonrgby-crypto/toh-fangame/ToH-Fangame-142a45d0c9062ca031b3d3579acc8b1e8abafaef/functions/raid.js
+// /functions/raid.js
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
