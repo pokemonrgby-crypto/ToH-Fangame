@@ -358,7 +358,9 @@ ${JSON.stringify(partyForAI, null, 2)}
 
           // totalDamage 정수화 + 범위(1~MAX) 클램프
           const tdRaw = Number(aiResult?.totalDamage);
-          var totalDamage = Math.max(1, Math.min(MAX_RAID_DAMAGE, Number.isFinite(tdRaw) ? Math.round(tdRaw) : 1));
+          // ▼▼▼ [수정된 부분] ▼▼▼
+          totalDamage = Math.max(1, Math.min(MAX_RAID_DAMAGE, Number.isFinite(tdRaw) ? Math.round(tdRaw) : 1));
+          // ▲▲▲ [수정된 부분] ▲▲▲
 
           // contributions 검사/보정
           if (!Array.isArray(aiResult?.contributions) || aiResult.contributions.length !== 4) {
