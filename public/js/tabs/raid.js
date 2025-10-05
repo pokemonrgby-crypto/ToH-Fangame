@@ -1,4 +1,4 @@
-// public/js/tabs/raid.js
+// pokemonrgby-crypto/toh-fangame/ToH-Fangame-3817634fe4bd22d3cff873690d80130ec120c435/public/js/tabs/raid.js
 import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
@@ -6,7 +6,7 @@ import { fetchMyChars } from '../api/store.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
 
-// [수정] raid.js에서 사용하는 모든 모달의 스타일을 포함하도록 강화
+// ... (ensureRaidModalCss, showLoading, getActiveRaidBoss, openBossDetailModal 함수는 기존과 동일) ...
 function ensureRaidModalCss() {
   if (document.getElementById('toh-raid-modal-css')) return;
   const st = document.createElement('style');
@@ -189,6 +189,7 @@ export async function showRaid() {
     document.getElementById('btn-start-raid').onclick = () => openPartySetupModal(raidBoss);
 }
 
+
 async function openPartySetupModal(raidBoss) {
     ensureRaidModalCss();
     const myChars = await fetchMyChars(auth.currentUser.uid);
@@ -207,13 +208,13 @@ async function openPartySetupModal(raidBoss) {
                 <div>
                     <label class="manage-label">내 캐릭터 선택:</label>
                     <select id="my-char-select" class="manage-select">
-                        ${myChars.map(c => `<option value="${c.id}">${esc(c.name)}</option>`).join('')}
+                        ${myChars.map(c => `<option value="${c.id}" data-guild-id="${c.guildId || ''}">${esc(c.name)}</option>`).join('')}
                     </select>
                 </div>
                 <div>
                     <label class="manage-label">파티원 구성 방식:</label>
                     <select id="party-method-select" class="manage-select">
-                        <option value="guild" disabled>길드원 중에서 (준비 중)</option>
+                        <option value="guild">길드원 중에서</option>
                         <option value="random" selected>랜덤 매칭</option>
                     </select>
                 </div>
@@ -231,15 +232,36 @@ async function openPartySetupModal(raidBoss) {
     back.addEventListener('click', e => { if (e.target === back) closeModal(); });
 
     back.querySelector('#modal-start').onclick = async () => {
-        const myCharId = back.querySelector('#my-char-select').value;
+        const charSelect = back.querySelector('#my-char-select');
+        const myCharId = charSelect.value;
+        const selectedOption = charSelect.options[charSelect.selectedIndex];
+        const myGuildId = selectedOption.dataset.guildId;
         const method = back.querySelector('#party-method-select').value;
         
         closeModal();
-        showLoading(true, '랜덤 파티원 찾는 중...');
+        
+        let findPartyFn;
+        let payload;
+        let loadingText;
+
+        if (method === 'guild') {
+            if (!myGuildId) {
+                showToast('선택한 캐릭터가 길드에 소속되어 있지 않습니다.');
+                return;
+            }
+            findPartyFn = httpsCallable(func, 'findGuildPartyForRaid');
+            payload = { myCharId, guildId: myGuildId };
+            loadingText = '길드원 파티 찾는 중...';
+        } else {
+            findPartyFn = httpsCallable(func, 'findRandomPartyForRaid');
+            payload = { myCharId };
+            loadingText = '랜덤 파티원 찾는 중...';
+        }
+
+        showLoading(true, loadingText);
         
         try {
-            const findParty = httpsCallable(func, 'findRandomPartyForRaid');
-            const partyResult = await findParty({ myCharId });
+            const partyResult = await findPartyFn(payload);
             
             showLoading(true, '레이드 전투 생성 중...');
             const startRaid = httpsCallable(func, 'startRaid');
