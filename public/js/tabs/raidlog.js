@@ -45,10 +45,9 @@ function renderRichLog(logText = '', party = []) {
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
 
-    // 2. 대화 부분을 말풍선 HTML로 변환합니다.
-    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
+    // 2. 대화 부분을 말풍선 HTML로 변환합니다. (정규식 수정)
+    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"(?:\[\/대화\])?/g, (m, name, line) => {
         const charIndex = party.findIndex(p => p.name === name.trim());
-        // 파티 순서에 따라 좌/우 정렬 결정 (홀수/짝수)
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
         const character = party[charIndex] || { name, thumb_url: '' };
         
@@ -63,13 +62,13 @@ function renderRichLog(logText = '', party = []) {
         `;
     });
 
-    // 3. 두 줄 개행을 기준으로 단락을 나누고, 대화가 아닌 부분만 일반 단락으로 감쌉니다.
+    // 3. 두 줄 개행을 기준으로 단락을 나눕니다.
     const paragraphs = body.split(/\n{2,}/)
       .map(p => p.trim())
       .filter(p => p)
       .map(p => {
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
-              return p; // 이미 말풍선으로 변환된 경우 그대로 사용
+              return p;
           }
           return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
       })
@@ -90,9 +89,8 @@ function setupScrollAnimations() {
                 observer.unobserve(entry.target);
             }
         });
-    }, { threshold: 0.1 }); // 요소가 10% 보이면 애니메이션 시작
+    }, { threshold: 0.1 });
 
-    // 애니메이션을 적용할 모든 요소를 관찰 대상으로 등록합니다.
     document.querySelectorAll('.log-paragraph, .contrib-card, .dialogue-bubble-wrap').forEach(el => {
         observer.observe(el);
     });
@@ -119,6 +117,11 @@ export async function showRaidLog() {
         const log = logSnap.data();
         const { title, body } = renderRichLog(log.log, log.party);
         const totalDamage = Number(log.totalDamage || 0);
+
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        // 파티의 총 기여도를 계산합니다.
+        const totalContribution = (log.contributions || []).reduce((sum, c) => sum + (c.contribution || 0), 0);
+        // ▲▲▲ [수정된 부분] ▲▲▲
 
         root.innerHTML = `
             <style>
@@ -189,7 +192,10 @@ export async function showRaidLog() {
                 <div class="contribution-grid">
                     ${(log.party || []).map((p, i) => {
                         const c = (log.contributions || []).find(con => con.charId === p.id) || { contribution: 0, exp: 0 };
-                        const percentage = totalDamage > 0 ? (c.contribution / totalDamage) * 100 : 0;
+                        // ▼▼▼ [수정된 부분] ▼▼▼
+                        // 그래프 비율을 totalDamage가 아닌 totalContribution 기준으로 계산합니다.
+                        const percentage = totalContribution > 0 ? (c.contribution / totalContribution) * 100 : 0;
+                        // ▲▲▲ [수정된 부분] ▲▲▲
                         return `
                             <a href="#/char/${esc(p.id)}" style="text-decoration: none; color: inherit;">
                                 <div class="contrib-card" style="transition-delay: ${i * 100}ms;">
