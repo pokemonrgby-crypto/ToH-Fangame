@@ -72,10 +72,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         // 3) 가장 바깥 { ... }만 추출
         // 4) "..." + "..." 식 문자열 이어붙이기 제거(내부 경계 쿼트+플러스+쿼트 삭제)
         let clean = text
-          .replace(/^\s*```(?:json)?\s*/i, '')
-          .replace(/\s*```\s*$/, '')
           .replace(/\uFEFF/g, '')
           .replace(/[\u200B-\u200D\u2060]/g, '')
+          .replace(/^[\uFEFF\s]*```(?:json)?\s*/i, '')
+          .replace(/\s*```\s*$/, '')
           .trim();
 
         // 바깥 JSON만 남기기(앞뒤 잡문 방지)
