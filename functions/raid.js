@@ -51,6 +51,21 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
     // --- Callable Functions ---
 
+    const getActiveRaidBoss = onCall({ region: 'us-central1' }, async (req) => {
+        const boss = await getActiveRaid();
+        return boss;
+    });
+
+    const getRaidRankings = onCall({ region: 'us-central1' }, async (req) => {
+        const { raidId } = req.data;
+        if (!raidId) {
+            return { rankings: [] };
+        }
+        const contributionsSnap = await db.collection('raids').doc(raidId).collection('contributions').orderBy('totalContribution', 'desc').limit(10).get();
+        const rankings = contributionsSnap.docs.map(doc => doc.data());
+        return { rankings };
+    });
+
     const startRaid = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -93,20 +108,28 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const charDocs = await db.collection('chars').where(admin.firestore.FieldPath.documentId(), 'in', allCharIds).get();
         const partyChars = charDocs.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-        const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system);
+        const systemPrompt = await db.doc('configs/prompts').get().then(d => d.data().raid_battle_system || 'You are a battle narrator.');
         
         const partyForAI = partyChars.map((c, index) => {
-            const items = (c.items_equipped || []).map(it => ({
-                name: it.name,
-                description: it.description,
-                properties: it.properties,
-                rarity: it.rarity
-            }));
+            const items = (c.items_equipped || [])
+              .map(itemId => {
+                  // This is a simplification. In a real scenario, you'd fetch item details.
+                  // For now, we assume item details are somehow available or just use names.
+                  const item = (c.items_all || []).find(i => i.id === itemId) || {};
+                  return {
+                      name: item.name,
+                      description: item.description,
+                      properties: item.properties,
+                      rarity: item.rarity
+                  };
+              })
+              .filter(i => i.name); // Filter out items that couldn't be found
+        
             return {
                 charIndex: index + 1,
                 name: c.name,
                 summary: c.summary,
-                items: items
+                items: items,
             };
         });
 
@@ -123,6 +146,8 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
         const logRef = db.collection('raid_logs').doc();
         const contribRef = db.collection('raids').doc(raidBoss.id).collection('contributions');
+        
+        const partyIds = partyChars.map(c => c.id); // For the log
 
         await db.runTransaction(async tx => {
             const bossDoc = await tx.get(db.doc(`raids/${raidBoss.id}`));
@@ -132,23 +157,30 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             tx.update(bossDoc.ref, { currentHp: finalHp });
             tx.set(logRef, {
                 raidId: raidBoss.id,
+                raidName: raidBoss.name, // For timeline display
                 log: aiResult.log,
                 party: partyChars.map(c => ({ id: c.id, name: c.name, owner_uid: c.owner_uid })),
+                party_ids: partyIds, // For char history query
                 totalDamage,
                 contributions: aiResult.contributions,
                 createdAt: FieldValue.serverTimestamp()
             });
 
             for (const char of partyChars) {
-                const charContrib = aiResult.contributions.find(con => con.charIndex === partyForAI.find(p => p.name === char.name)?.charIndex);
-                if (charContrib) {
-                    const exp = Math.min(1000, charContrib.exp || 0);
+                const charContribData = (aiResult.contributions || []).find(con => con.charId === char.id);
+                if (charContribData) {
+                    const exp = Math.min(1000, charContribData.exp || 0);
+                     // Add exp to character
                     tx.update(db.doc(`chars/${char.id}`), {
                         exp_total: FieldValue.increment(exp),
-                        exp: FieldValue.increment(exp) // Assuming exp overflows into coins elsewhere
+                        exp: FieldValue.increment(exp), // Assuming exp overflows elsewhere
+                        raid_count: FieldValue.increment(1) // Increment raid count
                     });
+
+                    // Update total contribution
                     tx.set(contribRef.doc(char.id), {
-                        totalContribution: FieldValue.increment(charContrib.contribution),
+                        charId: char.id,
+                        totalContribution: FieldValue.increment(charContribData.contribution),
                         owner_uid: char.owner_uid,
                         charName: char.name,
                         lastUpdated: FieldValue.serverTimestamp()
@@ -163,16 +195,14 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     });
 
     const setupNewRaidBoss = onSchedule({ schedule: 'every 72 hours', timeZone: 'Asia/Seoul' }, async () => {
-        logger.info('새로운 레이드 보스를 설정합니다.');
-        // 이전 레이드 보상 지급 로직
+        logger.info('Setting up a new raid boss.');
         const activeRaid = await getActiveRaid();
         if (activeRaid) {
             await distributeRaidRewards(activeRaid.id);
         }
 
-        // 새 보스 생성
         const newBoss = {
-            name: "파멸의 군주, 모르고스", // 예시
+            name: "파멸의 군주, 모르고스",
             description: "차원의 틈새에서 나타난 고대의 존재입니다. 그의 숨결은 현실을 부패시킵니다.",
             totalHp: 10000000,
             currentHp: 10000000,
@@ -181,15 +211,15 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         };
         const newBossRef = await db.collection('raids').add(newBoss);
         await db.doc('raid/status').set({ activeRaidId: newBossRef.id });
-        logger.info(`새로운 레이드 보스 ${newBossRef.id}가 생성되었습니다.`);
+        logger.info(`New raid boss ${newBossRef.id} has been created.`);
     });
     
     async function distributeRaidRewards(raidId) {
-        logger.info(`레이드 ${raidId}의 보상을 지급합니다.`);
+        logger.info(`Distributing rewards for raid ${raidId}.`);
         const contributionsSnap = await db.collection('raids').doc(raidId).collection('contributions').orderBy('totalContribution', 'desc').get();
         
         if (contributionsSnap.empty) {
-            logger.info('참여자가 없어 보상 지급을 건너뜁니다.');
+            logger.info('No participants, skipping reward distribution.');
             return;
         }
 
@@ -204,6 +234,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         for (const doc of contributionsSnap.docs) {
             const data = doc.data();
             const rewardTier = rewards.find(r => rank <= r.rank);
+            if (!data.owner_uid) continue;
             
             const mail = {
                 title: `레이드 '${raidId}' 참여 보상`,
@@ -215,13 +246,14 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 sentAt: FieldValue.serverTimestamp(),
                 read: false,
                 kind: 'general',
+                 from: '시스템'
             };
             
             await db.collection('mail').doc(data.owner_uid).collection('msgs').add(mail);
             rank++;
         }
-        logger.info(`${rank - 1}명의 유저에게 레이드 보상을 발송했습니다.`);
+        logger.info(`${rank - 1} users have been sent raid rewards.`);
     }
 
-    return { startRaid, setupNewRaidBoss };
+    return { startRaid, setupNewRaidBoss, getActiveRaidBoss, getRaidRankings };
 };
