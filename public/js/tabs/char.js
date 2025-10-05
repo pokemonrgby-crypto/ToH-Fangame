@@ -1018,6 +1018,10 @@ function renderHistory(c, view){
           <div class="kv-label">탐험</div><div>${c.explore_count||0}</div>
           <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
         </button>
+        <button class="kv-card" id="cardRaid" style="text-align:left;cursor:pointer">
+          <div class="kv-label">레이드</div><div>${c.raid_count || 0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
       </div>
 
       <div class="kv-card mt12">
@@ -1132,6 +1136,20 @@ function appendItems(items){
                 </div>
             </div>
           </div>`;
+
+      } else if(mode==='raid'){
+          const myContribution = (it.contributions || []).find(con => con.charId === c.id);
+          const when = t(it.createdAt).toLocaleString();
+          go = `#/raidlog/${it.id}`;
+          html = `
+            <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
+              <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
+              <div class="text-dim" style="font-size:12px;">${when}</div>
+              <div class="text-dim" style="font-size:12px; margin-top: 4px;">
+                  기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
+              </div>
+            </div>`;
+        
       } else { // 'explore'
         const when = t(it.endedAt || it.startedAt).toLocaleString();
         go = `#/explorelog/${it.id}`;
@@ -1217,7 +1235,20 @@ async function fetchNext(){
         out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
         if(doneA && doneD && out.length===0) done = true;
       }
-      else if(mode==='explore'){
+     else if(mode==='raid'){
+        // 'raid_logs' 컬렉션을 쿼리하여 'party' 배열에 내 캐릭터 ID가 포함된 로그를 찾습니다.
+          const q = fx.query(
+              fx.collection(db, 'raid_logs'),
+              fx.where('party_ids', 'array-contains', c.id), // party_ids 필드를 로그에 추가해야 합니다.
+              fx.orderBy('createdAt', 'desc'),
+              fx.limit(15)
+          );
+          const s = await getDocsFromServer(q);
+          const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
+          out.push(...arr);
+          done = true; // For simplicity, no pagination for raids yet.
+       }
+        else if(mode==='explore'){
         if(!doneE){
           const parts = [ fx.orderBy('endedAt','desc') ];
           if(lastE) parts.push(startAfter(lastE));
@@ -1268,6 +1299,7 @@ async function fetchNext(){
   view.querySelector('#cardBattle')?.addEventListener('click', ()=> resetAndLoad('battle'));
   view.querySelector('#cardEncounter')?.addEventListener('click', ()=> resetAndLoad('encounter'));
   view.querySelector('#cardExplore')?.addEventListener('click', ()=> resetAndLoad('explore'));
+  view.querySelector('#cardRaid')?.addEventListener('click', ()=> resetAndLoad('raid'));
 }
 
 
