@@ -711,11 +711,11 @@ exports.startEncounter = encounterV2.startEncounter;
 
 // Raid exports
 exports.startRaid = raidFns.startRaid;
-exports.getActiveRaidBoss = raidFns.getActiveRaidBoss; // 프론트엔드에서 호출할 수 있도록 추가
-exports.getRaidRankings = raidFns.getRaidRankings; // 프론트엔드에서 호출할 수 있도록 추가
-exports.setupNewRaidBoss = raidFns.setupNewRaidBoss;
-exports.findRandomPartyForRaid = raidFns.findRandomPartyForRaid; // 파티 찾기 함수
-exports.adminSetupNewRaidBoss = raidFns.adminSetupNewRaidBoss; // 관리자용 보스 생성 함수ㄴ
+exports.getActiveRaidBoss = raidFns.getActiveRaidBoss;
+exports.getRaidRankings = raidFns.getRaidRankings;
+// exports.setupNewRaidBoss = raidFns.setupNewRaidBoss; // onSchedule이므로 직접 export하지 않음
+exports.findRandomPartyForRaid = raidFns.findRandomPartyForRaid;
+exports.adminSetupNewRaidBoss = raidFns.adminSetupNewRaidBoss;
 
 
 
