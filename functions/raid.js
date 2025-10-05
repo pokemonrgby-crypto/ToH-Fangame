@@ -310,7 +310,12 @@ ${JSON.stringify(partyForAI, null, 2)}
                 raidId: raidBoss.id,
                 raidName: raidBoss.name,
                 log: aiResult.log,
-                party: partyChars.map(c => ({ id: c.id, name: c.name, owner_uid: c.owner_uid })),
+                party: partyChars.map(c => ({ 
+                    id: c.id, 
+                    name: c.name, 
+                    owner_uid: c.owner_uid,
+                    thumb_url: c.thumb_url || null // 썸네일 URL 추가
+                })),
                 party_ids: partyIds,
                 totalDamage,
                 contributions: aiResult.contributions,
