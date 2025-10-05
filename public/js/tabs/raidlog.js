@@ -15,10 +15,8 @@ const rarityColors = {
 };
 
 function renderRichLog(logText, party) {
-    // 1. 잠재적인 HTML 코드를 모두 안전하게 이스케이프 처리합니다.
     let html = esc(logText || '');
 
-    // 2. 이스케이프된 특수 토큰들을 다시 세련된 HTML 태그로 변환합니다.
     html = html.replace(/&#91;CUT&#93;/g, '<div class="cut-scene"></div>');
     html = html.replace(/&#91;SLOW&#93;(.*?)&#91;RESUME&#93;/gs, (m, c) => `<span class="slow-motion">${c}</span>`);
     html = html.replace(/&#91;SFX&#93;(.*?)&#91;\/SFX&#93;/g, (m, c) => `<span class="sfx">${c}</span>`);
@@ -28,14 +26,14 @@ function renderRichLog(logText, party) {
     html = html.replace(/&#91;HEART x (.*?)&#93;/g, (m, c) => `<span class="heart">${c} BPM</span>`);
     html = html.replace(/&#91;BREATH:(.*?)&#93;/g, (m, c) => `<span class="breath">${c}</span>`);
     
-    // 기존 서식 토큰 (강조, 아이템)
-    html = html.replace(/&#42;&#42;(.*?)&#42;&#42;/g, '<strong>$1</strong>');
+    // ANCHOR: [수정] 강조 처리 시, 앞뒤에 있을 수 있는 불필요한 문자(` ' ")를 함께 처리합니다.
+    html = html.replace(/(?:&#96;|'|&quot;)?&#42;&#42;(.*?)&#42;&#42;(?:&#96;|'|&quot;)?/g, '<strong>$1</strong>');
+
     html = html.replace(/&#91;ITEM:(normal|rare|epic|legend|myth|aether)&#93;(.*?)&#91;\/ITEM&#93;/g, (m, r, n) => {
         const color = rarityColors[r.toLowerCase()] || '#fff';
         return `<strong class="item-highlight" style="color: ${color}; text-shadow: 0 0 5px ${color}80;">${n}</strong>`;
     });
 
-    // 대사 토큰
     html = html.replace(/&#91;대화:(.*?)&#93;&quot;(.*?)&quot;/g, (match, charName, text) => {
         const char = party.find(p => p.name === charName.trim());
         const charIndex = party.findIndex(p => p.name === charName.trim()) + 1;
@@ -47,7 +45,6 @@ function renderRichLog(logText, party) {
         return `<div class="dialogue c${charIndex}"><b>${char.name}:</b> ${dialogueContent}</div>`;
     });
 
-    // 3. 줄바꿈을 <br>로 변경합니다.
     return html.replace(/\n/g, '<br>');
 }
 
@@ -68,6 +65,9 @@ export async function showRaidLog() {
     }
     const log = logSnap.data();
 
+    // ANCHOR: [수정] 제목에서 "배틀로그: " 접두사를 제거합니다.
+    const title = (log.raidName || '').replace(/^배틀로그:\s*/, '');
+
     root.innerHTML = `
         <style>
             .dialogue { margin: 1em 0; padding: 0.8em 1em; border-radius: 8px; background: #1a1f2c; border-left: 3px solid #555; }
@@ -82,12 +82,7 @@ export async function showRaidLog() {
             .contrib-card:hover { background-color: #1f2738; }
             .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #0e1116; flex-shrink: 0; }
             
-            /* ANCHOR: [수정] 새로운 연출 토큰 스타일 */
-            .sfx, .vfx, .hud, .timestamp, .heart, .breath {
-                display: inline;
-                font-size: 0.9em;
-                opacity: 0.7;
-            }
+            .sfx, .vfx, .hud, .timestamp, .heart, .breath { display: inline; font-size: 0.9em; opacity: 0.7; }
             .sfx { font-style: italic; }
             .vfx { font-style: italic; color: #7dd3fc; }
             .hud { font-family: 'SF Mono', 'Roboto Mono', Menlo, monospace; font-weight: 600; color: #a7f3d0; background: rgba(6, 78, 59, 0.4); padding: 2px 5px; border-radius: 4px; border: 1px solid rgba(16, 185, 129, 0.3); }
@@ -95,27 +90,19 @@ export async function showRaidLog() {
             .timestamp, .heart { font-family: 'SF Mono', 'Roboto Mono', Menlo, monospace; color: #9ca3af; }
             .breath::before { content: '['; }
             .breath::after { content: ']'; }
-            
-            .cut-scene {
-                text-align: center; margin: 2em 0;
-                height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent);
-            }
-            .slow-motion {
-                font-style: italic;
-                letter-spacing: 0.5px;
-            }
-            .item-highlight {
-                font-weight: 800;
-                text-shadow: 0 0 6px var(--color-shadow, rgba(255,255,255,0.5));
-            }
+            .cut-scene { text-align: center; margin: 2em 0; height: 1px; background: linear-gradient(to right, transparent, rgba(255,255,255,0.2), transparent); }
+            .slow-motion { font-style: italic; letter-spacing: 0.5px; }
+            .item-highlight { font-weight: 800; text-shadow: 0 0 6px var(--color-shadow, rgba(255,255,255,0.5)); }
         </style>
         <section class="container narrow">
             <div class="card p16">
                 <button class="btn ghost" onclick="history.back()">← 뒤로가기</button>
                 
+                <h1 class="mt12" style="font-size: 24px; font-weight: 900; text-align: center; margin-bottom: 16px;">${esc(title)}</h1>
+
                 <div class="mt16">
-                    <h3 style="margin-top:0; text-align:center;">전투 결과</h3>
-                    <div style="text-align:center; margin-bottom: 12px;">총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></div>
+                    <h3 style="margin-top:0; margin-bottom: 8px; font-size: 16px; color: var(--muted);">전투 결과</h3>
+                    <div style="text-align:center; margin-bottom: 12px; font-size: 14px;">총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></div>
                     <div class="contribution-grid">
                         ${(log.contributions || []).map(c => {
                             const p = (log.party || []).find(p => p.id === c.charId) || { id: c.charId, name: 'Unknown', thumb_url: '' };
@@ -135,9 +122,10 @@ export async function showRaidLog() {
                         }).join('')}
                     </div>
                 </div>
+
                 <hr style="margin: 24px 0; border-color: #2a2f36;">
                 
-                <h3 class="mt12" style="text-align:center;">${esc(log.raidName)} 전투 기록</h3>
+                <h3 class="mt12" style="font-size: 16px; color: var(--muted);">전투 기록</h3>
                 <div class="log-content mt12" style="white-space: pre-wrap; line-height: 1.7;">
                     ${renderRichLog(log.log, log.party)}
                 </div>
