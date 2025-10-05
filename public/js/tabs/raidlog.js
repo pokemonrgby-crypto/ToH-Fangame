@@ -70,10 +70,10 @@ export async function showRaidLog() {
             .dialogue.c3 { border-color: #FFC107; }
             .dialogue.c4 { border-color: #E91E63; }
             
-            /* ANCHOR: [추가] 기여도 카드 그리드 스타일 */
             .contribution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
             @media (max-width: 500px) { .contribution-grid { grid-template-columns: 1fr; } }
-            .contrib-card { display: flex; align-items: center; gap: 10px; background: #151922; padding: 10px; border-radius: 10px; }
+            .contrib-card { display: flex; align-items: center; gap: 10px; background: #151922; padding: 10px; border-radius: 10px; transition: background-color 0.2s; }
+            .contrib-card:hover { background-color: #1f2738; }
             .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; background: #0e1116; flex-shrink: 0; }
         </style>
         <section class="container narrow">
@@ -85,17 +85,20 @@ export async function showRaidLog() {
                     <div style="text-align:center; margin-bottom: 12px;">총 피해량: <strong>${log.totalDamage.toLocaleString()}</strong></div>
                     <div class="contribution-grid">
                         ${(log.contributions || []).map(c => {
-                            const p = (log.party || []).find(p => p.id === c.charId) || { name: 'Unknown', thumb_url: '' };
+                            const p = (log.party || []).find(p => p.id === c.charId) || { id: c.charId, name: 'Unknown', thumb_url: '' };
+                            // ANCHOR: [수정] a 태그로 카드 전체를 감싸서 링크로 만듭니다.
                             return `
-                                <div class="contrib-card">
-                                    <img src="${esc(p.thumb_url)}" class="contrib-avatar" onerror="this.style.display='none'">
-                                    <div>
-                                        <div style="font-weight: 700;">${esc(p.name)}</div>
-                                        <div class="text-dim" style="font-size: 12px;">
-                                            기여도: ${c.contribution.toLocaleString()} (EXP +${c.exp})
+                                <a href="#/char/${esc(p.id)}" style="text-decoration: none; color: inherit;">
+                                    <div class="contrib-card">
+                                        <img src="${esc(p.thumb_url)}" class="contrib-avatar" onerror="this.style.display='none'">
+                                        <div>
+                                            <div style="font-weight: 700;">${esc(p.name)}</div>
+                                            <div class="text-dim" style="font-size: 12px;">
+                                                기여도: ${c.contribution.toLocaleString()} (EXP +${c.exp})
+                                            </div>
                                         </div>
                                     </div>
-                                </div>
+                                </a>
                             `;
                         }).join('')}
                     </div>
