@@ -23,9 +23,6 @@ const rarityColors = {
 /* ------------------------------
  * 로그 텍스트 → 리치 HTML 변환
  * ------------------------------ */
-/* ------------------------------
- * 로그 텍스트 → 리치 HTML 변환
- * ------------------------------ */
 function renderRichLog(logText = '', party = []) {
     if (typeof logText !== 'string') logText = String(logText ?? '');
 
@@ -33,32 +30,32 @@ function renderRichLog(logText = '', party = []) {
     let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
     let body = lines.join('\n').trim();
 
-    // 1. 사용자 정의 태그를 HTML로 변환합니다.
-    // **굵은 글씨**가 <strong> 태그로 먼저 변환됩니다.
-    body = esc(body)
+    // 1. 먼저 **굵은 글씨** 같은 마크다운을 HTML 태그로 변환합니다.
+    body = body.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+    // 2. 그 다음, 나머지 특수 태그들을 처리합니다.
+    // ANCHOR: [수정] esc() 함수를 각 replace 콜백 안으로 이동시켜 필요한 부분만 처리하도록 변경합니다.
+    body = body
         .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
-        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
-        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
-        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
-        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
-        .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
-        .replace(/\[HEART x (.*?)\]/g, '<span class="heart">$1 BPM</span>')
+        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, (m, content) => `<span class="slow-motion">${esc(content)}</span>`)
+        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, (m, content) => `<span class="sfx">${esc(content)}</span>`)
+        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, (m, content) => `<span class="vfx">${esc(content)}</span>`)
+        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, (m, content) => `<span class="hud">${esc(content)}</span>`)
+        .replace(/\[T\+(.*?)\]/g, (m, content) => `<span class="timestamp">${esc(content)}</span>`)
+        .replace(/\[HEART x (.*?)\]/g, (m, content) => `<span class="heart">${esc(content)} BPM</span>`)
         .replace(/\[BREATH:([^\]]+)\]/g, (m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
             const color = rarityColors[r.toLowerCase()] || '#fff';
-            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
+            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${esc(n)}</strong>`;
         });
 
-    // 2. 대화 부분을 말풍선 HTML로 변환합니다.
-    // ANCHOR: [수정] 정규식을 수정하고, 대사 내용(line)의 이중 esc() 처리를 제거했습니다.
+    // 3. 대화 부분을 말풍선으로 변환합니다.
     body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
         const charIndex = party.findIndex(p => p.name === name.trim());
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
-        const character = party[charIndex] || { name, thumb_url: '' };
+        const character = party[charIndex] || { name: name.trim(), thumb_url: '' };
         
-        // 'line' 변수는 이미 이전 단계에서 <strong> 태그 등을 포함하고 있으므로,
-        // 여기서 esc() 처리를 하면 태그가 깨집니다. 따라서 esc()를 제거합니다.
+        // 'line'은 이미 <strong> 같은 태그를 포함하고 있으므로 esc() 처리하지 않습니다.
         return `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
@@ -70,15 +67,17 @@ function renderRichLog(logText = '', party = []) {
         `;
     });
 
-    // 3. 두 줄 개행을 기준으로 단락을 나눕니다.
+    // 4. 남은 텍스트를 단락으로 나누고, 이때 각 단락을 esc() 처리합니다.
     const paragraphs = body.split(/\n{2,}/)
       .map(p => p.trim())
       .filter(p => p)
       .map(p => {
+          // 이미 말풍선으로 변환된 부분은 그대로 둡니다.
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
               return p;
           }
-          return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
+          // 일반 텍스트 단락은 여기서 안전하게 HTML 이스케이프 처리합니다.
+          return `<div class="log-paragraph">${esc(p).replace(/\n/g, '<br>')}</div>`;
       })
       .join('');
           
