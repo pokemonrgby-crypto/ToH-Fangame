@@ -28,6 +28,8 @@ export const routes = {
   '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
   '#/land': () => import('./tabs/land_detail.js').then(m => m.showLandDetail()),
   '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
+  '#/raid': () => import('./tabs/raid.js').then(m => m.showRaid()),
+  '#/raidlog': () => import('./tabs/raidlog.js').then(m => m.showRaidLog()),
 };
 
 export function highlightTab() {
@@ -58,7 +60,7 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/land-management/'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
