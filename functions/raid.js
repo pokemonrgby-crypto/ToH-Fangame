@@ -29,10 +29,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             temperature: 0.85,
             maxOutputTokens: 8192,
             responseMimeType: "application/json",
-            // ↓ JSON 모양/타입 강제 (모델이 코드펜스/문자열 쪼개기 못 하게)
+            // ▼▼▼ [수정된 부분] ▼▼▼
             responseSchema: {
               type: "object",
-              additionalProperties: false,
+              // "additionalProperties": false,  <-- 이 줄 제거
               required: ["log", "totalDamage", "contributions"],
               properties: {
                 log: { type: "string", maxLength: 8000 },
@@ -43,7 +43,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                   maxItems: 4,
                   items: {
                     type: "object",
-                    additionalProperties: false,
+                    // "additionalProperties": false,  <-- 이 줄도 제거
                     required: ["charId", "contribution", "exp"],
                     properties: {
                       charId: { type: "string", minLength: 1 },
@@ -54,6 +54,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 }
               }
             }
+            // ▲▲▲ [수정된 부분] ▲▲▲
           }
         };
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
