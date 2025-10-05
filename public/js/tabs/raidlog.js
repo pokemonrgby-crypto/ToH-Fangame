@@ -2,60 +2,82 @@
 import { db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 
-function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c])); }
+/* ------------------------------
+ * 유틸리티
+ * ------------------------------ */
+function esc(s) {
+  return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
 
 function parseLogId() {
-    const m = location.hash.match(/^#\/raidlog\/([^/]+)$/);
-    return m ? m[1] : null;
+  const m = location.hash.match(/^#\/raidlog\/([^/]+)$/);
+  return m ? m[1] : null;
 }
 
 const rarityColors = {
-    normal: '#c8d0dc', rare: '#cfe4ff', epic: '#e6dcff',
-    legend: '#ffe9ad', myth: '#ffc9ce', aether: '#f8f8f2'
+  normal: '#c8d0dc', rare: '#cfe4ff', epic: '#e6dcff',
+  legend: '#ffe9ad', myth: '#ffc9ce', aether: '#d6fff7'
 };
 
-/**
- * AI가 생성한 로그 텍스트를 풍부한 효과가 적용된 HTML로 변환합니다.
- * @param {string} logText - AI가 생성한 원본 로그 문자열
- * @param {Array} party - 파티원 정보 배열
- * @returns {{title: string, body: string}} - 파싱된 제목과 본문 HTML
- */
+/* ------------------------------
+ * 로그 텍스트 → 리치 HTML 변환
+ * ------------------------------ */
 function renderRichLog(logText = '', party = []) {
-    if (typeof logText !== 'string') logText = String(logText ?? '');
+  if (typeof logText !== 'string') logText = String(logText ?? '');
 
-    const lines = logText.split('\n');
-    let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
-    let body = lines.join('\n').trim();
+  const lines = logText.split('\n');
+  let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
+  let body = lines.join('\n').trim();
 
-    // 사용자 정의 태그를 HTML로 변환
-    body = esc(body)
-        .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
-        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
-        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
-        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
-        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
-        .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
-        .replace(/\[HEART x (.*?)\]/g, '<span class="heart">$1 BPM</span>')
-        .replace(/\[BREATH:([^\]]+)\]/g, (m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
-            const color = rarityColors[r.toLowerCase()] || '#fff';
-            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
-        })
-        .replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
-            const charIndex = party.findIndex(p => p.name === name.trim()) + 1;
-            return `<div class="dialogue c${charIndex}"><b>${esc(name)}:</b> “${esc(line)}”</div>`;
-        });
+  // 1. 사용자 정의 태그를 HTML로 변환합니다.
+  body = esc(body)
+    .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
+    .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
+    .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
+    .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
+    .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
+    .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
+    .replace(/\[HEART x (.*?)\]/g, '<span class="heart">$1 BPM</span>')
+    .replace(/\[BREATH:([^\]]+)\]/g, (m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
+        const color = rarityColors[r.toLowerCase()] || '#fff';
+        return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
+    });
 
-    // 두 줄 개행을 기준으로 단락을 나누어 애니메이션 대상으로 삼습니다.
-    const paragraphs = body.split(/\n{2,}/)
-        .map(p => p.replace(/\n/g, '<br>')) // 단락 내 한 줄 개행은 <br>로 처리
-        .filter(p => p.trim())
-        .map(p => `<div class="log-paragraph">${p}</div>`)
-        .join('');
+  // 2. 대화 부분을 말풍선 HTML로 변환합니다.
+  body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
+      const charIndex = party.findIndex(p => p.name === name.trim());
+      // 파티 순서에 따라 좌/우 정렬 결정 (홀수/짝수)
+      const side = (charIndex % 2 === 0) ? 'left' : 'right';
+      const character = party[charIndex] || { name, thumb_url: '' };
+      
+      return `
+        <div class="dialogue-bubble-wrap" data-side="${side}">
+          <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
+          <div class="dialogue-bubble">
+            <div class="dialogue-name">${esc(character.name)}</div>
+            <div class="dialogue-text">“${esc(line)}”</div>
+          </div>
+        </div>
+      `;
+  });
+
+  // 3. 두 줄 개행을 기준으로 단락을 나누고, 대화가 아닌 부분만 일반 단락으로 감쌉니다.
+  const paragraphs = body.split(/\n{2,}/)
+    .map(p => p.trim())
+    .filter(p => p)
+    .map(p => {
+        if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
+            return p; // 이미 말풍선으로 변환된 경우 그대로 사용
+        }
+        return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
+    })
+    .join('');
         
     return { title: titleLine, body: paragraphs };
 }
+
 
 /**
  * 스크롤 애니메이션을 설정합니다.
@@ -68,16 +90,18 @@ function setupScrollAnimations() {
                 observer.unobserve(entry.target);
             }
         });
-    }, { threshold: 0.1 }); // 요소가 10% 보이면 애니메이션 시작
+    }, { threshold: 0.1 });
 
-    document.querySelectorAll('.log-paragraph, .contrib-card').forEach(el => {
+    // 애니메이션을 적용할 모든 요소를 관찰 대상으로 등록합니다.
+    document.querySelectorAll('.log-paragraph, .contrib-card, .dialogue-bubble-wrap').forEach(el => {
         observer.observe(el);
     });
 }
 
-/**
- * 레이드 로그 페이지의 메인 렌더링 함수
- */
+
+/* ------------------------------
+ * 메인 렌더링
+ * ------------------------------ */
 export async function showRaidLog() {
     const root = document.getElementById('view');
     const logId = parseLogId();
@@ -95,50 +119,60 @@ export async function showRaidLog() {
         }
         const log = logSnap.data();
         const { title, body } = renderRichLog(log.log, log.party);
-
         const totalDamage = Number(log.totalDamage || 0);
 
         root.innerHTML = `
             <style>
-                /* 전체적인 레이아웃과 색상 재정의 */
-                .raidlog-container { max-width: 800px; margin: 0 auto; padding: 20px; font-family: 'Pretendard', sans-serif; }
-                .raidlog-header { text-align: center; margin-bottom: 2.5rem; }
-                .raidlog-title { font-size: 2rem; font-weight: 800; letter-spacing: -0.5px; margin: 0.5rem 0; }
-                .raidlog-subtitle { font-size: 1rem; color: var(--muted, #94a3b8); }
+                /* 전체 레이아웃과 폰트, 색상 재정의 */
+                .raidlog-container { max-width: 800px; margin: 0 auto; padding: 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; }
+                .raidlog-header { text-align: center; margin-bottom: 3rem; }
+                .raidlog-title { font-size: 2.25rem; font-weight: 800; letter-spacing: -0.5px; margin: 0.5rem 0; line-height: 1.2; }
+                .raidlog-subtitle { font-size: 1rem; color: #94a3b8; }
 
                 /* 기여도 카드 디자인 */
-                .contribution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; margin-top: 1.5rem; }
+                .contribution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
                 @media (max-width: 640px) { .contribution-grid { grid-template-columns: 1fr; } }
                 
                 .contrib-card {
-                    display: flex; align-items: center; gap: 1rem;
-                    background: rgba(255, 255, 255, 0.03);
-                    padding: 1rem; border-radius: 12px;
-                    border: 1px solid rgba(255, 255, 255, 0.08);
-                    transition: all 0.3s ease;
-                    /* 스크롤 애니메이션 초기 상태 */
-                    opacity: 0; transform: translateY(20px);
+                    display: flex; align-items: center; gap: 1rem; background: #1a1f2c;
+                    padding: 1rem; border-radius: 12px; border: 1px solid #2a2f36;
+                    opacity: 0; transform: translateY(20px); transition: opacity 0.5s ease, transform 0.5s ease;
                 }
                 .contrib-card.is-visible { opacity: 1; transform: translateY(0); }
-                .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 2px solid rgba(255,255,255,0.1); }
+                .contrib-avatar { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; border: 2px solid #3e485e; }
                 .contrib-info { flex: 1; min-width: 0; }
                 .contrib-name { font-weight: 700; }
-                .contrib-meta { font-size: 0.8rem; color: var(--muted, #94a3b8); }
-                .contrib-bar { height: 6px; background: rgba(0,0,0,0.2); border-radius: 3px; margin-top: 6px; overflow: hidden; }
+                .contrib-meta { font-size: 0.8rem; color: #94a3b8; }
+                .contrib-bar { height: 6px; background: rgba(0,0,0,0.3); border-radius: 3px; margin-top: 6px; overflow: hidden; }
                 .contrib-bar-inner { height: 100%; background: linear-gradient(90deg, #3b82f6, #8b5cf6); }
                 
-                /* 로그 본문 디자인 */
-                .log-body { margin-top: 2.5rem; border-top: 1px solid rgba(255, 255, 255, 0.1); padding-top: 2rem; }
-                .log-paragraph {
-                    margin-bottom: 1.5rem; line-height: 1.8;
-                    /* 스크롤 애니메이션 초기 상태 */
+                /* 로그 본문 */
+                .log-body { margin-top: 3rem; border-top: 1px solid #2a2f36; padding-top: 2rem; }
+                .log-paragraph, .dialogue-bubble-wrap {
                     opacity: 0; transform: translateY(20px);
                     transition: opacity 0.6s ease-out, transform 0.6s ease-out;
                 }
-                .log-paragraph.is-visible { opacity: 1; transform: translateY(0); }
+                .log-paragraph.is-visible, .dialogue-bubble-wrap.is-visible { opacity: 1; transform: translateY(0); }
+
+                /* 말풍선 스타일 */
+                .dialogue-bubble-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 1.5rem 0; max-width: 85%; }
+                .dialogue-bubble-wrap[data-side="right"] { margin-left: auto; flex-direction: row-reverse; }
+                .dialogue-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+                .dialogue-bubble { background: #232a3b; padding: 12px 16px; border-radius: 18px; position: relative; }
+                .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble { border-top-left-radius: 6px; }
+                .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble { border-top-right-radius: 6px; background: #3b3a61; }
+                .dialogue-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; }
+                .dialogue-text { line-height: 1.7; }
+                
+                /* 말풍선 꼬리 */
+                .dialogue-bubble::before {
+                    content: ''; position: absolute; top: 10px; width: 0; height: 0;
+                    border-top: 8px solid transparent; border-bottom: 8px solid transparent;
+                }
+                .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble::before { left: -8px; border-right: 10px solid #232a3b; }
+                .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble::before { right: -8px; border-left: 10px solid #3b3a61; }
 
                 /* 리치 텍스트 스타일 */
-                .dialogue { margin: 1em 0; padding: 0.8em 1.2em; border-radius: 8px; background: rgba(255,255,255,0.05); border-left: 3px solid #8b5cf6; }
                 strong { color: #facc15; font-weight: 700; }
                 .vfx { font-style: italic; color: #7dd3fc; text-shadow: 0 0 8px #7dd3fc80; }
                 .sfx { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
