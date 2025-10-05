@@ -44,7 +44,7 @@ txt = txt
     const lines = txt.split('\n');
 while (lines.length && !lines[0].trim()) lines.shift();
 
-    let titleLine = (lines.shift() || '레이드 기록').replace(/^\[AI가 생성한 제목\]/, '').trim();
+    let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*|\[AI가 생성한 제목\]\s*/i, '').trim();
     let body = lines.join('\n').trim();
 
     // 1. 대화 블록을 고유한 플레이스홀더로 먼저 분리합니다.
@@ -58,16 +58,17 @@ while (lines.length && !lines[0].trim()) lines.shift();
     let narrativeBody = esc(body)
         // 3. 이제 안전하게 이스케이프된 특수 태그들을 HTML 태그로 되돌립니다.
         //    - 주의: 정규식에서 이스케이프된 문자를 찾아야 합니다. (예: &lbrack;)
-        .replace(/&lbrack;CUT&rbrack;/g, '<div class="cut-scene" aria-hidden="true"></div>')
-        .replace(/&lbrack;SLOW&rbrack;([\s\S]*?)&lbrack;RESUME&rbrack;/g, '<span class="slow-motion">$1</span>')
-        .replace(/&lbrack;SFX&rbrack;([\s\S]*?)&lbrack;\/SFX&rbrack;/g, '<span class="sfx">$1</span>')
-        .replace(/&lbrack;VFX&rbrack;([\s\S]*?)&lbrack;\/VFX&rbrack;/g, '<span class="vfx">$1</span>')
-        .replace(/&lbrack;HUD&rbrack;([\s\S]*?)&lbrack;\/HUD&rbrack;/g, '<span class="hud">$1</span>')
-        .replace(/&lbrack;T\+(.*?)&rbrack;/g, '<span class="timestamp">$1</span>')
-        .replace(/&lbrack;HEART x (.*?)&rbrack;/g, '<span class="heart">$1 BPM</span>')
-        .replace(/&lbrack;BREATH:([^\]]+)&rbrack;/g, (m, state) => `<i class="breath" data-state="${state}"></i>`)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-        .replace(/&lbrack;ITEM:(normal|rare|epic|legend|myth|aether)&rbrack;([\s\S]*?)&lbrack;\/ITEM&rbrack;/g, (m, r, n) => {
+        .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
+.replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
+.replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
+.replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
+.replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
+.replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
+// HEART: 숫자만 뽑고, 입력에 이미 BPM이 있으면 중복 방지
+.replace(/\[HEART x\s*([0-9]{2,3})(?:\s*BPM)?\]/g, (_m, bpm) => `<span class="heart">${bpm} BPM</span>`)
+.replace(/\[BREATH:([^\]]+)\]/g, (_m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
+.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (_m, r, n) => {
+
             const color = rarityColors[r.toLowerCase()] || '#fff';
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
@@ -80,13 +81,16 @@ while (lines.length && !lines[0].trim()) lines.shift();
         
         // 대화 내용은 여기서 별도로 이스케이프하고 서식을 적용합니다.
         const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+      const strippedLine = processedLine.replace(/^「|」$/g, ''); // 양끝 일본 괄호 제거
+
 
         const bubbleHtml = `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
             <div class="dialogue-bubble">
               <div class="dialogue-name">${esc(character.name)}</div>
-              <div class="dialogue-text">「${processedLine}」</div>
+              <div class="dialogue-text">${strippedLine}</div>
+
             </div>
           </div>
         `;
