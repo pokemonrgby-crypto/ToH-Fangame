@@ -1,4 +1,4 @@
-// /functions/farm.js (수정)
+// /functions/farm.js (전체 교체)
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 const fs = require('fs').promises;
@@ -60,7 +60,7 @@ module.exports = (admin) => {
     }
   }
 
-  // [추가] 스킬 경험치 지급 및 레벨업 로직
+  // 스킬 경험치 지급 및 레벨업 로직
   async function _awardSkillExp(tx, charId, skillName, expToAdd) {
     if (!charId || !skillName || expToAdd <= 0) return;
     const charRef = db.doc(`chars/${charId}`);
@@ -70,7 +70,6 @@ module.exports = (admin) => {
     const charData = charSnap.data() || {};
     let skills = charData.skills || {};
 
-    // [설명] 레거시 호환: 스킬 데이터가 숫자(레벨)이면 객체 형태로 변환
     if (typeof skills[skillName] === 'number' || skills[skillName] === undefined) {
       const currentLevel = Number(skills[skillName] || 0);
       skills[skillName] = {
@@ -83,18 +82,15 @@ module.exports = (admin) => {
     let { level, exp, nextExp } = skills[skillName];
     exp += expToAdd;
 
-    // [설명] 레벨업 처리
     while (exp >= nextExp) {
       exp -= nextExp;
       level += 1;
-      // [설명] 레벨업 필요 경험치 공식: floor(200^(sqrt(현재 레벨)))
       nextExp = Math.floor(200 ** (Math.sqrt(level)));
     }
 
     skills[skillName] = { level, exp, nextExp };
     tx.update(charRef, { skills });
   }
-
 
   function plotIdFrom({ mapId, x, y, microX, microY }) {
     return `${mapId}_${x}_${y}_${microX}_${microY}`;
@@ -248,6 +244,7 @@ module.exports = (admin) => {
     };
   });
 
+  // ANCHOR: plantSeedOnTile 함수 전체 교체
   const plantSeedOnTile = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, charId, seedItemId, seedId, tileIndices=[] } = req.data || {};
@@ -260,11 +257,7 @@ module.exports = (admin) => {
     if (!isOwner) throw new HttpsError('permission-denied', '이 토지에 심을 권한이 없습니다.');
 
     const allSeeds = await loadSeedsData();
-    
     let seed = allSeeds.find(s => s.id === seedId);
-    if (!seed) {
-      logger.warn(`[plantSeedOnTile] Seed not found in seeds data; will try fallback from inventory seedInfo: "${seedId}"`);
-    }
 
     const n = tileIndices.length;
     const userRef = db.doc(`users/${uid}`);
@@ -278,36 +271,27 @@ module.exports = (admin) => {
       const items = Array.isArray(u.items_all) ? u.items_all : [];
 
       const seedItem = items.find(it => it.id === seedItemId);
+      if (!seedItem) throw new HttpsError('failed-precondition', '인벤토리에 해당 씨앗이 없습니다.');
+      const uses = Number(seedItem.uses ?? 1);
+      if (uses < n) throw new HttpsError('failed-precondition', `씨앗 사용 가능 횟수가 부족합니다. (필요: ${n}, 보유: ${uses})`);
+
       if (!seed) {
         const si = seedItem?.seedInfo;
         if (si && (String(si.id) === String(seedId) || String(seedId).includes(String(si.id)))) {
           seed = {
             id: String(si.id),
             rarity: String(seedItem.rarity || si.rarity || 'normal').toLowerCase(),
-            growthTimeMinutes: Math.max(1, Number(si.growthTimeMinutes || si.growMin || 5)),
-            isPerennial: si.isPerennial || false, // 다년생 정보 추가
-            harvest: Array.isArray(si.harvest) && si.harvest.length
-              ? si.harvest.map(h => ({
-                  itemId: String(h.itemId || h.id || 'unknown_crop'),
-                  min: Math.max(1, Number(h.min ?? 1)),
-                  max: Math.max(1, Number(h.max ?? 1)),
-                  probability: Math.min(1, Math.max(0, Number(h.probability ?? 1)))
-                }))
-              : [{ itemId: String(si.defaultHarvestItemId || seedId), min: 1, max: 1, probability: 1 }],
-            season_bonus: si.season_bonus || {}
+            growthTimeMinutes: Math.max(1, Number(si.growthTimeMinutes || 5)),
+            isPerennial: si.isPerennial || false,
+            harvest: Array.isArray(si.harvest) && si.harvest.length ? si.harvest : [],
           };
         }
       }
       if (!seed) throw new HttpsError('not-found', `서버/인벤토리에 씨앗 정의가 없습니다: ${seedId}`);
 
-      if (!seedItem) throw new HttpsError('failed-precondition', '인벤토리에 해당 씨앗이 없습니다.');
-      const uses = Number(seedItem.uses ?? 1);
-      if (uses < n) throw new HttpsError('failed-precondition', `씨앗 사용 가능 횟수가 부족합니다. (필요: ${n}, 보유: ${uses})`);
-
       const plotSnap = await tx.get(plotRef);
       const cur = plotSnap.exists ? (plotSnap.data()||{}) : {};
       const tiles = cur.tiles || {};
-
       for (const i of tileIndices) {
         if (tiles[String(i)]) {
           throw new HttpsError('failed-precondition', `이미 작물이 심어져 있는 타일(${i})이 포함되어 있습니다.`);
@@ -325,10 +309,9 @@ module.exports = (admin) => {
       const rarity = String(seed.rarity || 'normal').toLowerCase();
       
       let gardeningLv = 0;
-      let charDoc = null;
       if (charId) {
           try {
-              charDoc = await tx.get(db.doc(`chars/${charId}`));
+              const charDoc = await tx.get(db.doc(`chars/${charId}`));
               if (charDoc.exists) {
                   const skills = charDoc.data()?.skills;
                   gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
@@ -348,7 +331,7 @@ module.exports = (admin) => {
         const plantingEndsAt = plantingStartsAt + plantMs;
         const readyAt = plantingEndsAt + growMs;
 
-        // ANCHOR: [수확물 사전 결정] 시작
+        // ANCHOR: [수확물 사전 결정 (Preroll)]
         const actualHarvest = [];
         if (Array.isArray(seed.harvest)) {
           for (const rule of seed.harvest) {
@@ -366,7 +349,7 @@ module.exports = (admin) => {
         tiles[key] = {
           seedId: String(seed.id),
           rarity,
-          isPerennial: !!seed.isPerennial, // 다년생 여부 저장
+          isPerennial: !!seed.isPerennial,
           plantedByChar: charId || null,
           plantedAt: plantingStartsAt,
           plantingEndsAt: plantingEndsAt,
@@ -389,10 +372,10 @@ module.exports = (admin) => {
     });
 
     await _awardFarmExp(uid, 5 * n);
-
     return { ok: true, planted: tileIndices.length };
   });
-
+  // ANCHOR_END
+  
   const assignCharacterToFarm = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, charId } = req.data || {};
@@ -407,18 +390,6 @@ module.exports = (admin) => {
 
     if (charId) {
       const charRef = db.doc(`chars/${charId}`);
-      const DEFAULT_SKILLS = {
-        gardening: { level: 0, exp: 0, nextExp: 1 },
-        construction: { level: 0, exp: 0, nextExp: 1 },
-        art: { level: 0, exp: 0, nextExp: 1 },
-        crafting: { level: 0, exp: 0, nextExp: 1 },
-        research: { level: 0, exp: 0, nextExp: 1 },
-        speech: { level: 0, exp: 0, nextExp: 1 },
-        mining: { level: 0, exp: 0, nextExp: 1 },
-        cooking: { level: 0, exp: 0, nextExp: 1 },
-        processing: { level: 0, exp: 0, nextExp: 1 },
-      };
-
       await db.runTransaction(async (tx) => {
         const now = Date.now();
         const cSnap = await tx.get(charRef);
@@ -427,7 +398,8 @@ module.exports = (admin) => {
         let skills = cData.skills || {};
         let needsUpdate = false;
 
-        for (const key of Object.keys(DEFAULT_SKILLS)) {
+        const defaultSkillKeys = ['gardening', 'construction', 'art', 'crafting', 'research', 'speech', 'mining', 'cooking', 'processing'];
+        for (const key of defaultSkillKeys) {
           if (!skills[key] || typeof skills[key] === 'number') {
             const level = Number(skills[key] || 0);
             skills[key] = {
@@ -450,9 +422,9 @@ module.exports = (admin) => {
     }
 
     return { ok: true, assigned_char_id: charId || null };
-
   });
 
+  // ANCHOR: harvestTiles 함수 전체 교체
   const harvestTiles = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, tileIndices=[] } = req.data || {};
@@ -477,7 +449,6 @@ module.exports = (admin) => {
     let totalSkillExpGain = 0;
 
     await db.runTransaction(async (tx) => {
-      // --- 1. 모든 읽기(Read) 작업을 트랜잭션 맨 위로 ---
       const plotSnap = await tx.get(plotRef);
       if (!plotSnap.exists) throw new HttpsError('failed-precondition', '심어진 작물이 없습니다.');
       
@@ -487,7 +458,6 @@ module.exports = (admin) => {
       const plotData = plotSnap.data() || {};
       const tiles = plotData.tiles || {};
       
-      // 수확할 타일들의 캐릭터 ID를 미리 수집
       const charIdsToRead = new Set();
       for (const i of tileIndices) {
         const tileData = tiles[String(i)];
@@ -496,19 +466,13 @@ module.exports = (admin) => {
         }
       }
       
-      // 관련된 모든 캐릭터 문서를 미리 읽어옴
       const charSnaps = new Map();
       if (charIdsToRead.size > 0) {
           const charRefs = Array.from(charIdsToRead).map(id => db.doc(`chars/${id}`));
           const charDocs = await tx.getAll(...charRefs);
-          charDocs.forEach(doc => {
-              if (doc.exists) {
-                  charSnaps.set(doc.id, doc.data());
-              }
-          });
+          charDocs.forEach(doc => { if (doc.exists) charSnaps.set(doc.id, doc.data()); });
       }
 
-      // --- 2. 읽어온 데이터를 바탕으로 모든 쓰기(Write) 작업 준비 ---
       const now = Date.now();
       const currentRewards = {};
       const updates = {};
@@ -521,6 +485,7 @@ module.exports = (admin) => {
 
         if (t.plantedByChar) finalCharToExp = String(t.plantedByChar).replace(/^chars\//,'');
 
+        // ANCHOR: [사전 결정된 수확물 사용]
         const harvestItems = t.actualHarvest || [];
         for (const item of harvestItems) {
             let qty = item.count;
@@ -542,36 +507,53 @@ module.exports = (admin) => {
 
             currentRewards[item.itemId] = (currentRewards[item.itemId] || 0) + qty;
         }
+        // ANCHOR_END
+
         totalCharExpGain += 10;
         totalSkillExpGain += 15;
         
+        // ANCHOR: [다년생 작물 처리 로직]
         if (t.isPerennial) {
           const seed = allSeeds.find(s => s.id === t.seedId);
-          const growMs = (seed?.growthTimeMinutes || 30) * 60 * 1000;
-          let gardeningLv = 0;
-          
-          if (t.plantedByChar) {
-            const charData = charSnaps.get(String(t.plantedByChar).replace(/^chars\//,''));
-            if (charData) {
-              const skills = charData.skills;
-              gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
+          if (seed) {
+            const growMs = (seed?.growthTimeMinutes || 30) * 60 * 1000;
+            let gardeningLv = 0;
+            if (t.plantedByChar) {
+              const charData = charSnaps.get(String(t.plantedByChar).replace(/^chars\//,''));
+              if (charData) {
+                const skills = charData.skills;
+                gardeningLv = skills?.gardening?.level || (typeof skills?.gardening === 'number' ? skills.gardening : 0);
+              }
             }
+            const slotMult = deviceSpeedMult(plotData.device_slots || []);
+            const regrowMs = Math.floor(growMs * levelSpeedMult(gardeningLv) * slotMult);
+            
+            // 다음 수확물 사전 결정
+            const nextHarvest = [];
+            if (Array.isArray(seed.harvest)) {
+              for (const rule of seed.harvest) {
+                  if ((rule.probability ?? 1) >= 1 || Math.random() < (rule.probability ?? 1)) {
+                      const min = Math.max(1, Number(rule.min || 1));
+                      const max = Math.max(min, Number(rule.max || min));
+                      nextHarvest.push({ itemId: rule.itemId, count: Math.floor(Math.random() * (max - min + 1)) + min });
+                  }
+              }
+            }
+
+            updates[`tiles.${key}.readyAt`] = now + regrowMs;
+            updates[`tiles.${key}.plantingEndsAt`] = now; // 심기 시간은 0으로 간주
+            updates[`tiles.${key}.actualHarvest`] = nextHarvest;
+          } else {
+             updates[`tiles.${key}`] = FieldValue.delete(); // 원본 씨앗 정보 없으면 제거
           }
-          
-          const slotMult = deviceSpeedMult(plotData.device_slots || []);
-          const regrowMs = Math.floor(growMs * levelSpeedMult(gardeningLv) * slotMult);
-          
-          updates[`tiles.${key}.readyAt`] = now + regrowMs;
-          updates[`tiles.${key}.plantingEndsAt`] = now;
         } else {
           updates[`tiles.${key}`] = FieldValue.delete();
         }
+        // ANCHOR_END
       }
 
-      // --- 3. 모든 쓰기 작업을 한 번에 실행 ---
       if (Object.keys(currentRewards).length > 0) {
-        const u = userSnap.data() || {};
-        let itemsAll = Array.isArray(u.items_all) ? u.items_all : [];
+        let itemsAll = Array.isArray(userSnap.data().items_all) ? userSnap.data().items_all : [];
 
         const itemsMeta = await (async ()=>{
           if (!global.__ITEMS_META) {
@@ -600,35 +582,11 @@ module.exports = (admin) => {
         tx.update(userRef, { items_all: itemsAll });
       }
 
-      // 경험치 및 스킬 경험치 지급 (내부에서는 더 이상 tx.get을 호출하지 않음)
       if (finalCharToExp) {
         const charData = charSnaps.get(finalCharToExp);
         if (charData) {
-          if (totalCharExpGain > 0) {
-            const ownerUid = charData.owner_uid;
-            const currentExp = Number(charData.exp || 0);
-            const newTotalExp = currentExp + totalCharExpGain;
-            const coinsToMint = Math.floor(newTotalExp / 100);
-            const finalExp = newTotalExp % 100;
-            tx.update(db.doc(`chars/${finalCharToExp}`), { exp_total: FieldValue.increment(totalCharExpGain), exp: finalExp });
-            if (coinsToMint > 0) tx.set(db.doc(`users/${ownerUid}`), { coins: FieldValue.increment(coinsToMint) }, { merge: true });
-          }
-          if (totalSkillExpGain > 0) {
-            let skills = charData.skills || {};
-            const skillName = 'gardening';
-            if (typeof skills[skillName] !== 'object' || skills[skillName] === null) {
-                skills[skillName] = { level: 0, exp: 0, nextExp: 1 };
-            }
-            let { level, exp, nextExp } = skills[skillName];
-            exp += totalSkillExpGain;
-            while (exp >= nextExp) {
-              exp -= nextExp;
-              level += 1;
-              nextExp = Math.floor(200 ** (Math.sqrt(level)));
-            }
-            skills[skillName] = { level, exp, nextExp };
-            tx.update(db.doc(`chars/${finalCharToExp}`), { skills });
-          }
+          if (totalCharExpGain > 0) await _awardCharExp(tx, finalCharToExp, totalCharExpGain, 'farming');
+          if (totalSkillExpGain > 0) await _awardSkillExp(tx, finalCharToExp, 'gardening', totalSkillExpGain);
         }
       }
       
@@ -638,6 +596,8 @@ module.exports = (admin) => {
     
     return { ok: true, rewards: newItemsForUser };
   });
+  // ANCHOR_END
+
 
   const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
@@ -662,7 +622,6 @@ module.exports = (admin) => {
       if (!t) throw new HttpsError('failed-precondition', '비어있는 타일입니다.');
 
       const now = Date.now();
-      // [수정] 이제 '심는 중' 뿐만 아니라 '자라는 중'인 것도 취소(제초)할 수 있습니다.
       if (!t.readyAt || now >= t.readyAt) {
         throw new HttpsError('failed-precondition', '이미 수확 준비가 완료된 작물은 취소할 수 없습니다.');
       }
