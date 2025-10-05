@@ -28,7 +28,32 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
           generationConfig: {
             temperature: 0.85,
             maxOutputTokens: 8192,
-            responseMimeType: "application/json"
+            responseMimeType: "application/json",
+            // ↓ JSON 모양/타입 강제 (모델이 코드펜스/문자열 쪼개기 못 하게)
+            responseSchema: {
+              type: "object",
+              additionalProperties: false,
+              required: ["log", "totalDamage", "contributions"],
+              properties: {
+                log: { type: "string", maxLength: 8000 },
+                totalDamage: { type: "integer", minimum: 1, maximum: 10000 },
+                contributions: {
+                  type: "array",
+                  minItems: 4,
+                  maxItems: 4,
+                  items: {
+                    type: "object",
+                    additionalProperties: false,
+                    required: ["charId", "contribution", "exp"],
+                    properties: {
+                      charId: { type: "string", minLength: 1 },
+                      contribution: { type: "integer", minimum: 1, maximum: 1000 },
+                      exp: { type: "integer", minimum: 1, maximum: 1000 }
+                    }
+                  }
+                }
+              }
+            }
           }
         };
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -38,14 +63,39 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         const json = await res.json();
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-        if (!text) throw new HttpsError('internal', `Gemini response was empty.`);
+        if (!text) throw new HttpsError('internal', 'Gemini response was empty.');
 
-        try {
-            return JSON.parse(text);
-        } catch (e) {
-            logger.error("Gemini JSON parse failed", { rawText: text, error: e });
-            throw new HttpsError('internal', 'AI 응답 파싱에 실패했습니다.');
+        // --- 응답 세척 ---
+        // 1) ```json 코드펜스 제거
+        // 2) BOM/제로폭 제거
+        // 3) 가장 바깥 { ... }만 추출
+        // 4) "..." + "..." 식 문자열 이어붙이기 제거(내부 경계 쿼트+플러스+쿼트 삭제)
+        let clean = text
+          .replace(/^\s*```(?:json)?\s*/i, '')
+          .replace(/\s*```\s*$/, '')
+          .replace(/\uFEFF/g, '')
+          .replace(/[\u200B-\u200D\u2060]/g, '')
+          .trim();
+
+        // 바깥 JSON만 남기기(앞뒤 잡문 방지)
+        const firstBrace = clean.indexOf('{');
+        const lastBrace  = clean.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+          clean = clean.slice(firstBrace, lastBrace + 1);
         }
+
+        // "문자열"+"문자열" → 하나의 문자열로 합치기
+        // (닫는 쿼트 + 플러스 + 여는 쿼트 패턴 제거: "   +   ")
+        clean = clean.replace(/"\s*\+\s*"/g, '');
+        
+        // 최종 파싱
+        try {
+          return JSON.parse(clean);
+        } catch (e) {
+          logger.error("Gemini JSON parse failed (after clean)", { rawText: text, cleaned: clean, error: e });
+          throw new HttpsError('internal', 'AI 응답 파싱에 실패했습니다.');
+        }
+
     }
 
     async function getActiveRaid() {
@@ -293,7 +343,27 @@ ${JSON.stringify(partyForAI, null, 2)}
         `;
 
         const aiResult = await callGemini(systemPrompt, userPrompt);
-        const totalDamage = Math.min(MAX_RAID_DAMAGE, aiResult.totalDamage || 0);
+        {
+          // 로그 토큰 교정: [/SLOW] → [RESUME]
+          if (aiResult && typeof aiResult.log === 'string') {
+            aiResult.log = aiResult.log.replace(/\[\/SLOW\]/g, '[RESUME]');
+          }
+
+          // totalDamage 정수화 + 범위(1~MAX) 클램프
+          const tdRaw = Number(aiResult?.totalDamage);
+          var totalDamage = Math.max(1, Math.min(MAX_RAID_DAMAGE, Number.isFinite(tdRaw) ? Math.round(tdRaw) : 1));
+
+          // contributions 검사/보정
+          if (!Array.isArray(aiResult?.contributions) || aiResult.contributions.length !== 4) {
+            throw new HttpsError('internal', 'AI 응답의 contributions 길이가 4가 아닙니다.');
+          }
+          aiResult.contributions = aiResult.contributions.map(c => {
+            const cid = String(c?.charId || '');
+            const val = Math.round(Number(c?.contribution));
+            const safe = Math.max(1, Math.min(MAX_EXP_PER_RAID, Number.isFinite(val) ? val : 1));
+            return { charId: cid, contribution: safe, exp: safe }; // 규칙: contribution===exp
+          });
+        }
 
         const logRef = db.collection('raid_logs').doc();
         const contribRef = db.collection('raids').doc(raidBoss.id).collection('contributions');
