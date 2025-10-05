@@ -32,7 +32,7 @@ module.exports = (admin) => {
       while (exp >= nextExp && level < 100) {
         exp -= nextExp;
         level += 1;
-        nextExp = Math.round(100 + 50 * level);
+      nextExp = Math.floor(200 * (2 ** Math.sqrt(level)));
       }
       tx.set(ref, { level, exp, nextExp, updatedAt: Date.now() }, { merge: true });
     });
@@ -81,7 +81,7 @@ module.exports = (admin) => {
       skills[skillName] = {
         level: currentLevel,
         exp: 0,
-        nextExp: Math.floor(200 ** (Math.sqrt(currentLevel)))
+        nextExp: Math.floor(200 * (2 ** Math.sqrt(currentLevel)))
       };
     }
     
@@ -92,7 +92,7 @@ module.exports = (admin) => {
     while (exp >= nextExp && level < 100) {
       exp -= nextExp;
       level += 1;
-      nextExp = Math.floor(200 ** (Math.sqrt(level)));
+      nextExp = Math.floor(200 * (2 ** Math.sqrt(level)));
     }
 
     skills[skillName] = { level, exp, nextExp };
