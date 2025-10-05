@@ -26,7 +26,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
           systemInstruction: { role: 'system', parts: [{ text: systemText }] },
           contents: [{ role: 'user', parts: [{ text: userText }] }],
           generationConfig: {
-            temperature: 0.85,
+            temperature: 0.70,
             maxOutputTokens: 16384,
             responseMimeType: "application/json",
             // ANCHOR: [수정된 부분]
