@@ -30,58 +30,66 @@ function renderRichLog(logText = '', party = []) {
     let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*/, '');
     let body = lines.join('\n').trim();
 
-    // 1. 먼저 **굵은 글씨** 같은 마크다운을 HTML 태그로 변환합니다.
-    body = body.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+    // 1. 먼저 대화 블록을 고유한 플레이스홀더로 분리합니다.
+    // 이렇게 하면 일반 서술부와 대화부를 안전하게 분리하여 처리할 수 있습니다.
+    const dialogues = [];
+    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (match, name, line) => {
+        dialogues.push({ name, line });
+        return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
+    });
 
-    // 2. 그 다음, 나머지 특수 태그들을 처리합니다.
-    // ANCHOR: [수정] esc() 함수를 각 replace 콜백 안으로 이동시켜 필요한 부분만 처리하도록 변경합니다.
-    body = body
+    // 2. 대화가 제거된 일반 서술부에 대해서만 모든 태그 변환 및 HTML 이스케이프를 적용합니다.
+    let narrativeBody = esc(body)
         .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
-        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, (m, content) => `<span class="slow-motion">${esc(content)}</span>`)
-        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, (m, content) => `<span class="sfx">${esc(content)}</span>`)
-        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, (m, content) => `<span class="vfx">${esc(content)}</span>`)
-        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, (m, content) => `<span class="hud">${esc(content)}</span>`)
-        .replace(/\[T\+(.*?)\]/g, (m, content) => `<span class="timestamp">${esc(content)}</span>`)
-        .replace(/\[HEART x (.*?)\]/g, (m, content) => `<span class="heart">${esc(content)} BPM</span>`)
+        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
+        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
+        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
+        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
+        .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
+        .replace(/\[HEART x (.*?)\]/g, '<span class="heart">$1 BPM</span>')
         .replace(/\[BREATH:([^\]]+)\]/g, (m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
         .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (m, r, n) => {
             const color = rarityColors[r.toLowerCase()] || '#fff';
-            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${esc(n)}</strong>`;
+            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
 
-    // 3. 대화 부분을 말풍선으로 변환합니다.
-    body = body.replace(/\[대화:([^\]]+)\]"([^"]*)"/g, (m, name, line) => {
-        const charIndex = party.findIndex(p => p.name === name.trim());
+    // 3. 분리해두었던 대화 블록을 다시 HTML 말풍선으로 만들어 삽입합니다.
+    dialogues.forEach((dialogue, index) => {
+        const charIndex = party.findIndex(p => p.name === dialogue.name.trim());
         const side = (charIndex % 2 === 0) ? 'left' : 'right';
-        const character = party[charIndex] || { name: name.trim(), thumb_url: '' };
+        const character = party[charIndex] || { name: dialogue.name.trim(), thumb_url: '' };
         
-        // 'line'은 이미 <strong> 같은 태그를 포함하고 있으므로 esc() 처리하지 않습니다.
-        return `
+        // 대화 내용(line)에 대해서만 **굵은 글씨** 처리를 적용합니다.
+        const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+
+        const bubbleHtml = `
           <div class="dialogue-bubble-wrap" data-side="${side}">
             <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
             <div class="dialogue-bubble">
               <div class="dialogue-name">${esc(character.name)}</div>
-              <div class="dialogue-text">“${line}”</div>
+              <div class="dialogue-text">“${processedLine}”</div>
             </div>
           </div>
         `;
+        // 플레이스홀더를 완성된 HTML 말풍선으로 교체합니다.
+        narrativeBody = narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`, bubbleHtml);
     });
 
-    // 4. 남은 텍스트를 단락으로 나누고, 이때 각 단락을 esc() 처리합니다.
-    const paragraphs = body.split(/\n{2,}/)
+    // 4. 최종적으로 완성된 HTML을 단락으로 나누어 반환합니다.
+    const paragraphs = narrativeBody.split(/\n{2,}/)
       .map(p => p.trim())
       .filter(p => p)
       .map(p => {
-          // 이미 말풍선으로 변환된 부분은 그대로 둡니다.
+          // 이미 HTML 태그로 변환된 내용이므로, 추가적인 esc() 처리 없이 그대로 반환합니다.
           if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
               return p;
           }
-          // 일반 텍스트 단락은 여기서 안전하게 HTML 이스케이프 처리합니다.
-          return `<div class="log-paragraph">${esc(p).replace(/\n/g, '<br>')}</div>`;
+          return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
       })
       .join('');
           
-      return { title: titleLine, body: paragraphs };
+      return { title: esc(titleLine), body: paragraphs };
 }
 
 /**
