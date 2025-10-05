@@ -51,7 +51,16 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 }
               }
             }
-          }
+          },
+          // ANCHOR: [수정된 부분] 안전 설정을 추가하여 응답 잘림 현상을 방지합니다.
+          safetySettings: [
+            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+            { category: "HARM_CATEGORY_UNSPECIFIED", threshold: "BLOCK_NONE" }
+          ]
+          // ANCHOR_END
         };
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) {
@@ -62,33 +71,23 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if (!text) throw new HttpsError('internal', 'Gemini response was empty.');
 
-        // ANCHOR: [수정된 부분] JSON 파싱 안정성 강화를 위한 전처리 로직
         try {
-            // 1. 코드 블록 및 앞뒤 공백 제거
             let clean = text.replace(/^```(?:json)?\s*/, '').replace(/\s*```\s*$/, '').trim();
-
-            // 2. JSON 객체 부분만 추출 (앞뒤에 불필요한 텍스트가 있는 경우 대비)
             const firstBrace = clean.indexOf('{');
             const lastBrace = clean.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace > firstBrace) {
                 clean = clean.slice(firstBrace, lastBrace + 1);
             }
-
-            // 3. 후행 쉼표(trailing comma) 제거 (배열과 객체 모두)
             clean = clean.replace(/,\s*([}\]])/g, '$1');
-            
-            // 4. 주석 제거
             clean = clean.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
-
             return JSON.parse(clean);
         } catch (e) {
             logger.error("Gemini JSON parse failed (after robust cleaning)", {
-                rawText: text.slice(0, 500), // 로그에는 일부만 기록
+                rawText: text.slice(0, 500),
                 error: e.message
             });
             throw new HttpsError('internal', 'AI 응답을 파싱하는 데 최종적으로 실패했습니다.');
         }
-        // ANCHOR_END
     }
 
     async function getActiveRaid() {
@@ -155,7 +154,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             .where('can_match', '==', true)
             .orderBy(admin.firestore.FieldPath.documentId())
             .startAt(randomKey)
-            .limit(100) // 더 많은 후보군 확보
+            .limit(100)
             .get();
 
         q1.docs.forEach(doc => candidates.set(doc.id, { id: doc.id, ...doc.data() }));
@@ -169,7 +168,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             q2.docs.forEach(doc => candidates.set(doc.id, { id: doc.id, ...doc.data() }));
         }
 
-        // 자기 자신과 자기의 다른 캐릭터만 제외
         const filteredCandidates = Array.from(candidates.values()).filter(c => {
             const charId = (c.char?.replace('chars/', '')) || c.id;
             if (!charId) return false;
@@ -193,7 +191,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         return { partyCharIds: party.map(p => (p.char ? p.char.replace('chars/', '') : p.id)) };
     });
 
-    // [신규] 길드원 중에서 레이드 파티 찾기
     const findGuildPartyForRaid = onCall({ region: 'us-central1' }, async (req) => {
         const { myCharId, guildId } = req.data;
         const myUid = req.auth?.uid;
@@ -201,7 +198,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '캐릭터 ID, 길드 ID, 인증 정보가 필요합니다.');
         }
 
-        // 길드 멤버 목록 조회 (leftAt 조건 없이 guildId로만 조회)
         const membersSnap = await db.collection('guild_members')
             .where('guildId', '==', guildId)
             .get();
@@ -210,7 +206,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('not-found', '길드원을 찾을 수 없습니다.');
         }
         
-        // 자기 자신을 제외하고, 떠나지 않은(leftAt 필드가 null이거나 없는) 길드원만 코드에서 필터링
         const guildMemberCharIds = membersSnap.docs
             .map(doc => doc.data())
             .filter(member => member.charId !== myCharId && member.leftAt == null)
@@ -220,7 +215,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('failed-precondition', '파티를 구성할 길드원이 3명 이상 필요합니다.');
         }
         
-        // 길드원 중에서 무작위로 3명 선택
         const party = [];
         const available = [...guildMemberCharIds];
         while (party.length < 3 && available.length > 0) {
