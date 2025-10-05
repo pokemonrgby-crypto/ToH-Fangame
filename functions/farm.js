@@ -8,6 +8,12 @@ module.exports = (admin) => {
   const db = admin.firestore();
   const { FieldValue, Timestamp } = admin.firestore;
 
+  // ANCHOR: [추가] 등급별 경험치 테이블
+  const SKILL_EXP_TABLE = {
+    plant:  { normal: 2, rare: 5, epic: 15, legendary: 40, mythic: 100, aether: 250 },
+    harvest:{ normal: 5, rare: 15, epic: 40, legendary: 100, mythic: 250, aether: 600 },
+  };
+
   // 농사 프로필(레벨/경험치) 읽기/업데이트
   async function _getFarmProfile(uid) {
     const ref = db.doc(`farm_profiles/${uid}`);
@@ -60,7 +66,7 @@ module.exports = (admin) => {
     }
   }
 
-  // 스킬 경험치 지급 및 레벨업 로직
+  // ANCHOR: 레거시 호환 로직이 포함된 스킬 경험치 함수
   async function _awardSkillExp(tx, charId, skillName, expToAdd) {
     if (!charId || !skillName || expToAdd <= 0) return;
     const charRef = db.doc(`chars/${charId}`);
@@ -70,6 +76,7 @@ module.exports = (admin) => {
     const charData = charSnap.data() || {};
     let skills = charData.skills || {};
 
+    // [설명] 레거시 호환: 스킬 데이터가 숫자(레벨)이면 객체 형태로 변환
     if (typeof skills[skillName] === 'number' || skills[skillName] === undefined) {
       const currentLevel = Number(skills[skillName] || 0);
       skills[skillName] = {
@@ -91,6 +98,7 @@ module.exports = (admin) => {
     skills[skillName] = { level, exp, nextExp };
     tx.update(charRef, { skills });
   }
+
 
   function plotIdFrom({ mapId, x, y, microX, microY }) {
     return `${mapId}_${x}_${y}_${microX}_${microY}`;
@@ -244,7 +252,6 @@ module.exports = (admin) => {
     };
   });
 
-  // ANCHOR: plantSeedOnTile 함수 전체 교체
   const plantSeedOnTile = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, charId, seedItemId, seedId, tileIndices=[] } = req.data || {};
@@ -331,7 +338,6 @@ module.exports = (admin) => {
         const plantingEndsAt = plantingStartsAt + plantMs;
         const readyAt = plantingEndsAt + growMs;
 
-        // ANCHOR: [수확물 사전 결정 (Preroll)]
         const actualHarvest = [];
         if (Array.isArray(seed.harvest)) {
           for (const rule of seed.harvest) {
@@ -344,8 +350,7 @@ module.exports = (admin) => {
               }
           }
         }
-        // ANCHOR_END
-
+        
         tiles[key] = {
           seedId: String(seed.id),
           rarity,
@@ -355,10 +360,14 @@ module.exports = (admin) => {
           plantingEndsAt: plantingEndsAt,
           readyAt: readyAt,
           status: 'planting',
-          actualHarvest, // 결정된 수확물 저장
+          actualHarvest,
         };
         cumulativePlantingTime += plantMs;
       }
+      
+      // ANCHOR: [수정] 심을 때 등급별 스킬 경험치 지급
+      const plantExp = SKILL_EXP_TABLE.plant[rarity] || 2;
+      await _awardSkillExp(tx, charId, 'gardening', plantExp * n);
 
       if (uses === n) {
         const remain = items.filter(it => it.id !== seedItemId);
@@ -374,8 +383,8 @@ module.exports = (admin) => {
     await _awardFarmExp(uid, 5 * n);
     return { ok: true, planted: tileIndices.length };
   });
-  // ANCHOR_END
-  
+
+  // ANCHOR: assignCharacterToFarm 함수에 레거시 호환 코드 복원
   const assignCharacterToFarm = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, charId } = req.data || {};
@@ -390,6 +399,8 @@ module.exports = (admin) => {
 
     if (charId) {
       const charRef = db.doc(`chars/${charId}`);
+      
+      // ANCHOR: [복원] 레거시 스킬 데이터(숫자)를 새 구조(객체)로 마이그레이션하는 로직
       await db.runTransaction(async (tx) => {
         const now = Date.now();
         const cSnap = await tx.get(charRef);
@@ -414,6 +425,7 @@ module.exports = (admin) => {
         if (needsUpdate) {
           tx.set(charRef, { skills, updatedAt: now }, { merge: true });
         }
+        // ANCHOR_END
 
         tx.set(plotRef, { assigned_char_id: charId, updatedAt: now }, { merge: true });
       });
@@ -424,7 +436,7 @@ module.exports = (admin) => {
     return { ok: true, assigned_char_id: charId || null };
   });
 
-  // ANCHOR: harvestTiles 함수 전체 교체
+  // ANCHOR: harvestTiles 함수에 등급별 스킬 경험치 지급 로직 추가
   const harvestTiles = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
     const { mapId, x, y, microX, microY, tileIndices=[] } = req.data || {};
@@ -459,12 +471,10 @@ module.exports = (admin) => {
       const tiles = plotData.tiles || {};
       
       const charIdsToRead = new Set();
-      for (const i of tileIndices) {
+      tileIndices.forEach(i => {
         const tileData = tiles[String(i)];
-        if (tileData?.plantedByChar) {
-          charIdsToRead.add(String(tileData.plantedByChar).replace(/^chars\//,''));
-        }
-      }
+        if (tileData?.plantedByChar) charIdsToRead.add(String(tileData.plantedByChar).replace(/^chars\//,''));
+      });
       
       const charSnaps = new Map();
       if (charIdsToRead.size > 0) {
@@ -485,7 +495,6 @@ module.exports = (admin) => {
 
         if (t.plantedByChar) finalCharToExp = String(t.plantedByChar).replace(/^chars\//,'');
 
-        // ANCHOR: [사전 결정된 수확물 사용]
         const harvestItems = t.actualHarvest || [];
         for (const item of harvestItems) {
             let qty = item.count;
@@ -507,12 +516,12 @@ module.exports = (admin) => {
 
             currentRewards[item.itemId] = (currentRewards[item.itemId] || 0) + qty;
         }
-        // ANCHOR_END
 
+        // ANCHOR: [수정] 수확 시 등급별 캐릭터/스킬 경험치 누적
+        const rarity = t.rarity || 'normal';
         totalCharExpGain += 10;
-        totalSkillExpGain += 15;
+        totalSkillExpGain += SKILL_EXP_TABLE.harvest[rarity] || 5;
         
-        // ANCHOR: [다년생 작물 처리 로직]
         if (t.isPerennial) {
           const seed = allSeeds.find(s => s.id === t.seedId);
           if (seed) {
@@ -528,7 +537,6 @@ module.exports = (admin) => {
             const slotMult = deviceSpeedMult(plotData.device_slots || []);
             const regrowMs = Math.floor(growMs * levelSpeedMult(gardeningLv) * slotMult);
             
-            // 다음 수확물 사전 결정
             const nextHarvest = [];
             if (Array.isArray(seed.harvest)) {
               for (const rule of seed.harvest) {
@@ -541,15 +549,14 @@ module.exports = (admin) => {
             }
 
             updates[`tiles.${key}.readyAt`] = now + regrowMs;
-            updates[`tiles.${key}.plantingEndsAt`] = now; // 심기 시간은 0으로 간주
+            updates[`tiles.${key}.plantingEndsAt`] = now;
             updates[`tiles.${key}.actualHarvest`] = nextHarvest;
           } else {
-             updates[`tiles.${key}`] = FieldValue.delete(); // 원본 씨앗 정보 없으면 제거
+             updates[`tiles.${key}`] = FieldValue.delete();
           }
         } else {
           updates[`tiles.${key}`] = FieldValue.delete();
         }
-        // ANCHOR_END
       }
 
       if (Object.keys(currentRewards).length > 0) {
@@ -596,8 +603,6 @@ module.exports = (admin) => {
     
     return { ok: true, rewards: newItemsForUser };
   });
-  // ANCHOR_END
-
 
   const cancelPlanting = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
