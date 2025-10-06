@@ -228,21 +228,31 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         if (base) {
           const n = Math.min(50, Math.max(1, Math.floor(Number(cfg.count || 1))));
           for (let i = 0; i < n; i++) {
-            copiedItems.push({
+            // ANCHOR: [수정된 부분] 아이템 복사 시 count 속성을 올바르게 복사하도록 수정
+            const newItem = {
               id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`, // 새 랜덤 ID
               name: String(base.name || 'Gift'),
               rarity: String(base.rarity || 'normal'),
-              isConsumable: !!(base.isConsumable || base.consumable || base.consume),
-              uses: Math.max(1, Math.floor(Number(base.uses || 1))),
               description: String(base.description || ''),
-              // 구조를 최대한 보존 (있으면 그대로 복사)
+              // --- 아래부터 수정 ---
+              count: Math.max(1, Math.floor(Number(base.count || 1))), // 원본 아이템의 수량(count) 복사
+              isConsumable: !!(base.isConsumable || base.consumable || base.consume),
+              uses: base.uses, // uses도 일단 복사 (둘 다 쓸 수도 있으니)
+              // --- 위까지 수정 ---
               properties: base.properties || undefined,
               type: base.type || undefined,
               seedInfo: base.seedInfo || undefined,
               placeable: (base.placeable !== undefined) ? !!base.placeable : undefined,
               promptId: base.promptId || undefined,
               isPromptUse: base.isPromptUse || undefined,
-            });
+            };
+            // count가 있는 아이템은 보통 charges(uses)가 없으므로 uses를 제거해줄 수 있습니다 (선택적)
+            if (newItem.count > 1) {
+                delete newItem.uses;
+                newItem.isConsumable = false; // 묶음 아이템은 보통 소모성이 아님
+            }
+            copiedItems.push(newItem);
+            // ANCHOR_END
           }
         }
       }
@@ -251,6 +261,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     }
 
 
+    // (이하 코드 동일)
+// (기존 내용과 동일)
     // 뽑기권이 있으면 등급 추첨 + AI 아이템 생성
     let ticketItem = null;
     if (m?.attachments?.ticket){
