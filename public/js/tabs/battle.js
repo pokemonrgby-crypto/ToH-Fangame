@@ -163,125 +163,76 @@ function showBattleProgressUI(myChar, opponentChar) {
   };
 }
 
-// /public/js/tabs/battle.js 의 startBattleProcess 함수
 async function startBattleProcess(myChar, opponentChar) {
     const progress = showBattleProgressUI(myChar, opponentChar);
     try {
-        progress.update('배틀 컨셉 로딩...', 10);
-        const battlePrompts = await fetchBattlePrompts();
-        const chosenPrompts = battlePrompts.sort(() => 0.5 - Math.random()).slice(0, 3);
+        progress.update('배틀 데이터 준비 중...', 20);
 
-        progress.update('캐릭터 데이터 및 관계 분석...', 20);
-        
-        const getEquipped = (char, all, equipped) => (Array.isArray(all) && Array.isArray(equipped)) ? all.filter((_, i) => equipped.includes(i)) : [];
+        // [신규] AI 입력 데이터 구성
         const myInv = await getUserInventory(myChar.owner_uid);
         const oppInv = await getUserInventory(opponentChar.owner_uid);
-        const getEquippedItems = (char, inv) => (char.items_equipped || []).map(id => inv.find(i => i.id === id)).filter(Boolean);
 
         const simplifyForAI = (char, inv) => {
-            const equippedSkills = getEquipped(char, char.abilities_all, char.abilities_equipped);
-            const equippedItems = getEquippedItems(char, inv);
+            const equippedSkills = (char.abilities_equipped || []).map(idx => (char.abilities_all || [])[idx]).filter(Boolean);
+            const equippedItems = (char.items_equipped || []).map(id => inv.find(i => i.id === id)).filter(Boolean);
+            
             const skillsAsText = equippedSkills.map(s => `${s.name}: ${s.desc_soft}`).join('\n') || '없음';
-            const itemsAsText = equippedItems
-             .map(i => `${i.name}: ${i.desc_soft || i.desc || i.description || (i.desc_long ? String(i.desc_long).split('\n')[0] : '')}`)
-             .join('\n') || '없음';
+            const itemsAsJson = equippedItems.map(i => ({
+                name: i.name,
+                description: i.desc_soft || i.desc || i.description || '',
+                properties: i.properties || {}, // 아이템 속성 전체 포함
+                rarity: i.rarity
+            }));
 
             const narrativeSummary = char.narratives?.slice(1).map(n => n.short).join(' ') || char.narratives?.[0]?.short || '특이사항 없음';
+            
             return {
                 name: char.name,
                 narrative_long: char.narratives?.[0]?.long || char.summary,
                 narrative_short_summary: narrativeSummary,
                 skills: skillsAsText,
-                items: itemsAsText,
+                items: itemsAsJson,
                 origin: char.world_id,
             };
         };
+
         const attackerData = simplifyForAI(myChar, myInv);
         const defenderData = simplifyForAI(opponentChar, oppInv);
-        
-        // 두 캐릭터의 관계 조회
         const relation = await getRelationBetween(myChar.id, opponentChar.id);
 
-        const battleData = { 
-            prompts: chosenPrompts, 
-            attacker: attackerData, 
-            defender: defenderData,
-            relation: relation // 조회된 관계 정보 추가
-        };
-        
-        progress.update('AI가 3가지 전투 시나리오 구상 중...', 40);
-        const sketches = await generateBattleSketches(battleData);
+        progress.update('AI가 배틀 시나리오 생성 중...', 50);
 
-        progress.update('AI가 가장 흥미로운 시나리오 선택 중...', 65);
-        const choice = await chooseBestSketch(sketches);
-        const chosenSketch = sketches[choice.best_sketch_index];
-
-        progress.update('선택된 시나리오로 최종 배틀 로그 생성 중...', 80);
-        const finalLog = await generateFinalBattleLog(chosenSketch, battleData);
-
-        progress.update('배틀 결과 저장...', 95);
-
-      // ★ 모의전 여부 재확인
-         const intentNow = (()=>{
-           try { return JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}'); }
-          catch(_) { return {}; }
+        const intentNow = (() => {
+           try { return JSON.parse(sessionStorage.getItem('toh.match.intent') || '{}'); }
+           catch(_) { return {}; }
         })();
         const isSimNow = !!intentNow?.sim;
 
-        // 경험치 밸런스 조정 (모의전은 0 고정)
-        const clamp = (num, min, max) => Math.min(Math.max(num, min), max);
-        finalLog.exp_char0 = isSimNow ? 0 : clamp(finalLog.exp_char0, 5, 50);
-        finalLog.exp_char1 = isSimNow ? 0 : clamp(finalLog.exp_char1, 5, 50);
+        // [신규] 단일 서버 함수 호출
+        const runBattleFn = httpsCallable(func, 'runBattleV2');
+        const result = await runBattleFn({
+            attackerId: myChar.id,
+            defenderId: opponentChar.id,
+            worldId: myChar.world_id,
+            simulate: isSimNow,
+            // AI용 데이터는 서버에서 다시 만들지만, 클라이언트 데이터를 함께 보내면 디버깅에 용이할 수 있음
+            // _clientData: { attacker: attackerData, defender: defenderData, relation } 
+        });
 
-
-// public/js/tabs/battle.js
-
-// ... (생략) ...
-        const logData = {
-            attacker_uid: myChar.owner_uid,
-            attacker_char: `chars/${myChar.id}`,
-            defender_char: `chars/${opponentChar.id}`,
-            attacker_snapshot: { name: myChar.name, thumb_url: myChar.thumb_url || null },
-            defender_snapshot: { name: opponentChar.name, thumb_url: opponentChar.thumb_url || null },
-            relation_at_battle: relation || null,
-            ...(isSimNow && { simulated: true }),   // ★ 모의전 플래그
-            ...finalLog,
-            endedAt: fx.serverTimestamp()
-        };
-// ... (생략) ...
-
-
-        const logRef = await fx.addDoc(fx.collection(db, 'battle_logs'), logData);
-
-        // [수정] Cloudflare Worker를 호출하여 후처리 실행
-        if (!isSimNow) {
-          try {
-            progress.update('서버에 결과 반영 중...', 98);
-            const workerUrl = 'https://toh-battle-processor.pokemonrgby.workers.dev';
-            const res = await fetch(workerUrl, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ logId: logRef.id })
-            });
-            if (!res.ok) {
-              const errorData = await res.json();
-              throw new Error(errorData.error || 'Worker에서 오류가 발생했습니다.');
-            }
-          } catch (e) {
-            console.error('배틀 결과 반영 실패:', e);
-            showToast(`결과를 반영하는 중 서버 오류가 발생했습니다: ${e.message}`);
-          }
+        if (!result.data.ok) {
+            throw new Error(result.data.error || '서버에서 배틀 생성에 실패했습니다.');
         }
 
-
-        progress.update('완료!', 100);
-      try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown post-finish failed', e); }
-try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_) {}
+        progress.update('완료! 결과 페이지로 이동합니다.', 100);
+        
+        // 쿨타임 적용
+        try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown post-finish failed', e); }
+        try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_) {}
 
         setTimeout(() => {
             progress.remove();
-            location.hash = `#/battlelog/${logRef.id}`;
-        }, 1000);
+            location.hash = `#/battlelog/${result.data.logId}`;
+        }, 800);
 
     } catch (e) {
         console.error("Battle process failed:", e);
@@ -290,11 +241,9 @@ try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); }
         const btnStart = document.getElementById('btnStart');
         const simCatch = (()=>{
           try { return !!JSON.parse(sessionStorage.getItem('toh.match.intent')||'{}')?.sim; }
-          catch(_) { return false; }
+          catch(_){ return false; }
         })();
         if (btnStart) mountCooldownOnButton(btnStart, 'battle', simCatch ? '모의전투 시작' : '배틀 시작');
-
-
     }
 }
 // ---------- entry ----------
