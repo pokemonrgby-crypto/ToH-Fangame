@@ -4,7 +4,8 @@ import { db, fx, auth, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal } from '../ui/modal.js';
-import { rarityStyle, useBadgeHtml, showItemDetailModal as showItemModalForListing } from './char.js';
+import { showItemDetailModal } from '../ui/item.js';
+import { rarityStyle, useBadgeHtml } from '../ui/utils.js';
 
 // ---------- util ----------
 const call = (name) => httpsCallable(func, name);
