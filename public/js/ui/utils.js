@@ -66,3 +66,24 @@ export function ensureItemCss() {
   .item-card:hover, .item-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.35); filter: brightness(1.05); }`;
   document.head.appendChild(st);
 }
+
+
+// [추가] 시간 포맷 함수
+export function prettyTime(ts){
+  function fmt(ms){
+    if (!ms) return '-';
+    const d = new Date(ms);
+    const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), dd = String(d.getDate()).padStart(2,'0');
+    const hh = String(d.getHours()).padStart(2,'0'), mm = String(d.getMinutes()).padStart(2,'0');
+    return `${y}-${m}-${dd} ${hh}:${mm}`;
+  }
+  if (!ts) return '-';
+  if (typeof ts === 'number') return fmt(ts);
+  if (typeof ts === 'string') return fmt(Number(ts)); // 혹시 문자열 타임스탬프면 숫자로
+  if (typeof ts?.toMillis === 'function') return fmt(ts.toMillis());
+  const sec = (ts?._seconds ?? ts?.seconds);
+  const nano = (ts?._nanoseconds ?? ts?.nanoseconds ?? 0);
+  if (sec != null) return fmt(sec * 1000 + Math.floor(nano/1e6));
+  return '-';
+}
+
