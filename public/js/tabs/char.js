@@ -634,7 +634,7 @@ async function openItemPicker(c, onSave) {
   back.className = 'modal-back';
   back.dataset.kind = 'item-picker';  // 상세 모달과 구분!
 
-  back.style.zIndex = '10000';
+  back.style.zIndex = '8000';
 
   const renderModalContent = () => {
     back.innerHTML = `
