@@ -267,7 +267,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const uSnap = await tx.get(userRef);
       if (!uSnap.exists) throw new HttpsError('not-found','유저 문서 없음');
 
-      const curItems = Array.isArray(uSnap.get('items_all')) ? uSnap.get('items_all') : [];
       const itemsToAdd = [];
 
       for (const it of staticItems){
@@ -280,19 +279,20 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       if (ticketItem) itemsToAdd.push(ticketItem);
 
       // ANCHOR: [수정] 여러 업데이트를 하나의 객체로 합칩니다.
-      const updatePayload = {};
+      const userUpdatePayload = {};
       
       if (coins > 0) {
-        updatePayload.coins = admin.firestore.FieldValue.increment(coins);
+        userUpdatePayload.coins = admin.firestore.FieldValue.increment(coins);
       }
 
       if (itemsToAdd.length > 0) {
-        updatePayload.items_all = [...curItems, ...itemsToAdd];
+        // Use arrayUnion to append new items without overwriting the existing array
+        userUpdatePayload.items_all = admin.firestore.FieldValue.arrayUnion(...itemsToAdd);
       }
 
       // 페이로드가 비어있지 않은 경우에만 업데이트를 실행합니다.
-      if (Object.keys(updatePayload).length > 0) {
-        tx.update(userRef, updatePayload);
+      if (Object.keys(userUpdatePayload).length > 0) {
+        tx.update(userRef, userUpdatePayload);
       }
       // ANCHOR_END
 
