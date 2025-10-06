@@ -196,15 +196,11 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             endedAt: Timestamp.now()
         });
     } else {
-        // ANCHOR: [수정] 트랜잭션 구조 변경
         await db.runTransaction(async (tx) => {
-            // --- 1. 모든 읽기(READ) 작업을 트랜잭션 맨 위로 ---
             const [Ashot, Bshot] = await Promise.all([tx.get(Aref), tx.get(Bref)]);
             if (!Ashot.exists || !Bshot.exists) throw new HttpsError('aborted', 'char vanished');
 
             const A0 = Ashot.data() || {}, B0 = Bshot.data() || {};
-
-            // --- 2. 읽어온 데이터를 바탕으로 모든 계산 수행 ---
             const Ra = Math.floor(Number(A0.elo || 1000));
             const Rb = Math.floor(Number(B0.elo || 1000));
             const [Ra2, Rb2] = nextElo(Ra, Rb, sA, sB, 24, 24);
@@ -221,34 +217,23 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             const { minted: mintedA, finalExp: finalExpA } = calculateExp(A0, expA);
             const { minted: mintedB, finalExp: finalExpB } = calculateExp(B0, expB);
 
-            // --- 3. 모든 쓰기(WRITE) 작업을 한 번에 실행 ---
-            // 캐릭터 A 업데이트 (Elo, 전적, 경험치)
             tx.update(Aref, {
-                elo: Ra2,
-                battle_count: FieldValue.increment(1),
-                wins: FieldValue.increment(sA),
-                losses: FieldValue.increment(sB),
-                exp_total: FieldValue.increment(expA),
-                exp: finalExpA,
+                elo: Ra2, battle_count: FieldValue.increment(1),
+                wins: FieldValue.increment(sA), losses: FieldValue.increment(sB),
+                exp_total: FieldValue.increment(expA), exp: finalExpA,
                 updatedAt: Timestamp.now(),
             });
 
-            // 캐릭터 B 업데이트 (Elo, 전적, 경험치)
             tx.update(Bref, {
-                elo: Rb2,
-                battle_count: FieldValue.increment(1),
-                wins: FieldValue.increment(sB),
-                losses: FieldValue.increment(sA),
-                exp_total: FieldValue.increment(expB),
-                exp: finalExpB,
+                elo: Rb2, battle_count: FieldValue.increment(1),
+                wins: FieldValue.increment(sB), losses: FieldValue.increment(sA),
+                exp_total: FieldValue.increment(expB), exp: finalExpB,
                 updatedAt: Timestamp.now(),
             });
 
-            // 코인 민팅
             if (mintedA > 0) tx.set(db.doc(`users/${A0.owner_uid}`), { coins: FieldValue.increment(mintedA) }, { merge: true });
             if (mintedB > 0) tx.set(db.doc(`users/${B0.owner_uid}`), { coins: FieldValue.increment(mintedB) }, { merge: true });
 
-            // 배틀 로그 저장
             tx.set(logRef, {
                 attacker_char: `chars/${attackerId}`, defender_char: `chars/${defenderId}`,
                 attacker_snapshot: { name: A.name, thumb_url: A.thumb_url || null },
@@ -259,7 +244,6 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
                 endedAt: Timestamp.now()
             });
         });
-        // ANCHOR_END
     }
 
     // 5. 쿨타임 적용
