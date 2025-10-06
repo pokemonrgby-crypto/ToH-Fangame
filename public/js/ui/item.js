@@ -5,18 +5,22 @@ import { ensureModalCss, promptModal } from './modal.js';
 import { showToast } from './toast.js';
 import { appraiseItem, usePromptItem } from '../api/user.js';
 /** rarity 표준화: 'Aether', 'α', 'Omega', 'Ω', 'mythic', 'unique' 등 표기 혼합 방지 */
+
+
 function normalizeRarity(r) {
   const s = String(r || '').trim().toLowerCase();
-  if (!s) return 'common';
-  if (s === 'α' || s === 'alpha') return 'alpha';
-  if (s === 'ω' || s === 'omega') return 'omega';
-  if (s === 'mythic') return 'myth';     // 동의어
-  if (s === 'unique') return 'legend';   // 내부 테마 통일
-  return s;
+  // 한글/동의어 매핑
+  if (s === '오메가' || s === 'ω' || s === 'omega') return 'omega';
+  if (s === '알파'  || s === 'α' || s === 'alpha') return 'alpha';
+  if (s === '에테르' || s === 'aether') return 'aether';
+  if (s === '신화' || s === 'mythic' || s === 'myth') return 'myth';
+  if (s === '전설' || s === '레전드' || s === 'legend') return 'legend';
+  if (s === '영웅' || s === '에픽' || s === 'epic') return 'epic';
+  if (s === '희귀' || s === '레어' || s === 'rare') return 'rare';
+  if (s === '일반' || s === '커먼' || s === 'common') return 'common';
+  return s || 'common';
 }
-function rarityClass(r) {
-  return `rarity-${normalizeRarity(r)}`;
-}
+function rarityClass(r) { return `rarity-${normalizeRarity(r)}`; }
 
 
 let allItemsCache = null;
