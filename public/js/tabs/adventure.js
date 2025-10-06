@@ -5,9 +5,9 @@ import { showToast } from '../ui/toast.js';
 import { EXPLORE_COOLDOWN_KEY, getRemain as getCdRemain, formatRemain } from '../api/cooldown.js';
 import { createRun, findMyActiveRun } from '../api/explore.js';
 import { getUserInventory } from '../api/user.js';
-import { showInventory } from './inventory.js'; // 수정: inventory.js에서 함수를 가져옵니다.
-import { showItemDetailModal } from '../ui/item.js'; // 수정: item.js에서 모달 함수를 가져옵니다.
-import { esc, rarityStyle, useBadgeHtml, ensureItemCss } from '../ui/utils.js'; // 수정: utils.js에서 공용 함수를 가져옵니다.
+import { showInventory } from './inventory.js';
+import { showItemDetailModal } from '../ui/item.js';
+import { esc, rarityStyle, useBadgeHtml, ensureItemCss } from '../ui/utils.js';
 
 // ===== 로딩 오버레이 유틸리티 =====
 function showLoadingOverlay(messages = []) {
@@ -165,7 +165,7 @@ function viewSitePick(root, world){
         <div class="col" style="gap:10px">
           ${sites.map(s=>{
             const diff = s.difficulty || 'normal';
-            // [수정 시작] 텍스트 색상을 동적으로 결정
+            // ANCHOR: [수정] 텍스트 색상을 동적으로 결정합니다.
             const textColor = diffTextColor(diff);
             return `
               <button class="kv-card spick" data-s="${esc(s.id)}" style="text-align:left;cursor:pointer">
@@ -176,7 +176,6 @@ function viewSitePick(root, world){
                 <div class="text-dim" style="font-size:12px;margin-top:4px">${esc(s.description||'')}</div>
                 ${s.img? `<div style="margin-top:8px"><img src="${esc('/assets/'+s.img)}" onerror="this.parentNode.remove()" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1px solid #273247;background:#0b0f15"></div>`:''}
               </button>`;
-            // [수정 끝]
           }).join('')}
         </div>
       </div>
