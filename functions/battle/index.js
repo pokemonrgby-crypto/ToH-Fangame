@@ -70,42 +70,6 @@ async function fetchPromptDocServer(id) {
     return content;
 }
 
-// EXP → 코인 민팅 (100 EXP당 +1 coin)
-async function mintByAddExp(tx, charRef, addExp, note) {
-    addExp = Math.max(0, Math.floor(Number(addExp) || 0));
-    if (addExp <= 0) return { minted: 0, expAfter: null, ownerUid: null };
-
-    const cSnap = await tx.get(charRef);
-    if (!cSnap.exists) throw new HttpsError('not-found', 'char not found');
-    const c = cSnap.data() || {};
-    const ownerUid = c.owner_uid;
-    if (!ownerUid) throw new HttpsError('failed-precondition', 'char.owner_uid missing');
-
-    const exp0 = Math.floor(Number(c.exp || 0));
-    const exp1 = exp0 + addExp;
-    const minted = Math.floor(exp1 / 100);
-    const exp2 = exp1 - minted * 100;
-
-    const userRef = db.doc(`users/${ownerUid}`);
-
-    tx.update(charRef, {
-        exp_total: FieldValue.increment(addExp),
-        exp: exp2,
-        updatedAt: Timestamp.now(),
-    });
-    if (minted > 0) {
-        tx.set(userRef, { coins: FieldValue.increment(minted) }, { merge: true });
-    }
-    tx.set(db.collection('exp_logs').doc(), {
-        char_id: charRef.path,
-        owner_uid: ownerUid,
-        add: addExp, minted,
-        note: note || null,
-        at: Timestamp.now(),
-    });
-    return { minted, expAfter: exp2, ownerUid };
-}
-
 // Elo 갱신 (무승부 없음)
 function nextElo(Ra = 1000, Rb = 1000, sA = 1, sB = 0, kA = 24, kB = 24) {
     const Ea = 1 / (1 + Math.pow(10, (Rb - Ra) / 400));
@@ -127,7 +91,6 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     const userRef = db.doc(`users/${uid}`);
     const nowSec = Math.floor(Date.now() / 1000);
     const userSnap = await userRef.get();
-    // [수정] userSnap.exists() -> userSnap.exists
     const userData = userSnap.exists ? userSnap.data() : {};
     const rawCooldown = userData.cooldown_all_until;
     const cooldownUntil = (typeof rawCooldown === 'number')
@@ -165,7 +128,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
         const itemsAsJson = equippedItems.map(i => ({
             name: i.name,
             description: i.desc_soft || i.desc || i.description || '',
-            properties: i.properties || {}, // 아이템 속성 전체 포함
+            properties: i.properties || {},
             rarity: i.rarity
         }));
 
@@ -176,7 +139,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             narrative_long: char.narratives?.[0]?.long || char.summary,
             narrative_short_summary: narrativeSummary,
             skills: skillsAsText,
-            items: itemsAsJson, // JSON 객체 배열로 전달
+            items: itemsAsJson,
             origin: char.world_id,
         };
     };
@@ -233,30 +196,59 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             endedAt: Timestamp.now()
         });
     } else {
+        // ANCHOR: [수정] 트랜잭션 구조 변경
         await db.runTransaction(async (tx) => {
-            const Ashot = await tx.get(Aref);
-            const Bshot = await tx.get(Bref);
+            // --- 1. 모든 읽기(READ) 작업을 트랜잭션 맨 위로 ---
+            const [Ashot, Bshot] = await Promise.all([tx.get(Aref), tx.get(Bref)]);
             if (!Ashot.exists || !Bshot.exists) throw new HttpsError('aborted', 'char vanished');
 
             const A0 = Ashot.data() || {}, B0 = Bshot.data() || {};
+
+            // --- 2. 읽어온 데이터를 바탕으로 모든 계산 수행 ---
             const Ra = Math.floor(Number(A0.elo || 1000));
             const Rb = Math.floor(Number(B0.elo || 1000));
             const [Ra2, Rb2] = nextElo(Ra, Rb, sA, sB, 24, 24);
 
-            await mintByAddExp(tx, Aref, expA, `battle:${logRef.id}`);
-            await mintByAddExp(tx, Bref, expB, `battle:${logRef.id}`);
+            const calculateExp = (charData, addExp) => {
+                if (addExp <= 0) return { minted: 0, finalExp: charData.exp || 0 };
+                const exp0 = Math.floor(Number(charData.exp || 0));
+                const exp1 = exp0 + addExp;
+                const minted = Math.floor(exp1 / 100);
+                const finalExp = exp1 % 100;
+                return { minted, finalExp };
+            };
 
+            const { minted: mintedA, finalExp: finalExpA } = calculateExp(A0, expA);
+            const { minted: mintedB, finalExp: finalExpB } = calculateExp(B0, expB);
+
+            // --- 3. 모든 쓰기(WRITE) 작업을 한 번에 실행 ---
+            // 캐릭터 A 업데이트 (Elo, 전적, 경험치)
             tx.update(Aref, {
-                elo: Ra2, battle_count: FieldValue.increment(1),
-                wins: FieldValue.increment(sA), losses: FieldValue.increment(sB),
-                updatedAt: Timestamp.now(),
-            });
-            tx.update(Bref, {
-                elo: Rb2, battle_count: FieldValue.increment(1),
-                wins: FieldValue.increment(sB), losses: FieldValue.increment(sA),
+                elo: Ra2,
+                battle_count: FieldValue.increment(1),
+                wins: FieldValue.increment(sA),
+                losses: FieldValue.increment(sB),
+                exp_total: FieldValue.increment(expA),
+                exp: finalExpA,
                 updatedAt: Timestamp.now(),
             });
 
+            // 캐릭터 B 업데이트 (Elo, 전적, 경험치)
+            tx.update(Bref, {
+                elo: Rb2,
+                battle_count: FieldValue.increment(1),
+                wins: FieldValue.increment(sB),
+                losses: FieldValue.increment(sA),
+                exp_total: FieldValue.increment(expB),
+                exp: finalExpB,
+                updatedAt: Timestamp.now(),
+            });
+
+            // 코인 민팅
+            if (mintedA > 0) tx.set(db.doc(`users/${A0.owner_uid}`), { coins: FieldValue.increment(mintedA) }, { merge: true });
+            if (mintedB > 0) tx.set(db.doc(`users/${B0.owner_uid}`), { coins: FieldValue.increment(mintedB) }, { merge: true });
+
+            // 배틀 로그 저장
             tx.set(logRef, {
                 attacker_char: `chars/${attackerId}`, defender_char: `chars/${defenderId}`,
                 attacker_snapshot: { name: A.name, thumb_url: A.thumb_url || null },
@@ -267,6 +259,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
                 endedAt: Timestamp.now()
             });
         });
+        // ANCHOR_END
     }
 
     // 5. 쿨타임 적용
