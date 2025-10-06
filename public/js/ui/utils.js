@@ -27,7 +27,7 @@ export function rarityStyle(r) {
     omega: { 
       bg: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)', 
       border: 'linear-gradient(160deg, #FFFFFF 0%, #F0F0F0 50%, #E0E0E0 100%)', 
-      text: '#000000', 
+      text: '#ffffff', 
       label: '오메가' 
     },
   };
