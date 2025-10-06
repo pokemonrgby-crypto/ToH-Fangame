@@ -341,26 +341,23 @@ export async function showBattle(){
             return showToast('배틀을 시작하려면 스킬을 2개 선택해야 합니다.');
         }
         btnStart.disabled = true;
+
+      // ▼▼▼ [수정된 부분] ▼▼▼
+      // 쿨타임을 미리 설정하던 코드를 모두 삭제합니다.
+      // try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown pre-start failed', e); }
+      // try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_) {}
+
       try {
-  // 서버: 공용 쿨타임 5분(300초) 설정 (연장만)
-  await setGlobalCooldown({ seconds: 300 });
-} catch (e) {
-  console.warn('setGlobalCooldown pre-start failed', e);
-}
-try {
-  // 로컬 폴백: 즉시 버튼 잠금 반영
-  if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300);
-} catch (_) {}
-
-try {
-  await startBattleProcess(myCharData, opponentCharData);
-} catch (e) {
-  showToast(e?.message || '시작에 실패했어.');
-} finally {
-  await mountCooldownOnButton(btnStart, 'battle', labelReady);
-}
-
+        // 실제 배틀 시작 로직만 남겨둡니다.
+        await startBattleProcess(myCharData, opponentCharData);
+      } catch (e) {
+        showToast(e?.message || '시작에 실패했어.');
+        // 실패 시 버튼 쿨타임을 다시 마운트합니다.
+        await mountCooldownOnButton(btnStart, 'battle', labelReady);
+      }
+      // ▲▲▲ [수정된 부분] ▲▲▲
     };
+
 
   } catch(e) {
     console.error('[battle] setup error', e);
