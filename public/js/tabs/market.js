@@ -233,7 +233,7 @@ async function viewTrade(root, inv, coins){
     root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { mode = b.dataset.go; render(); });
     root.querySelector('#sort')?.addEventListener('change', e => { sortKey = e.target.value; render(); });
     root.querySelectorAll('[data-detail]').forEach(btn => btn.onclick = () => showTradeDetailModal(JSON.parse(btn.dataset.detail), handleRefresh));
-    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemModalForListing(JSON.parse(btn.dataset.sellDetail)));
+    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemDetailModal(JSON.parse(btn.dataset.sellDetail)));
     root.querySelectorAll('[data-sell]').forEach(btn => btn.onclick = async () => {
       const id = btn.dataset.sell;
       const price = Number(root.querySelector(`[data-price-for="${cssEsc(id)}"]`)?.value || 0);
@@ -324,7 +324,7 @@ async function viewAuction(root, inv, coins){
     root.querySelector('#sortA').value = sortKey;
     root.querySelectorAll('[data-go]').forEach(b=>b.onclick=()=>{mode=b.dataset.go; render();});
     root.querySelector('#sortA')?.addEventListener('change', e => { sortKey = e.target.value; render(); });
-    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemModalForListing(JSON.parse(btn.dataset.sellDetail)));
+    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemDetailModal(JSON.parse(btn.dataset.sellDetail)));
     root.querySelectorAll('[data-bid]').forEach(btn => {
   btn.onclick = async () => {
     const id  = btn.dataset.bid;
@@ -417,7 +417,7 @@ async function viewSpecial(root, inv, coins){
       </div>
     `;
     root.querySelectorAll('[data-go]').forEach(b => b.onclick = () => { mode = b.dataset.go; render(); });
-    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemModalForListing(JSON.parse(btn.dataset.sellDetail)));
+    root.querySelectorAll('[data-sell-detail]').forEach(btn => btn.onclick = () => showItemDetailModal(JSON.parse(btn.dataset.sellDetail)));
     root.querySelectorAll('[data-bid-sp]').forEach(btn => {
   btn.onclick = async () => {
     const id  = btn.dataset.bidSp;
