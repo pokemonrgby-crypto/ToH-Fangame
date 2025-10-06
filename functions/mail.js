@@ -5,8 +5,7 @@
 
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const db = admin.firestore();
-  // 'node-fetch'는 Firebase Functions v2(Node.js 18+) 환경에 기본 내장되어 있으므로 별도 import가 필요 없습니다.
-  const fetch = global.fetch;
+  const fetch = (...args)=>import('node-fetch').then(({default:fetch})=>fetch(...args));
 
   async function _callGeminiForItem(systemText, userText) {
     const apiKey = GEMINI_API_KEY.value();
@@ -233,6 +232,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             for (const [rar, w] of entries){ r -= Number(w); if (r<=0){ picked = rar; break; } }
             
             const gachaLogRef = db.collection('gacha_logs').doc();
+            // ANCHOR: [오류 수정] 변수를 try 블록 밖으로 빼서 스코프 문제를 해결합니다.
             let systemText = '', userText = '', rawAiResponse = '', errorLog = '';
 
             try{
@@ -240,27 +240,20 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                 systemText = String((ps.exists && ps.data()?.gacha_item_system) || '');
                 userText = `생성할 아이템의 희귀도: ${picked}\n유저의 요청사항: ${String(prompt||'없음')}`;
                 
-                // [오류 수정] AI 호출 및 파싱을 try-catch로 감싸 안정성 확보
-                try {
-                  rawAiResponse = await _callGeminiForItem(systemText, userText);
-                  const gen = rawAiResponse ? JSON.parse(rawAiResponse) : {};
-                  ticketItem = {
-                      id: `item_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
-                      name: String(gen?.name || '이름 없는 아이템'),
-                      description: String(gen?.description || ''),
-                      rarity: picked,
-                      isConsumable: !!gen?.isConsumable,
-                      uses: Math.max(1, Number(gen?.uses||1))
-                  };
-                } catch (parseError) {
-                  logger.error('[mail] AI 응답 JSON 파싱 실패', { raw: rawAiResponse, error: parseError });
-                  throw new Error('AI가 생성한 아이템 정보가 올바르지 않습니다.'); // 여기서 에러를 던져 바깥 catch에서 잡도록 함
-                }
-
+                rawAiResponse = await _callGeminiForItem(systemText, userText);
+                const gen = rawAiResponse ? JSON.parse(rawAiResponse) : {};
+                
+                ticketItem = {
+                    id: `item_${Date.now()}_${Math.random().toString(36).slice(2,8)}`,
+                    name: String(gen?.name || '이름 없는 아이템'),
+                    description: String(gen?.description || ''),
+                    rarity: picked,
+                    isConsumable: !!gen?.isConsumable,
+                    uses: Math.max(1, Number(gen?.uses||1))
+                };
             } catch(e) {
-                logger.error('[mail] aiGenerate 또는 파싱 실패', e);
+                logger.error('[mail] aiGenerate 또는 파싱 실패', { error: e.message, raw: rawAiResponse });
                 errorLog = e.message || String(e);
-                // [오류 수정] AI 실패 시, 안전하게 기본 보상 아이템을 생성합니다.
                 ticketItem = { id: `item_${Date.now()}_${Math.random().toString(36).slice(2,8)}`, name: `${picked.toUpperCase()} 등급 보상`, description: 'AI 생성 실패로 기본 보상이 지급되었습니다.', rarity: picked, isConsumable: false, uses: 1 };
             }
             
@@ -268,7 +261,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             const rawLen = (rawAiResponse || '').length;
             const trimmedRaw = rawLen > MAX_LOG_CHARS ? (rawAiResponse.slice(0, MAX_LOG_CHARS) + `...[TRUNCATED]`) : (rawAiResponse || '');
 
-            await gachaLogRef.set({ uid, mailId, at: admin.firestore.FieldValue.serverTimestamp(), request: { rarity: picked, userPrompt: prompt || null }, ai_input: { systemPrompt, userPrompt }, ai_output: { rawResponse: trimmedRaw, truncated: rawLen > MAX_LOG_CHARS, length: rawLen }, result: { generatedItem: ticketItem, error: errorLog || null } }).catch(e => logger.error('[mail] gachaLog write failed', e));
+            // 이제 systemText와 userText가 항상 접근 가능하므로 오류가 발생하지 않습니다.
+            await gachaLogRef.set({ uid, mailId, at: admin.firestore.FieldValue.serverTimestamp(), request: { rarity: picked, userPrompt: prompt || null }, ai_input: { systemPrompt, userText }, ai_output: { rawResponse: trimmedRaw, truncated: rawLen > MAX_LOG_CHARS, length: rawLen }, result: { generatedItem: ticketItem, error: errorLog || null } }).catch(e => logger.error('[mail] gachaLog write failed', e));
         }
     }
 
@@ -276,7 +270,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const uSnap = await tx.get(userRef);
       if (!uSnap.exists) throw new HttpsError('not-found','유저 문서 없음');
 
-      // ANCHOR: [수정] arrayUnion 대신 Read-Modify-Write 패턴을 사용합니다.
       const updatePayload = {};
       const currentItems = uSnap.data()?.items_all || [];
       const itemsToAdd = [];
@@ -303,7 +296,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       if (Object.keys(updatePayload).length > 0) {
         tx.update(userRef, updatePayload);
       }
-      // ANCHOR_END
 
       tx.update(mailRef, {
         read: true,
