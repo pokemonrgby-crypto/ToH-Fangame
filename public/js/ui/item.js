@@ -1,10 +1,10 @@
-// /public/js/ui/item.js
+// (기존 import)
 import { db, fx } from '../api/firebase.js';
-import { esc, rarityStyle, useBadgeHtml } from './utils.js';
+// [수정] esc, rarityStyle, useBadgeHtml 외에 ensureItemCss를 추가로 import합니다.
+import { esc, rarityStyle, useBadgeHtml, ensureItemCss } from './utils.js';
 import { ensureModalCss, promptModal } from './modal.js';
 import { showToast } from './toast.js';
 import { appraiseItem, usePromptItem } from '../api/user.js';
-/** rarity 표준화: 'Aether', 'α', 'Omega', 'Ω', 'mythic', 'unique' 등 표기 혼합 방지 */
 
 
 function normalizeRarity(r) {
@@ -110,6 +110,7 @@ async function getSeedInfoHtml(it) {
 
 export async function showItemDetailModal(item, context = {}) {
     ensureModalCss();
+    ensureItemCss(); 
     if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
     const { equippedIds, onUpdate } = context;
     const isEquipped = Array.isArray(equippedIds) && equippedIds.includes(item.id);
