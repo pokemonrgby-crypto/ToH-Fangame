@@ -27,13 +27,13 @@ export function rarityStyle(r) {
     omega: { 
       bg: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)', 
       border: 'linear-gradient(160deg, #FFFFFF 0%, #F0F0F0 50%, #E0E0E0 100%)', 
-      text: '#ffffff', 
+      text: '#000000',
       label: '오메가' 
     },
   };
   return map[(r || '').toLowerCase()] || map.normal;
 }
-// (이하 기존 코드와 동일)
+
 export function isConsumableItem(it){ return !!(it?.consumable || it?.isConsumable); }
 export function getUsesLeft(it){
   if (typeof it?.uses === 'number') return it.uses;
