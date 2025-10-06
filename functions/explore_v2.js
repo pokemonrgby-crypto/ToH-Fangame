@@ -52,9 +52,9 @@ const RARITY_TABLES_BY_DIFFICULTY = {
     { upto: 1000, rarity: 'aether' },
   ],
     impossible: [
-    { upto: 549, rarity: 'epic' },
-    { upto: 799, rarity: 'legend' },
-    { upto: 949, rarity: 'myth' },
+    { upto: 500, rarity: 'epic' },
+    { upto: 750, rarity: 'legend' },
+    { upto: 900, rarity: 'myth' },
     { upto: 998, rarity: 'aether' },
     { upto: 999, rarity: 'alpha' },
     { upto: 1000, rarity: 'omega' },
@@ -178,7 +178,7 @@ function rollThreeChoices(run){
     const diff = run.difficulty || 'normal';
     const sRoll = popRoll({prerolls: next}); next = sRoll.next; // 스태미나용 주사위 하나 더 소모
     const baseDelta = { safe:[0,1], item:[-1,-1], narrative:[-1,-1], risk:[-3,-1], combat:[-5,-2] }[eventKind] || [0,0];
-    const mul = { easy:.8, normal:1.0, hard:1.15, vhard:1.3, legend:1.5, impossible:4.0 }[diff] || 1.0;
+    const mul = { easy:.8, normal:1.0, hard:1.15, vhard:1.3, legend:1.5, impossible:3.0 }[diff] || 1.0;
     const lo = Math.round(baseDelta[0]*mul), hi = Math.round(baseDelta[1]*mul);
     const deltaStamina = (lo===hi) ? lo : (lo<0 ? -(((sRoll.value-1)%(-lo+ -hi+1)) + -hi) : ((sRoll.value-1)%(hi-lo+1))+lo);
     dice.deltaStamina = deltaStamina;
