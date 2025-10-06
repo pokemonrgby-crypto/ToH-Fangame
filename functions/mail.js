@@ -228,29 +228,25 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         if (base) {
           const n = Math.min(50, Math.max(1, Math.floor(Number(cfg.count || 1))));
           for (let i = 0; i < n; i++) {
-            // ANCHOR: [수정된 부분] 아이템 복사 시 count 속성을 올바르게 복사하도록 수정
+            // ANCHOR: [수정된 부분] undefined 값을 피하기 위해 속성을 조건부로 추가하도록 로직 변경
             const newItem = {
-              id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`, // 새 랜덤 ID
+              id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`,
               name: String(base.name || 'Gift'),
               rarity: String(base.rarity || 'normal'),
               description: String(base.description || ''),
-              // --- 아래부터 수정 ---
-              count: Math.max(1, Math.floor(Number(base.count || 1))), // 원본 아이템의 수량(count) 복사
+              count: Math.max(1, Math.floor(Number(base.count || 1))),
               isConsumable: !!(base.isConsumable || base.consumable || base.consume),
-              uses: base.uses, // uses도 일단 복사 (둘 다 쓸 수도 있으니)
-              // --- 위까지 수정 ---
-              properties: base.properties || undefined,
-              type: base.type || undefined,
-              seedInfo: base.seedInfo || undefined,
-              placeable: (base.placeable !== undefined) ? !!base.placeable : undefined,
-              promptId: base.promptId || undefined,
-              isPromptUse: base.isPromptUse || undefined,
             };
-            // count가 있는 아이템은 보통 charges(uses)가 없으므로 uses를 제거해줄 수 있습니다 (선택적)
-            if (newItem.count > 1) {
-                delete newItem.uses;
-                newItem.isConsumable = false; // 묶음 아이템은 보통 소모성이 아님
-            }
+
+            // 원본에 있는 속성만 복사
+            if (base.uses) newItem.uses = base.uses;
+            if (base.properties) newItem.properties = base.properties;
+            if (base.type) newItem.type = base.type;
+            if (base.seedInfo) newItem.seedInfo = base.seedInfo;
+            if (base.placeable !== undefined) newItem.placeable = base.placeable;
+            if (base.promptId) newItem.promptId = base.promptId;
+            if (base.isPromptUse) newItem.isPromptUse = base.isPromptUse;
+            
             copiedItems.push(newItem);
             // ANCHOR_END
           }
