@@ -8,7 +8,9 @@ import { fetchBattlePrompts, generateBattleSketches, chooseBestSketch, generateF
 // getRelationBetween을 추가
 import { updateAbilitiesEquipped, updateItemsEquipped, getRelationBetween } from '../api/store.js'; 
 import { getUserInventory } from '../api/user.js';
-import { showItemDetailModal, rarityStyle, ensureItemCss, esc } from './char.js';
+import { showItemDetailModal } from '../ui/item.js';
+import { rarityStyle, ensureItemCss, esc } from '../ui/utils.js';
+
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { func } from '../api/firebase.js';
 
