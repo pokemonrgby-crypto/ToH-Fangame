@@ -17,7 +17,7 @@ export function ensureModalCss(){
       display:flex; align-items:center; justify-content:center;
       background:rgba(0,0,0,.6); backdrop-filter:blur(4px);
     }
-    .modal-card, .modal{ /* .modal 클래스도 지원 */
+    .modal-back > .modal-card { /* .modal 클래스도 지원 */
       background:#0e1116; border:1px solid #273247; border-radius:14px;
       padding:16px; width:92vw; max-width:480px; max-height:90vh; overflow-y:auto;
     }
