@@ -258,7 +258,9 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     const untilSec = Math.max(existSec, nextBoundary);
     await userRef.set({ cooldown_all_until: untilSec }, { merge: true });
 
-    return { ok: true, logId: logRef.id, simulated };
+    // ▼▼▼ [수정된 부분] ▼▼▼
+    return { ok: true, logId: logRef.id, simulate };
+    // ▲▲▲ [수정된 부분] ▲▲▲
 });
 
 // 이전 함수(runBattleTextOnly)를 새 V2 함수를 가리키도록 하여 호환성을 유지합니다.
