@@ -430,6 +430,77 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   color: #0e1116; font-weight: 800;
 }
 
+
+/* Alpha 등급: 밤하늘, 별똥별, 오로라 효과 */
+.item.rarity-alpha, .kv-card.rarity-alpha {
+  border: 2px solid #7dd3fc;
+  box-shadow: 0 0 20px rgba(125, 211, 252, 0.5), 0 0 0 1px rgba(255,255,255,.1) inset;
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(145deg, #1d2b64 0%, #000000 74%);
+}
+.item.rarity-alpha::before, .kv-card.rarity-alpha::before {
+  content: "";
+  position: absolute;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background-image:
+    radial-gradient(circle at 80% 20%, rgba(255, 255, 255, 0.3) 0%, transparent 1%),
+    radial-gradient(circle at 20% 70%, rgba(255, 255, 255, 0.2) 0%, transparent 2%);
+  animation: stars 15s linear infinite;
+}
+.item.rarity-alpha::after, .kv-card.rarity-alpha::after {
+  content: "";
+  position: absolute;
+  top: -100%; left: 0;
+  width: 2px;
+  height: 50%;
+  background: linear-gradient(to bottom, rgba(255,255,255,0) 0%, #ffffff 50%, rgba(255,255,255,0) 100%);
+  animation: shooting-star 8s linear infinite;
+  animation-delay: 2s;
+}
+
+/* Omega 등급: 밝은 배경, 무지개 빛 펄스, 입자 효과 */
+.item.rarity-omega, .kv-card.rarity-omega {
+  border: 2px solid;
+  border-image-slice: 1;
+  border-width: 2px;
+  border-image-source: linear-gradient(160deg, #FFFFFF, #E0E0E0, #C0C0C0, #FFFFFF);
+  background: radial-gradient(ellipse at bottom, #e0e0e0 0%, #ffffff 100%);
+  color: #000;
+  box-shadow: 0 0 25px rgba(255, 255, 255, 0.8);
+  position: relative;
+  overflow: hidden;
+}
+.item.rarity-omega .title, .kv-card.rarity-omega .title {
+    color: #000 !important;
+}
+.item.rarity-omega::before, .kv-card.rarity-omega::before {
+    content: '';
+    position: absolute;
+    inset: -2px;
+    background: radial-gradient(circle, rgba(255, 255, 255, 0.5) 0%, transparent 40%);
+    animation: omega-pulse 4s infinite ease-in-out;
+    z-index: 0;
+}
+.item.rarity-omega > *, .kv-card.rarity-omega > * {
+    position: relative;
+    z-index: 1;
+}
+
+@keyframes stars {
+  from { transform: translateY(0); }
+  to { transform: translateY(-200px); }
+}
+@keyframes shooting-star {
+  0% { transform: translate(100px, -100%) rotate(45deg); }
+  100% { transform: translate(400px, 100%) rotate(45deg); }
+}
+@keyframes omega-pulse {
+  0%, 100% { transform: scale(0.5); opacity: 0.5; }
+  50% { transform: scale(1.5); opacity: 0; }
+}
+
 /* (기존 내용) */
 
 /* [수정] 캐릭터 이미지 1:1 비율 유지를 위한 스타일 오버라이드 */
