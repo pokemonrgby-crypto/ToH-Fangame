@@ -199,6 +199,20 @@ export async function showItemDetailModal(item, context = {}) {
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
+  // ▼ [추가] 외부에서 버튼 주입(맥락별 액션)
+if (Array.isArray(context.actions)) {
+  context.actions.forEach(({ label, className = 'btn', onClick, closeOnClick = true }) => {
+    const b = document.createElement('button');
+    b.className = className.includes('btn') ? className : `btn ${className}`;
+    b.textContent = label;
+    b.onclick = async () => {
+      try { await onClick?.(item, context); }
+      finally { if (closeOnClick) closeModal(); }
+    };
+    actionsContainer.appendChild(b);
+  });
+}
+
     
     if (item.isPromptUse === true) {
         const btnUse = document.createElement('button');
