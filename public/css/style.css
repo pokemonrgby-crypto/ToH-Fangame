@@ -522,6 +522,9 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
 /* /public/css/style.css 파일 맨 아래에 추가 */
 
 /* Alpha 등급: 밤하늘, 별똥별, 오로라 효과 */
+/* /public/css/style.css 파일 맨 아래에 추가 */
+
+/* Alpha 등급: 밤하늘, 별똥별, 오로라 효과 */
 .item.rarity-alpha, .kv-card.rarity-alpha {
   border: 2px solid #7dd3fc;
   box-shadow: 0 0 20px rgba(125, 211, 252, 0.5), 0 0 0 1px rgba(255,255,255,.1) inset;
@@ -562,6 +565,7 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
   position: relative;
   overflow: hidden;
 }
+/* Omega 등급 카드 내부 텍스트 색상 보정 */
 .item.rarity-omega .title, .kv-card.rarity-omega .title,
 .item.rarity-omega .name, .kv-card.rarity-omega .name {
     color: #000 !important;
