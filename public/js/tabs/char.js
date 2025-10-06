@@ -9,6 +9,7 @@ import {
 } from '../api/store.js';
 import { getUserInventory } from '../api/user.js'; // 사용자 인벤토리 함수 import
 import { showToast } from '../ui/toast.js';
+import { showItemDetailModal } from '../ui/item.js';
 
 // ---------- utils ----------
 // [추가] esc 함수를 다른 파일에서도 쓸 수 있도록 상단으로 옮기고 export 합니다.
@@ -168,84 +169,6 @@ export function ensureItemCss() {
 
   .item-card:hover, .item-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.35); filter: brightness(1.05); }`;
   document.head.appendChild(st);
-}
-
-// [교체] adventure.js의 showItemDetailModal 함수로 교체합니다.
-// (battle.js에서 필요한 onUpdate 콜백 기능이 포함되어 있습니다)
-export function showItemDetailModal(item, context = {}) {
-    ensureItemCss();
-    if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
-    const { equippedIds = [], onUpdate = null } = context;
-    const isEquipped = equippedIds.includes(item.id);
-
-    const style = rarityStyle(item.rarity);
-    const getItemDesc = (it) => (it?.desc_long || it?.desc_soft || it?.desc || it?.description || '').replace(/\n/g, '<br>');
-    const getEffectsHtml = (it) => {
-        const eff = it?.effects;
-        if (!eff) return '';
-        if (Array.isArray(eff)) return `<ul style="margin:6px 0 0 16px; padding:0;">${eff.map(x=>`<li>${esc(String(x||''))}</li>`).join('')}</ul>`;
-        if (typeof eff === 'object') return `<ul style="margin:6px 0 0 16px; padding:0;">${Object.entries(eff).map(([k,v])=>`<li><b>${esc(k)}</b>: ${esc(String(v??''))}</li>`).join('')}</ul>`;
-        return `<div>${esc(String(eff))}</div>`;
-    };
-
-    const back = document.createElement('div');
-    back.className = 'modal-back';
-    back.dataset.kind = 'item-detail';  // 중복 방지용 식별자
-  
-    back.style.zIndex = '10001'; // 아이템 피커 모달 위에 표시되도록 z-index 증가
-    back.innerHTML = `
-    <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:14px;max-width:720px;width:92vw;">
-      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:12px;">
-        <div>
-          <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
-            <div style="font-weight:900; font-size:18px;">${esc(item.name)}</div>
-            <span class="chip" style="background:${style.border}; color:${style.bg}; font-weight:800;">${esc(style.label)}</span>
-            ${useBadgeHtml(item)}
-          </div>
-        </div>
-        <button class="btn ghost" id="mCloseDetail">닫기</button>
-      </div>
-      <div class="kv-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''}" style="padding:12px;">
-        <div style="font-size:14px; line-height:1.6;">${getItemDesc(item) || '상세 설명이 없습니다.'}</div>
-        ${item.effects ? `<hr style="margin:12px 0; border-color:#273247;"><div class="kv-label">효과</div><div style="font-size:13px;">${getEffectsHtml(item)}</div>` : ''}
-      </div>
-      <div id="itemActions" style="display:flex; justify-content:flex-end; gap:8px; margin-top:12px;"></div>
-    </div>
-  `;
-    const closeModal = () => back.remove();
-    back.addEventListener('click', e => { if (e.target === back) closeModal(); });
-    back.querySelector('#mCloseDetail').onclick = closeModal;
-
-    const actionsContainer = back.querySelector('#itemActions');
-
-// 인벤토리(피커)에서만 버튼을 노출: onUpdate가 함수로 넘어온 경우에 한정
-if (typeof onUpdate === 'function') {
-  if (isEquipped) {
-    const btnUnequip = document.createElement('button');
-    btnUnequip.className = 'btn';
-    btnUnequip.textContent = '장착 해제';
-    btnUnequip.onclick = () => {
-      const newEquipped = equippedIds.filter(id => id !== item.id);
-      onUpdate(newEquipped);
-      closeModal();
-    };
-    actionsContainer.appendChild(btnUnequip);
-  } else if (equippedIds.length < 3) {
-    const btnEquip = document.createElement('button');
-    btnEquip.className = 'btn primary';
-    btnEquip.textContent = '장착하기';
-    btnEquip.onclick = () => {
-      const newEquipped = [...equippedIds, item.id];
-      onUpdate(newEquipped);
-      closeModal();
-    };
-    actionsContainer.appendChild(btnEquip);
-  }
-}
-// onUpdate가 없으면(= 피커 밖에서 띄운 상세창이면) 버튼 영역은 비워둔다.
-
-
-    document.body.appendChild(back);
 }
 
 // ---------- entry ----------
