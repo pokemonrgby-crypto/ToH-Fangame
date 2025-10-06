@@ -23,9 +23,6 @@ export function ensureModalCss(){
     }
     .col{ display:flex; flex-direction:column; }
     .row{ display:flex; align-items:center; }
-    .btn{ height:34px; padding:0 12px; border-radius:8px; border:1px solid rgba(255,255,255,.08); background:rgba(115,130,255,.18); color:#fff; cursor:pointer; }
-    .btn.ghost{ background:transparent; }
-    .btn.primary{ background:rgba(100,160,255,.35); }
     .text-dim{ color: rgba(255,255,255,.6); }
 
     /* 토스트를 항상 모달 위로 띄우기 */
