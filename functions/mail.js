@@ -267,32 +267,32 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const uSnap = await tx.get(userRef);
       if (!uSnap.exists) throw new HttpsError('not-found','유저 문서 없음');
 
+      // ANCHOR: [수정] arrayUnion 대신 Read-Modify-Write 패턴을 사용합니다.
+      const updatePayload = {};
+      const currentItems = uSnap.data()?.items_all || [];
       const itemsToAdd = [];
 
-      for (const it of staticItems){
+      for (const it of staticItems) {
         itemsToAdd.push({
-          id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`,
-          ...it
+          id: `mail_${snap.id}_${Math.random().toString(36).slice(2, 8)}`,
+          ...it,
         });
       }
-      
-      if (ticketItem) itemsToAdd.push(ticketItem);
 
-      // ANCHOR: [수정] 여러 업데이트를 하나의 객체로 합칩니다.
-      const userUpdatePayload = {};
+      if (ticketItem) {
+        itemsToAdd.push(ticketItem);
+      }
       
       if (coins > 0) {
-        userUpdatePayload.coins = admin.firestore.FieldValue.increment(coins);
+        updatePayload.coins = admin.firestore.FieldValue.increment(coins);
       }
 
       if (itemsToAdd.length > 0) {
-        // Use arrayUnion to append new items without overwriting the existing array
-        userUpdatePayload.items_all = admin.firestore.FieldValue.arrayUnion(...itemsToAdd);
+        updatePayload.items_all = [...currentItems, ...itemsToAdd];
       }
-
-      // 페이로드가 비어있지 않은 경우에만 업데이트를 실행합니다.
-      if (Object.keys(userUpdatePayload).length > 0) {
-        tx.update(userRef, userUpdatePayload);
+      
+      if (Object.keys(updatePayload).length > 0) {
+        tx.update(userRef, updatePayload);
       }
       // ANCHOR_END
 
