@@ -121,7 +121,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       })).filter(x=>x.name));
     }
 
-    // ANCHOR: [핵심 변경] 보내는 시점에서 copyFrom을 처리하여 items 배열에 미리 아이템 정보를 만듭니다.
     if (attachments?.copyFrom) {
       const srcUid   = String(attachments.copyFrom.uid || '').trim();
       const srcItem  = String(attachments.copyFrom.itemId || '').trim();
@@ -135,7 +134,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           
           if (base) {
             for (let i = 0; i < srcCount; i++) {
-              // 수령 시 로직을 여기로 이동
               const newItemData = {
                 name: String(base.name || 'Gift'),
                 rarity: String(base.rarity || 'normal'),
@@ -161,7 +159,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         }
       }
     }
-    // ANCHOR_END
 
     const doc = {
       kind: (['notice','warning','general'].includes(kind)) ? kind : 'notice',
@@ -171,7 +168,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       read: false,
       from: 'admin',
       expiresAt: expires,
-      attachments: attach, // copyFrom이 items 배열로 변환된 최종 결과물
+      attachments: attach,
       claimed: false
     };
 
@@ -222,17 +219,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const userRef = db.doc(`users/${uid}`);
 
     const coins = Math.max(0, Math.floor(Number(m?.attachments?.coins||0)));
-    // [핵심 변경] 이제 staticItems 배열에 복사된 아이템 정보가 이미 포함되어 있습니다.
     const staticItems = Array.isArray(m?.attachments?.items) ? m.attachments.items : [];
-    
-    // ANCHOR: [핵심 변경] 수령 시점의 복잡한 copyFrom 로직을 모두 제거합니다.
-    // let copiedItems = [];
-    // (기존의 복잡했던 copyFrom 관련 try-catch 블록 전체 삭제)
-    // ANCHOR_END
     
     let ticketItem = null;
     if (m?.attachments?.ticket){
-        // (기존 뽑기권 로직은 동일하게 유지)
         const weights = m.attachments.ticket.weights || {};
         const entries = Object.entries(weights).filter(([k,v])=>Number(v)>0);
         const total = entries.reduce((s,[,v])=>s+Number(v),0);
@@ -277,26 +267,34 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const uSnap = await tx.get(userRef);
       if (!uSnap.exists) throw new HttpsError('not-found','유저 문서 없음');
 
-      const cur = Array.isArray(uSnap.get('items_all')) ? uSnap.get('items_all') : [];
-      const add = [];
-
-      if (coins>0){
-        tx.update(userRef, { coins: admin.firestore.FieldValue.increment(coins) });
-      }
+      const curItems = Array.isArray(uSnap.get('items_all')) ? uSnap.get('items_all') : [];
+      const itemsToAdd = [];
 
       for (const it of staticItems){
-        // 모든 아이템에 새로운 고유 ID 부여
-        add.push({
+        itemsToAdd.push({
           id: `mail_${snap.id}_${Math.random().toString(36).slice(2,8)}`,
-          ...it // 미리 만들어진 아이템 정보 그대로 사용
+          ...it
         });
       }
       
-      if (ticketItem) add.push(ticketItem);
+      if (ticketItem) itemsToAdd.push(ticketItem);
 
-      if (add.length){
-        tx.update(userRef, { items_all: [...cur, ...add] });
+      // ANCHOR: [수정] 여러 업데이트를 하나의 객체로 합칩니다.
+      const updatePayload = {};
+      
+      if (coins > 0) {
+        updatePayload.coins = admin.firestore.FieldValue.increment(coins);
       }
+
+      if (itemsToAdd.length > 0) {
+        updatePayload.items_all = [...curItems, ...itemsToAdd];
+      }
+
+      // 페이로드가 비어있지 않은 경우에만 업데이트를 실행합니다.
+      if (Object.keys(updatePayload).length > 0) {
+        tx.update(userRef, updatePayload);
+      }
+      // ANCHOR_END
 
       tx.update(mailRef, {
         read: true,
