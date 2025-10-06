@@ -530,7 +530,7 @@ async function openItemPicker(c, onSave) {
 
   const back = document.createElement('div');
   back.className = 'modal-back';
-  back.style.zIndex = '10000';
+  back.style.zIndex = '8000';
 
   const renderModalContent = () => {
     back.innerHTML = `
