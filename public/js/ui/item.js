@@ -4,6 +4,20 @@ import { esc, rarityStyle, useBadgeHtml } from './utils.js';
 import { ensureModalCss, promptModal } from './modal.js';
 import { showToast } from './toast.js';
 import { appraiseItem, usePromptItem } from '../api/user.js';
+/** rarity 표준화: 'Aether', 'α', 'Omega', 'Ω', 'mythic', 'unique' 등 표기 혼합 방지 */
+function normalizeRarity(r) {
+  const s = String(r || '').trim().toLowerCase();
+  if (!s) return 'common';
+  if (s === 'α' || s === 'alpha') return 'alpha';
+  if (s === 'ω' || s === 'omega') return 'omega';
+  if (s === 'mythic') return 'myth';     // 동의어
+  if (s === 'unique') return 'legend';   // 내부 테마 통일
+  return s;
+}
+function rarityClass(r) {
+  return `rarity-${normalizeRarity(r)}`;
+}
+
 
 let allItemsCache = null;
 async function getAllItemsData() {
@@ -95,6 +109,12 @@ export async function showItemDetailModal(item, context = {}) {
     if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
     const { equippedIds, onUpdate } = context;
     const isEquipped = Array.isArray(equippedIds) && equippedIds.includes(item.id);
+    // 표시용 데이터(이름/설명 등) 비어 있으면 카탈로그/커스텀에서 보강
+    try {
+      const fromCatalog = await getItemDisplayData(item.id);
+      item = { ...fromCatalog, ...item }; // item 우선, 빈 칸만 채움
+    } catch (_) { /* no-op */ }
+
     const style = rarityStyle(item.rarity);
     const getItemDesc = (it) => (it?.description || it?.desc_long || it?.desc_soft || it?.desc || '').replace(/\n/g, '<br>');
 
@@ -151,13 +171,17 @@ export async function showItemDetailModal(item, context = {}) {
         <div>
           <div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">
             <div style="font-weight:900; font-size:18px;">${esc(item.name)}</div>
-            <span class="chip" style="background:${style.border}; color:${style.bg}; font-weight:800;">${esc(style.label)}</span>
+            <span class="chip ${rarityClass(item.rarity)}"
+                  style="background:${style.border}; color:${style.bg}; font-weight:900; border:1px solid currentColor; text-shadow:0 0 6px rgba(255,255,255,.18);">
+              ${esc(style.label)}
+            </span>
+
             ${useBadgeHtml(item)}
           </div>
         </div>
         <button class="btn ghost" id="mCloseDetail">닫기</button>
       </div>
-      <div class="kv-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''}" style="padding:12px;">
+      <div class="kv-card ${rarityClass(item.rarity)}" style="padding:12px;">
         <div>${getItemDesc(item) || '상세 설명이 없습니다.'}</div>
         ${getPropertiesHtml(item)}
         ${seedHtml} 
