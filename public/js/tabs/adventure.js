@@ -75,7 +75,12 @@ const diffColor = (d)=>{
   const v = String(d||'').toLowerCase();
   if(['easy','이지','normal','노말'].includes(v)) return '#4aa3ff';
   if(['hard','하드','expert','익스퍼트','rare'].includes(v)) return '#f3c34f';
+  if(v === 'impossible') return '#000'; // [추가] impossible 배경색
   return '#ff5b66';
+};
+const diffTextColor = (d) => { // [추가] 텍스트 색상 함수
+    if (String(d||'').toLowerCase() === 'impossible') return '#ff425a';
+    return '#121316';
 };
 function setExploreIntent(into){ sessionStorage.setItem('toh.explore.intent', JSON.stringify(into)); }
 function getExploreIntent(){ try{ return JSON.parse(sessionStorage.getItem('toh.explore.intent')||'null'); }catch{ return null; } }
@@ -160,15 +165,18 @@ function viewSitePick(root, world){
         <div class="col" style="gap:10px">
           ${sites.map(s=>{
             const diff = s.difficulty || 'normal';
+            // [수정 시작] 텍스트 색상을 동적으로 결정
+            const textColor = diffTextColor(diff);
             return `
               <button class="kv-card spick" data-s="${esc(s.id)}" style="text-align:left;cursor:pointer">
                 <div style="display:flex;justify-content:space-between;align-items:center">
                   <div style="font-weight:900">${esc(s.name)}</div>
-                  <span class="chip" style="background:${diffColor(diff)};color:#121316;font-weight:800">${esc(String(diff).toUpperCase())}</span>
+                  <span class="chip" style="background:${diffColor(diff)};color:${textColor};font-weight:800">${esc(String(diff).toUpperCase())}</span>
                 </div>
                 <div class="text-dim" style="font-size:12px;margin-top:4px">${esc(s.description||'')}</div>
                 ${s.img? `<div style="margin-top:8px"><img src="${esc('/assets/'+s.img)}" onerror="this.parentNode.remove()" style="width:100%;max-height:180px;object-fit:cover;border-radius:10px;border:1px solid #273247;background:#0b0f15"></div>`:''}
               </button>`;
+            // [수정 끝]
           }).join('')}
         </div>
       </div>
@@ -233,6 +241,7 @@ async function openCharPicker(root, world, site){
 function viewPrep(root, world, site, char){
   const remain = cooldownRemain();
   const diff = site.difficulty || 'normal';
+  const textColor = diffTextColor(diff); // [추가]
 
   root.innerHTML = `
     <section class="container narrow">
@@ -240,7 +249,7 @@ function viewPrep(root, world, site, char){
         <div class="row" style="gap:8px;align-items:center">
           <button class="btn ghost" id="btnBackSites">← 명소 선택으로</button>
           <div style="font-weight:900;font-size:16px">${esc(world.name)} / ${esc(site.name)}</div>
-          <span class="chip" style="margin-left:auto;background:${diffColor(diff)};color:#121316;font-weight:800">${esc(String(diff).toUpperCase())}</span>
+          <span class="chip" style="margin-left:auto;background:${diffColor(diff)};color:${textColor};font-weight:800">${esc(String(diff).toUpperCase())}</span>
         </div>
         <div class="kv-label mt8">캐릭터</div>
         <div class="kv-card" style="display:flex;gap:10px;align-items:center">
