@@ -127,7 +127,8 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     const userRef = db.doc(`users/${uid}`);
     const nowSec = Math.floor(Date.now() / 1000);
     const userSnap = await userRef.get();
-    const userData = userSnap.exists() ? userSnap.data() : {};
+    // [수정] userSnap.exists() -> userSnap.exists
+    const userData = userSnap.exists ? userSnap.data() : {};
     const rawCooldown = userData.cooldown_all_until;
     const cooldownUntil = (typeof rawCooldown === 'number')
         ? (Number(rawCooldown) || 0)
