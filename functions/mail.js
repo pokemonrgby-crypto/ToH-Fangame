@@ -232,7 +232,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             for (const [rar, w] of entries){ r -= Number(w); if (r<=0){ picked = rar; break; } }
             
             const gachaLogRef = db.collection('gacha_logs').doc();
-            // ANCHOR: [오류 수정] 변수를 try 블록 밖으로 빼서 스코프 문제를 해결합니다.
             let systemText = '', userText = '', rawAiResponse = '', errorLog = '';
 
             try{
@@ -260,9 +259,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             const MAX_LOG_CHARS = 200_000;
             const rawLen = (rawAiResponse || '').length;
             const trimmedRaw = rawLen > MAX_LOG_CHARS ? (rawAiResponse.slice(0, MAX_LOG_CHARS) + `...[TRUNCATED]`) : (rawAiResponse || '');
-
-            // 이제 systemText와 userText가 항상 접근 가능하므로 오류가 발생하지 않습니다.
-            await gachaLogRef.set({ uid, mailId, at: admin.firestore.FieldValue.serverTimestamp(), request: { rarity: picked, userPrompt: prompt || null }, ai_input: { systemPrompt, userText }, ai_output: { rawResponse: trimmedRaw, truncated: rawLen > MAX_LOG_CHARS, length: rawLen }, result: { generatedItem: ticketItem, error: errorLog || null } }).catch(e => logger.error('[mail] gachaLog write failed', e));
+            
+            // ANCHOR: [오류 수정] systemPrompt -> systemText 로 변수명 수정
+            await gachaLogRef.set({ uid, mailId, at: admin.firestore.FieldValue.serverTimestamp(), request: { rarity: picked, userPrompt: prompt || null }, ai_input: { systemText, userText }, ai_output: { rawResponse: trimmedRaw, truncated: rawLen > MAX_LOG_CHARS, length: rawLen }, result: { generatedItem: ticketItem, error: errorLog || null } }).catch(e => logger.error('[mail] gachaLog write failed', e));
         }
     }
 
