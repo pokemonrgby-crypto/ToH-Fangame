@@ -2,7 +2,7 @@
 import { db, auth, fx } from '../api/firebase.js';
 import { createOrUpdateRelation, getRelationBetween, getBattleLog } from '../api/store.js';
 import { showToast } from '../ui/toast.js';
-
+import { prettyTime } from '../ui/utils.js';
 /* ------------------------------
  * 유틸리티
  * ------------------------------ */
