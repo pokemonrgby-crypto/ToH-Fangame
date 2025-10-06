@@ -11,6 +11,7 @@ const EVENT_TABLE = {
   hard:   { safe:90,  item:280, narrative:160, risk:240, combat:230 },
   vhard:  { safe:60,  item:285, narrative:140, risk:245, combat:270 },
   legend: { safe:30,  item:290, narrative:120, risk:250, combat:310 },
+  impossible: { safe:0, item:200, narrative:100, risk:300, combat:400 },
 };
 
 const RARITY_TABLES_BY_DIFFICULTY = {
@@ -50,6 +51,14 @@ const RARITY_TABLES_BY_DIFFICULTY = {
     { upto: 995, rarity: 'myth'   },
     { upto: 1000, rarity: 'aether' },
   ],
+    impossible: [
+    { upto: 549, rarity: 'epic' },
+    { upto: 799, rarity: 'legend' },
+    { upto: 949, rarity: 'myth' },
+    { upto: 998, rarity: 'aether' },
+    { upto: 999, rarity: 'alpha' },
+    { upto: 1000, rarity: 'omega' },
+  ],
 };
 
 const COMBAT_TIER = {
@@ -58,6 +67,7 @@ const COMBAT_TIER = {
   hard:   [{p:220,t:'trash'},{p:700,t:'normal'},{p:950,t:'elite'},{p:1000,t:'boss'}],
   vhard:  [{p:150,t:'trash'},{p:550,t:'normal'},{p:900,t:'elite'},{p:1000,t:'boss'}],
   legend: [{p:80, t:'trash'},{p:380,t:'normal'},{p:800,t:'elite'},{p:1000,t:'boss'}],
+  impossible: [{p:10, t:'trash'},{p:50,t:'normal'},{p:500,t:'elite'},{p:1000,t:'boss'}],
 };
 
 const MODEL_POOL = [
@@ -99,17 +109,15 @@ const TIER_RARITY_TABLE = {
     { upto: 1000, rarity: 'myth'  },
   ],
   boss: [
-    { upto: 100, rarity: 'normal' },
-    { upto: 400, rarity: 'rare'   },
-    { upto: 850, rarity: 'epic'   },
-    { upto: 970, rarity: 'legend' },
-    { upto: 995, rarity: 'myth'   },
+    { upto: 549, rarity: 'epic' },
+    { upto: 799, rarity: 'legend' },
+    { upto: 995, rarity: 'myth' },
     { upto: 1000, rarity: 'aether' },
   ],
 };
 
 // [추가] 희귀도 서열(더 큰 값이 더 희귀)
-const RARITY_RANK = { normal:1, rare:2, epic:3, legend:4, myth:5, aether:6 };
+const RARITY_RANK = { normal:1, rare:2, epic:3, legend:4, myth:5, aether:6, alpha: 7, omega: 8 };
 
 // [추가] 더 좋은 희귀도 뽑기(둘 중 최댓값)
 function betterRarity(a, b){
@@ -170,7 +178,7 @@ function rollThreeChoices(run){
     const diff = run.difficulty || 'normal';
     const sRoll = popRoll({prerolls: next}); next = sRoll.next; // 스태미나용 주사위 하나 더 소모
     const baseDelta = { safe:[0,1], item:[-1,-1], narrative:[-1,-1], risk:[-3,-1], combat:[-5,-2] }[eventKind] || [0,0];
-    const mul = { easy:.8, normal:1.0, hard:1.15, vhard:1.3, legend:1.5 }[diff] || 1.0;
+    const mul = { easy:.8, normal:1.0, hard:1.15, vhard:1.3, legend:1.5, impossible:4.0 }[diff] || 1.0;
     const lo = Math.round(baseDelta[0]*mul), hi = Math.round(baseDelta[1]*mul);
     const deltaStamina = (lo===hi) ? lo : (lo<0 ? -(((sRoll.value-1)%(-lo+ -hi+1)) + -hi) : ((sRoll.value-1)%(hi-lo+1))+lo);
     dice.deltaStamina = deltaStamina;
@@ -413,6 +421,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         hard:   { trash: 8,  normal: 12, elite: 20, boss: 32 },
         vhard:  { trash: 10, normal: 15, elite: 25, boss: 40 },
         legend: { trash: 12, normal: 18, elite: 30, boss: 50 },
+        impossible: { trash: 50, normal: 100, elite: 200, boss: 500 },        
       };
 
       const baseHp = (hpTableByDiff[diff]?.[tier]) ?? 8;
@@ -608,7 +617,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             systemPromptRaw = await loadPrompt(db, 'battle_turn_system');
         }
         const playerExp = character.exp_total || 0;
-        const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8} };
+        const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8}, impossible:{min:10, max:14} };
         const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
         
         // ✨✨✨ FIX: turnBonusDamage 변수 선언 및 계산 로직 추가 ✨✨✨
@@ -674,7 +683,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         }
 
 
-        const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3 }[diff] ?? 1);
+        const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3, impossible:4 }[diff] ?? 1);
         const toPlayerTier = (tier === 'boss') ? 1 : 0;
         const toPlayerMaxByTable = toPlayerBase + toPlayerTier;
 
@@ -741,7 +750,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
                   // [수정] 난이도별 경험치 보상 테이블
                   const baseExp = { trash: 10, normal: 20, elite: 40, boss: 100 }[battle.enemy.tier] || 20;
-                  const difficultyMultiplier = { easy: 1.0, normal: 4.0, hard: 7.0, vhard: 14.0, legend: 30.0 }[run.difficulty] || 1.0;
+                  const difficultyMultiplier = { easy: 1.0, normal: 4.0, hard: 7.0, vhard: 14.0, legend: 30.0, impossible: 60.0 }[run.difficulty] || 1.0;
                   const exp = Math.round(baseExp * difficultyMultiplier);
 
                   // [교체] grantExpAndMint와 동일한 경험치/코인 지급 로직을 여기에 직접 구현합니다.
@@ -762,7 +771,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
                   // [수정] 상호작용 성공 시에는 보상 아이템을 지급하지 않도록 조건 추가
                   if (aiResult.reward_item && aiResult.interaction_success !== true) {
-                      const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic' })[run.difficulty] || 'rare';
+                      const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic', impossible:'myth' })[run.difficulty] || 'rare';
                       const fallbackItem = {
                           name: `${battle.enemy.name}의 파편`,
                           rarity: baseRarity,
