@@ -26,7 +26,7 @@ function tryJsonSafe(t) {
 }
 
 // Gemini 호출 (서버 직통)
-async function callGeminiServer(model, systemText, userText, temperature = 0.85, maxOutputTokens = 4096) {
+async function callGeminiServer(model, systemText, userText, temperature = 0.85, maxOutputTokens = 8192) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY.value()}`;
     const body = {
         systemInstruction: { role: 'system', parts: [{ text: String(systemText || '') }] },
