@@ -27,12 +27,12 @@
             "difficulty": "easy"
           },
           {
-            "id": "test",
-            "name": "테스트입니다. 입장하지 마세요.",
-            "img": "sites/gionkir/test.png",
-            "description": "테스트입니다. 입장하지 마세요.",
-            "type": "dungeon",
-            "tags": ["어둠","비밀"],
+            "id": "shadow-heart",
+            "name": "어둠의 심장부",
+            "img": "sites/gionkir/shadow-heart.png",
+            "description": "기온키르 성벽의 가장 깊은 기반에 존재하는 공간. 성벽을 지탱하는 동시에, 그 아래 숨겨진 고대 존재의 봉인 장소이기도 하다. 빛이 닿지 않는 영원한 어둠이 지배하는 곳. 소문에 따르면 잊혀진 기온키르의 왕이 나타난다고 한다.",
+            "type": "ancient_prison",
+            "tags": ["봉인", "고대", "어둠", "금지된_지식"],
             "difficulty": "impossible"
           }
         ],
