@@ -297,7 +297,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   });
 
   const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
-    // ... (대부분 동일) ...
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
     const { runId } = req.data||{};
@@ -310,7 +309,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
     if(run.status !== 'ongoing') throw new HttpsError('failed-precondition','이미 종료된 런');
 
-    const { choices, nextPrerolls } = rollThreeChoices(run); // preroll 소모 후 남은 값(nextPrerolls)을 받음
+    const { choices, nextPrerolls } = rollThreeChoices(run);
 
     const charId = String(run.charRef||'').replace(/^chars\//,'');
     const charDoc = await db.collection('chars').doc(charId).get().catch(()=>null);
@@ -324,7 +323,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const latestNarrative = narratives[0] || {};
     const previousNarrativeSummary = narratives.slice(1).map(n => n.short).join('; ') || '(없음)';
     const prevTurnLog = (run.events||[]).slice(-1)[0]?.note || '(없음)';
-    const systemText = await loadPrompt(db,'adventure_narrative_system');
+
+    // ANCHOR: [수정] 난이도에 따라 다른 프롬프트 키를 사용합니다.
+    const promptKey = run.difficulty === 'impossible' ? 'adventure_narrative_system_impossible' : 'adventure_narrative_system';
+    const systemText = await loadPrompt(db, promptKey);
+    
     const dicePrompts = choices.map((d,i)=>{
       let result = `종류=${d.eventKind}, 스태미나변화=${d.deltaStamina}`;
       if(d.item)   result += `, 아이템(등급:${d.item.rarity}, 소모성:${d.item.isConsumable}, 사용횟수:${d.item.uses})`;
@@ -366,20 +369,17 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       choice_outcomes: outcomes,
       diceResults: choices,
       summary3_update,
-      // [핵심 수정 1] 남은 preroll을 pending_choices에 저장합니다.
       nextPrerolls: nextPrerolls,
       at: Date.now()
     };
 
     await ref.update({
       pending_choices: pending,
-      // [참고] prerolls 필드는 여기서 업데이트하는 것이 아니라, 선택지를 고른 후에 업데이트합니다.
       updatedAt: Timestamp.now()
     });
     return { ok:true, pending };
   });
 
-  // [수정] advApplyChoiceV2 함수 전체
   const advApplyChoiceV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
@@ -403,7 +403,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const resultText = String(chosenOutcome.result_text || '아무 일도 일어나지 않았다.').trim();
     const narrativeLog = `${pend.narrative_text}\n\n[선택: ${pend.choices[idx] || ''}]\n→ ${resultText}`.trim().slice(0, 2300);
     const diff = run.difficulty || 'normal';
-    // [수정] 전투 발생 시 로직 강화
+    
     if (chosenOutcome.event_type === 'combat'){
       const enemyBase = chosenOutcome.enemy || {};
       const tier = chosenDice?.combat?.enemyTier || 'normal';
@@ -411,10 +411,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const charId = String(run.charRef || '').replace(/^chars\//, '');
       const charSnap = await db.collection('chars').doc(charId).get();
       const character = charSnap.exists ? charSnap.data() : {};
-      const playerExp = character.exp_total || 0;
-
-      // [PATCH] 난이도별 적 체력 테이블(기본 HP=10 기준으로 재설계)
-      // Easy는 trash: 2~4, normal: 3~4 느낌으로 낮게 고정
+      
       const hpTableByDiff = {
         easy:   { trash: 2,  normal: 3,  elite: 5,  boss: 9 },
         normal: { trash: 6,  normal: 8,  elite: 14, boss: 22 },
@@ -425,7 +422,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       };
 
       const baseHp = (hpTableByDiff[diff]?.[tier]) ?? 8;
-      // 턴 수에 비례하여 체력 증가 (턴당 20%)
       const turnBonusRatio = (run.turn || 0) * 0.2;
       const finalHp = Math.max(1, Math.round(baseHp * (1 + turnBonusRatio)));
 
@@ -445,7 +441,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       };
 
       await runRef.update({
-        pending_battle: battleInfo, // battle_pending -> pending_battle로 필드명 통일
+        pending_battle: battleInfo,
         pending_choices: null,
         turn: FieldValue.increment(1),
         events: FieldValue.arrayUnion({
@@ -454,7 +450,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           dice: chosenDice,
           deltaStamina: 0
         }),
-        prerolls: pend.nextPrerolls || run.prerolls, // [핵심 수정 2-1] 전투 진입 시에도 preroll 업데이트
+        prerolls: pend.nextPrerolls || run.prerolls,
         combat_hp: initialCombatHp,
         updatedAt: Timestamp.now()
       });
@@ -462,7 +458,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       return { ok:true, state: { id: runId, ...fresh.data() }, battle:true };
     }
 
-    // 아이템 지급 로직
     let newItem = null;
     if (chosenOutcome.event_type === 'item' && chosenOutcome.item){
       newItem = {
@@ -512,8 +507,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const snap = await runRef.get();
     return { ok:true, state: { id: runId, ...snap.data() }, battle:false, done:false };
   });
-
-  // ... (endExploreV2 함수는 기존과 동일하게 유지) ...
+  
   const endExploreV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
@@ -523,9 +517,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const ref = db.collection('explore_runs').doc(runId);
     const s = await ref.get();
     if(!s.exists) throw new HttpsError('not-found','런 없음');
-    const r = s.data();
-    if(r.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
-    if(r.status!=='ongoing') return { ok:true, already:true };
+    const r = s.data()||{};
+    if (r.owner_uid !== uid) throw new HttpsError('permission-denied','내 진행만 가능');
+    if (r.status!=='ongoing') return { ok:true, already:true };
 
     await ref.update({
       status:'ended', endedAt:Timestamp.now(), reason, pending_choices:null, pending_battle:null, updatedAt:Timestamp.now()
@@ -534,7 +528,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     return { ok:true, state: snap.data() };
   });
 
-  // [신규] 전투 행동 처리 함수
   const advBattleActionV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
@@ -558,7 +551,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           battle.playerHp = (typeof run.combat_hp === 'number') ? run.combat_hp : run.stamina;
         }
 
-
         const charId = String(run.charRef||'').replace(/^chars\//,'');
         const charRef = charCollectionRef.doc(charId);
         const charSnap = await tx.get(charRef);
@@ -566,7 +558,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
         let actionDetail = { type: actionType, name: '상호작용' };
         let itemToConsume = null;
-        let staminaCost = 0; // 스킬 사용 시 스태미나 소모
+        let staminaCost = 0;
 
         if (actionType === 'skill') {
             const skillIndex = Number(actionIndex);
@@ -600,31 +592,33 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const tier = run?.pending_battle?.enemy?.tier || 'normal';
         const diff = run?.difficulty || 'normal';
 
-        // [추가] 보상 희귀도: 난이도표 1회 + 등급표 1회 뽑아서 더 높은 쪽 선택
-                let nextPrerolls = Array.isArray(run.prerolls) ? run.prerolls.slice() : [];
-        const r1 = popRoll({prerolls: nextPrerolls}); nextPrerolls = r1.next; // 난이도용
-        const r2 = popRoll({prerolls: nextPrerolls}); nextPrerolls = r2.next; // 등급용
+        let nextPrerolls = Array.isArray(run.prerolls) ? run.prerolls.slice() : [];
+        const r1 = popRoll({prerolls: nextPrerolls}); nextPrerolls = r1.next;
+        const r2 = popRoll({prerolls: nextPrerolls}); nextPrerolls = r2.next;
 
         const diffRow = pickByTable(r1.value, RARITY_TABLES_BY_DIFFICULTY[diff] || RARITY_TABLES_BY_DIFFICULTY.normal);
         const tierRow = pickByTable(r2.value, TIER_RARITY_TABLE[tier] || TIER_RARITY_TABLE.normal);
 
         const rewardRarity = betterRarity(diffRow.rarity, tierRow.rarity);
-
-        const promptKey = `battle_turn_system_${diff}_${tier}`;
-        let systemPromptRaw = await loadPrompt(db, promptKey);
-
-        if (!systemPromptRaw) {
-            systemPromptRaw = await loadPrompt(db, 'battle_turn_system');
+        
+        // ANCHOR: [수정] 난이도에 따라 다른 전투 프롬프트 키를 사용합니다.
+        let systemPromptRaw;
+        if (diff === 'impossible') {
+            systemPromptRaw = await loadPrompt(db, 'battle_turn_system_impossible');
+        } else {
+            const specificPromptKey = `battle_turn_system_${diff}_${tier}`;
+            systemPromptRaw = await loadPrompt(db, specificPromptKey);
+            if (!systemPromptRaw) {
+                systemPromptRaw = await loadPrompt(db, 'battle_turn_system');
+            }
         }
+        
         const playerExp = character.exp_total || 0;
         const damageRanges = { easy:{min:1, max:3}, normal:{min:2, max:4}, hard:{min:2, max:5}, vhard:{min:3, max:6}, legend:{min:4, max:8}, impossible:{min:10, max:14} };
         const baseRange = damageRanges[run.difficulty] || damageRanges.normal;
         
-        // ✨✨✨ FIX: turnBonusDamage 변수 선언 및 계산 로직 추가 ✨✨✨
         const turnBonusDamage = Math.floor((battle.turn || 0) * 0.1 * baseRange.max);
-
-        // 턴 수에 비례하여 적 공격력 증가 (턴당 10%)
-        const expBonusDamage = Math.floor(playerExp / 2500); // 예: 2500 exp 마다 최대 대미지 +1
+        const expBonusDamage = Math.floor(playerExp / 2500);
         const finalMaxDamage = baseRange.max + turnBonusDamage + expBonusDamage;
 
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
@@ -646,14 +640,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           '- narrative는 플레이어 행동과 적의 반격을 모두 포함하여 2~3 문장으로 요약한다. 적의 스킬명을 1회 언급하되 수식은 절제한다.',
           '- [매우 중요] narrative 서술 시, 적의 HP가 0 이하로 떨어지는 경우가 아니라면 "쓰러뜨렸다", "파괴했다", "끝장냈다" 등 전투의 끝을 암시하는 단정적인 표현을 절대 사용해서는 안 된다. 대신 "큰 충격을 주었다", "공격이 명중했다", "비틀거린다" 와 같이 과정에 대한 묘사에 집중해야 한다.',
         ].join('\n');
-
-        // [PATCH] 캐릭터 최신 서사(long) + 직전 장면을 함께 전달
+        
         const narratives = Array.isArray(character.narratives) ? character.narratives.slice().sort((a,b)=>(b.createdAt||0)-(a.createdAt||0)) : [];
         const latestNarr = narratives[0] || {};
         const lastScene  = (battle.log && battle.log.length > 0) ? battle.log[battle.log.length - 1]
                           : ((run.events || []).slice(-1)[0]?.note || '(없음)');
         const enemySkillsText = (battle.enemy.skills || []).map(s => `- ${s.name}: ${s.description}`).join('\n');
-
 
         const userPrompt = [
           '## 전투 컨텍스트',
@@ -672,7 +664,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           JSON.stringify(actionDetail, null, 2)
         ].join('\n');
 
-
         const { primary, fallback } = pickModels();
         let aiResult = {};
         try {
@@ -681,22 +672,15 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           logger.warn(`[explore/battle] 1차 모델(${primary}) 호출 실패, 대체 모델(${fallback})로 재시도합니다.`, { error: e.message });
           aiResult = await callGemini({ apiKey: GEMINI_API_KEY.value(), systemText: systemPrompt, userText: userPrompt, logger, modelName: fallback }) || {};
         }
-
-
+        
         const toPlayerBase = ({ easy:1, normal:1, hard:2, vhard:2, legend:3, impossible:4 }[diff] ?? 1);
         const toPlayerTier = (tier === 'boss') ? 1 : 0;
         const toPlayerMaxByTable = toPlayerBase + toPlayerTier;
 
-        // 시작 스태미나(기본 HP)의 40%를 초과할 수 없게 캡
         const toPlayerHpCap = Math.max(1, Math.ceil((run.stamina_start || STAMINA_BASE || 10) * 0.40));
         const maxToPlayer = Math.min(toPlayerMaxByTable, toPlayerHpCap);
         let playerHpChange = Math.round(Number(aiResult.playerHpChange) || 0);
 
-
-        // 최종 클램프
-        // [변경] 전투 회복 완화: 피해(음수)와 회복(양수) 별도 캡
-        // - 피해(음수): 기존 동적 상한 maxToPlayer 유지
-        // - 회복(양수): 현재 전투HP 부족분의 50% (최소 +1)
         const missingHp = Math.max(0, (run.stamina_start || STAMINA_BASE || 10) - (battle.playerHp || 0));
         const healCap = Math.max(1, Math.ceil(missingHp * 0.5));
         if (playerHpChange >= 0) {
@@ -705,9 +689,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           playerHpChange = Math.max(playerHpChange, -maxToPlayer);
         }
 
-
         const rawEnemyDelta = Math.round(Number(aiResult.enemyHpChange) || 0);
-        // [PATCH] 적 피해 상한 = (표상한 vs 적 최대HP의 30%) 중 작은 값
         const hpCap = Math.max(1, Math.ceil((battle.enemy?.maxHp || battle.enemy?.hp || 10) * 0.30));
         const maxToEnemy = Math.min(maxDamageClamped, hpCap);
         const enemyHpChange = Math.max(-maxToEnemy, Math.min(0, rawEnemyDelta));
@@ -745,15 +727,13 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           if (isBattleOver) {
               battleResult.battle_over = true;
 
-              if (newEnemyHp <= 0 && newPlayerHp > 0 || aiResult.interaction_success === true) { //  승리 (상호작용 성공 포함)
+              if (newEnemyHp <= 0 && newPlayerHp > 0 || aiResult.interaction_success === true) {
                   battleResult.outcome = 'win';
 
-                  // [수정] 난이도별 경험치 보상 테이블
                   const baseExp = { trash: 10, normal: 20, elite: 40, boss: 100 }[battle.enemy.tier] || 20;
                   const difficultyMultiplier = { easy: 1.0, normal: 4.0, hard: 7.0, vhard: 14.0, legend: 30.0, impossible: 60.0 }[run.difficulty] || 1.0;
                   const exp = Math.round(baseExp * difficultyMultiplier);
 
-                  // [교체] grantExpAndMint와 동일한 경험치/코인 지급 로직을 여기에 직접 구현합니다.
                   const currentExp = Number(character.exp || 0);
                   const newTotalExp = currentExp + exp;
                   const coinsToMint = Math.floor(newTotalExp / 100);
@@ -767,9 +747,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                   if (coinsToMint > 0) {
                       tx.set(userRef, { coins: FieldValue.increment(coinsToMint) }, { merge: true });
                   }
-                  // --- 로직 교체 끝 ---
-
-                  // [수정] 상호작용 성공 시에는 보상 아이템을 지급하지 않도록 조건 추가
+                  
                   if (aiResult.reward_item && aiResult.interaction_success !== true) {
                       const baseRarity = ({ easy:'normal', normal:'rare', hard:'rare', vhard:'epic', legend:'epic', impossible:'myth' })[run.difficulty] || 'rare';
                       const fallbackItem = {
@@ -779,13 +757,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                           isConsumable: false, uses: 1
                       };
                       const reward = (aiResult.reward_item && typeof aiResult.reward_item === 'object')
-                        ? { ...aiResult.reward_item, rarity: rewardRarity } // AI가 다른 등급을 써도 서버에서 강제 통일
+                        ? { ...aiResult.reward_item, rarity: rewardRarity }
                         : fallbackItem;
                       const newItem = { ...reward, id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,9) };
                       tx.update(userRef, { items_all: FieldValue.arrayUnion(newItem) });
                   }
 
-                  // 승리 턴에도 10턴 주기 드레인 적용
                   const drainedWin = (battle.turn % 10 === 0) ? 1 : 0;
                   const staminaAfterWin = Math.max(0, staminaAfterCost - drainedWin);
 
@@ -825,7 +802,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                     tx.update(runRef, updatesWin);
                   }
 
-               } else { // 패배 또는 무승부
+               } else {
                   battleResult.outcome = 'loss';
                   tx.update(runRef, {
                     status: 'ended',
@@ -841,11 +818,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
                   });
 
               }
-          } else { // 전투 계속
-              // [변경] 전투는 10턴마다 스태미나 1 감소. 전투HP와 스태미나 분리 유지.
+          } else {
               const drained = (battle.turn % 10 === 0) ? 1 : 0;
               const staminaAfterDrain = Math.max(0, staminaAfterCost - drained);
-
 
               if (staminaAfterDrain <= 0) {
                 tx.update(runRef, {
@@ -880,7 +855,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       return { ok: true, ...result };
   });
-  // [신규] 전투 후퇴(도망) 함수
+  
   const advBattleFleeV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
     if(!uid) throw new HttpsError('unauthenticated','로그인이 필요해');
@@ -904,11 +879,10 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     const updates = {
       pending_battle: null,
       stamina: newStamina,
-      combat_hp: battle.playerHp, // 현재 전투HP를 런 스코프에 저장(다음 전투 시작 시 사용)
+      combat_hp: battle.playerHp,
       turn: FieldValue.increment(1),
       events: FieldValue.arrayUnion({ t: Date.now(), note, kind: 'combat-retreat', deltaStamina: -penalty })
     };
-
 
     if (newStamina <= 0) {
       updates.status = 'ended';
