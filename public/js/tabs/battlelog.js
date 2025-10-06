@@ -1,7 +1,7 @@
 // /public/js/tabs/battlelog.js
 import { db, auth, fx } from '../api/firebase.js';
 import { createOrUpdateRelation, getRelationBetween, getBattleLog } from '../api/store.js';
-import { showToast } from '../ui/toast.js'; // <-- [수정] 이 줄을 추가합니다.
+import { showToast } from '../ui/toast.js';
 
 function parseLogId() {
   const h = location.hash || '';
@@ -10,6 +10,26 @@ function parseLogId() {
 }
 
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;', "'":'&#39;' }[c])); }
+
+// [신규] 리치 텍스트 렌더러
+const rarityColors = {
+    normal: '#c8d0dc', rare: '#cfe4ff', epic: '#e6dcff',
+    legend: '#ffe9ad', myth: '#ffc9ce', aether: '#d6fff7'
+};
+
+function renderRichText(text = '') {
+    return esc(text)
+        .replace(/\[대사:(\d)\]「([^」]*)」\[\/대사\]/g, '<div class="rich-dialogue char-$1">「$2」</div>')
+        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (match, rarity, itemName) => {
+            const color = rarityColors[rarity.toLowerCase()] || rarityColors.normal;
+            return `<strong style="color: ${color}; font-weight: 800; text-shadow: 0 0 5px ${color}55;">${itemName}</strong>`;
+        })
+        .replace(/\[CUT\]/g, '<hr class="rich-cut">')
+        .replace(/\[SFX:small\]([^\[]*)\[\/SFX\]/g, '<span class="rich-sfx-small">$1</span>')
+        .replace(/\[SFX:big\]([^\[]*)\[\/SFX\]/g, '<strong class="rich-sfx-big">$1</strong>')
+        .replace(/\n/g, '<br>');
+}
+
 
 export async function showBattleLog() {
   const root = document.getElementById('view');
@@ -23,7 +43,7 @@ export async function showBattleLog() {
   root.innerHTML = `<section class="container narrow"><div class="spin-center" style="margin-top: 40px;"></div></section>`;
 
   try {
-    const log = await getBattleLog(logId); // store.js 함수 사용
+    const log = await getBattleLog(logId);
 
     const attackerId = log.attacker_char.replace('chars/', '');
     const defenderId = log.defender_char.replace('chars/', '');
@@ -36,7 +56,7 @@ export async function showBattleLog() {
     const attacker = attackerSnap.exists() ? { id: attackerId, ...attackerSnap.data() } : {id: attackerId, ...log.attacker_snapshot};
     const defender = defenderSnap.exists() ? { id: defenderId, ...defenderSnap.data() } : {id: defenderId, ...log.defender_snapshot};
 
-    await render(root, log, attacker, defender); // render를 await으로 호출
+    await render(root, log, attacker, defender);
 
   } catch (e) {
     console.error("Failed to load battle log:", e);
@@ -47,17 +67,20 @@ export async function showBattleLog() {
 async function render(root, log, attacker, defender) {
     const currentUserId = auth.currentUser?.uid;
     const isOwnerOfAttacker = currentUserId && attacker.owner_uid === currentUserId;
-    const isOwnerOfDefender = currentUserId && defender.owner_uid === currentUserId;
-    const isParty = isOwnerOfAttacker || isOwnerOfDefender; // <-- [수정] isParty 변수를 올바르게 선언합니다.
+    const isParty = isOwnerOfAttacker || (currentUserId && defender.owner_uid === currentUserId);
 
     const winnerIsAttacker = log.winner === 0;
     const winnerIsDefender = log.winner === 1;
 
-    // ... (characterCard, topButtonHtml 템플릿 코드는 기존과 동일) ...
     const characterCard = (char, isWinner, isLoser) => {
         let label = '';
-        if (isWinner) { label = '<span class="chip" style="background:#3b82f6;color:white;font-weight:bold;">승리</span>'; }
-        if (isLoser) { label = '<span class="chip" style="background:#ef4444;color:white;font-weight:bold;">패배</span>'; }
+        if (log.simulated) {
+            label = '<span class="chip" style="background:#8b5cf6;color:white;font-weight:bold;">모의전</span>';
+        } else if (isWinner) {
+            label = '<span class="chip" style="background:#3b82f6;color:white;font-weight:bold;">승리</span>';
+        } else if (isLoser) {
+            label = '<span class="chip" style="background:#ef4444;color:white;font-weight:bold;">패배</span>';
+        }
 
         return `
             <a href="#/char/${char.id}" class="battle-result-card">
@@ -68,18 +91,21 @@ async function render(root, log, attacker, defender) {
         `;
     };
     
-    let topButtonHtml;
-    if (isOwnerOfAttacker) {
-        topButtonHtml = `<a href="#/battle" class="btn" style="text-decoration: none;">다시 배틀하기</a>`;
-    } else {
-        topButtonHtml = '<button class="btn ghost" onclick="history.back()">이전으로 돌아가기</button>';
-    }
+    let topButtonHtml = isOwnerOfAttacker
+        ? `<a href="#/battle" class="btn" style="text-decoration: none;">다시 배틀하기</a>`
+        : '<button class="btn ghost" onclick="history.back()">이전으로 돌아가기</button>';
     
     root.innerHTML = `
       <style>
         .battle-result-card { text-decoration: none; color: inherit; display: flex; flex-direction: column; align-items: center; gap: 8px; }
         .battle-result-card .avatar { width: 120px; height: 120px; object-fit: cover; border-radius: 12px; border: 3px solid var(--border-color); }
         .battle-result-card .name { font-weight: 800; font-size: 16px; }
+        .rich-dialogue { margin: 1em 0; padding: 0.8em 1em; border-radius: 8px; background: rgba(255,255,255,0.05); }
+        .rich-dialogue.char-0 { border-left: 3px solid #3b82f6; }
+        .rich-dialogue.char-1 { border-left: 3px solid #ef4444; }
+        .rich-cut { border: none; border-top: 1px dashed rgba(255,255,255,0.2); margin: 2em 0; }
+        .rich-sfx-small { font-style: italic; color: #9aa4b2; }
+        .rich-sfx-big { font-weight: 900; text-transform: uppercase; letter-spacing: 1px; }
       </style>
       <section class="container narrow">
         <div style="display:flex; justify-content: flex-end; margin-bottom: 16px;">
@@ -96,15 +122,16 @@ async function render(root, log, attacker, defender) {
         </div>
         <div class="card p16">
             <h1 style="font-size: 24px; font-weight: 900; text-align: center; margin-bottom: 16px;">${esc(log.title)}</h1>
-            <div style="white-space: pre-wrap; line-height: 1.7; font-size: 15px; padding: 0 8px;">${esc(log.content)}</div>
+            <div style="white-space: pre-wrap; line-height: 1.7; font-size: 15px; padding: 0 8px;">${renderRichText(log.content)}</div>
         </div>
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 24px; align-items: center;">
-            <button class="btn large ghost" id="btnRelate">관계 확인 중...</button>
+            ${!log.simulated ? `<button class="btn large ghost" id="btnRelate">관계 확인 중...</button>` : ''}
         </div>
       </section>
     `;
 
     const btnRelate = root.querySelector('#btnRelate');
+    if (!btnRelate) return;
     
     if (!isParty) {
         btnRelate.style.display = 'none';
@@ -120,7 +147,7 @@ async function render(root, log, attacker, defender) {
         btnRelate.disabled = true;
         btnRelate.textContent = 'AI가 관계를 분석하는 중...';
         try {
-            const result = await createOrUpdateRelation({
+            await createOrUpdateRelation({
                 aCharId: attacker.id,
                 bCharId: defender.id,
                 battleLogId: log.id
@@ -129,7 +156,7 @@ async function render(root, log, attacker, defender) {
             btnRelate.textContent = '관계가 갱신됨';
         } catch(e) {
             console.error('관계 생성/업데이트 실패:', e);
-            showToast(`오류: ${e.message}`); // <-- 이제 이 부분도 정상 동작합니다.
+            showToast(`오류: ${e.message}`);
             btnRelate.disabled = false;
             btnRelate.textContent = existingRelation ? '업데이트 재시도' : '생성 재시도';
         }
