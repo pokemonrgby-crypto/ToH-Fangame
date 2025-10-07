@@ -30,6 +30,10 @@ export const routes = {
   '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
   '#/raid': () => import('./tabs/raid.js').then(m => m.showRaid()),
   '#/raidlog': () => import('./tabs/raidlog.js').then(m => m.showRaidLog()),
+  // ANCHOR: [추가] 캐릭터 성장 관련 라우트
+  '#/char-create-skill': () => import('./tabs/char_create_skill.js').then(m => m.default()),
+  '#/char-enhance-skill': () => import('./tabs/char_enhance_skill.js').then(m => m.default()),
+  '#/char-progress-narrative': () => import('./tabs/char_progress_narrative.js').then(m => m.default()),
 };
 
 export function highlightTab() {
@@ -39,6 +43,11 @@ export function highlightTab() {
 
   if (['economy', 'market', 'worldmap', 'land', 'land-management'].includes(tabName)) {
     tabName = 'plaza';
+  }
+
+  // ANCHOR: [추가] 성장 페이지에서도 '캐릭터' 탭이 활성화되도록 처리
+  if (tabName.startsWith('char-')) {
+    tabName = 'char';
   }
 
   document.querySelectorAll('.bottombar a').forEach(a => {
@@ -55,7 +64,7 @@ export function router() {
   }
   document.querySelector('.fixed-actions')?.remove();
   
-  const hash = location.hash || '#/home';
+  const hash = location.hash.split('?')[0] || '#/home'; // ANCHOR: [수정] 쿼리스트링 제거
   
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
