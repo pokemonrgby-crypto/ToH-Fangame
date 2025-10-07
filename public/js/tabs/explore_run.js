@@ -199,19 +199,28 @@ export async function showExploreRun() {
   const handleChoice = async (index) => {
     showLoading(true, '선택지 적용 중...');
     try {
+        // ANCHOR: [수정] 서버로부터 state를 포함한 전체 결과를 받습니다.
         const result = await serverApplyChoice(state.id, index); 
-        state = result.state ? { id: state.id, ...result.state } : state;
+        
+        // ANCHOR: [수정] 서버가 보내준 최신 state로 클라이언트의 state를 덮어씁니다.
+        // 이렇게 하면 새로고침 없이도 모든 변경사항(스태미나, 이벤트 로그 등)이 반영됩니다.
+        if (result.state) {
+          state = { id: state.id, ...result.state };
+        }
 
         if (result.battle) {
             location.hash = `#/explore-battle/${state.id}`;
             return; 
         }
         if (result.done) showToast('탐험이 종료되었어');
-         render(state);
+
+        // ANCHOR: [수정] 업데이트된 state로 화면을 다시 그립니다.
+        render(state);
     } catch (e) {
         console.error('[explore] handleChoice failed', e);
         showToast('선택 적용 중 오류가 발생했어');
     } finally {
+        // 전투 화면으로 넘어가지 않았을 경우에만 로딩 오버레이를 제거합니다.
         if (location.hash.startsWith('#/explore-run/')) {
             showLoading(false);
         }
