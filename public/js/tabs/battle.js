@@ -16,7 +16,9 @@ import { func } from '../api/firebase.js';
 
 const getCooldownStatus = httpsCallable(func, 'getCooldownStatus');
 const setGlobalCooldown = httpsCallable(func, 'setGlobalCooldown');
-
+// ▼▼▼ [수정된 부분] ▼▼▼
+const resetCooldownWithCoins = httpsCallable(func, 'resetCooldownWithCoins');
+// ▲▲▲ [수정된 부분] ▲▲▲
 
 
 // ---------- utils ----------
@@ -72,8 +74,9 @@ function applyGlobalCooldown(seconds){ const until = Date.now() + (seconds*1000)
 
 
 // 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
-// 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
+// ▼▼▼ [수정된 부분] ▼▼▼
 async function mountCooldownOnButton(btn, mode, labelReady) {
+  const btnReset = document.getElementById('btnResetCooldown'); // 리셋 버튼
   let intervalId = null;
   let remainMs = 0;
 
@@ -83,9 +86,11 @@ async function mountCooldownOnButton(btn, mode, labelReady) {
     if (remainMs > 0) {
       btn.disabled = true;
       btn.textContent = `${labelReady} (${s}s)`;
+      if (btnReset) btnReset.style.display = 'inline-flex'; // 쿨타임 있을 때 보이기
     } else {
       btn.disabled = false;
       btn.textContent = labelReady;
+      if (btnReset) btnReset.style.display = 'none'; // 쿨타임 없으면 숨기기
       if (intervalId) {
         clearInterval(intervalId);
         intervalId = null;
@@ -110,6 +115,7 @@ async function mountCooldownOnButton(btn, mode, labelReady) {
     btn.textContent = '정보 조회 실패';
   }
 }
+// ▲▲▲ [수정된 부분] ▲▲▲
 // ---------- Battle Progress & Logic ----------
 
 function showBattleProgressUI(myChar, opponentChar) {
@@ -282,6 +288,9 @@ export async function showBattle(){
     </div>
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (100 코인)</button>
+        // ▲▲▲ [수정된 부분] ▲▲▲
         <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
     </div>
@@ -290,6 +299,29 @@ export async function showBattle(){
   document.getElementById('btnBack').onclick = ()=>{
     location.hash = intent?.charId ? `#/char/${intent.charId}` : '#/home';
   };
+
+  // ▼▼▼ [수정된 부분] ▼▼▼
+  const btnReset = document.getElementById('btnResetCooldown');
+  if (btnReset) {
+    btnReset.onclick = async () => {
+      if (!confirm('100 코인을 사용하여 배틀 쿨타임을 초기화하시겠습니까?')) return;
+      btnReset.disabled = true;
+      try {
+        await resetCooldownWithCoins();
+        showToast('쿨타임이 초기화되었습니다.');
+        // 쿨타임 버튼 상태 즉시 갱신
+        const btnStart = document.getElementById('btnStart');
+        if (btnStart) {
+          await mountCooldownOnButton(btnStart, 'battle', labelReady);
+        }
+      } catch (e) {
+        showToast(`초기화 실패: ${e.message}`);
+      } finally {
+        btnReset.disabled = false;
+      }
+    };
+  }
+  // ▲▲▲ [수정된 부분] ▲▲▲
 
   let myCharData = null;
   let opponentCharData = null;
