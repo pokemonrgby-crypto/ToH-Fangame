@@ -122,15 +122,16 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 
     if (!attackerId || !defenderId) throw new HttpsError('invalid-argument', 'attackerId/defenderId 필요');
 
-    // ▼▼▼ [수정] 이 부분을 추가하세요. ▼▼▼
+    // ▼▼▼ [수정된 부분 시작] ▼▼▼
     const userRef = db.doc(`users/${uid}`);
     const nowSec = Math.floor(Date.now() / 1000);
+    
+    // userSnap과 userData를 if문 밖으로 이동
+    const userSnap = await userRef.get();
+    const userData = userSnap.exists ? userSnap.data() : {};
 
     // 모의전이 아닐 경우에만 쿨타임을 다시 한번 확인합니다.
     if (!simulate) {
-        const userSnap = await userRef.get();
-        const userData = userSnap.exists ? userSnap.data() : {};
-        
         // functions/match.ts와 동일한 방식으로 쿨타임 값을 읽어옵니다.
         const rawCooldown = userData.cooldown_all_until;
         const cooldownUntil = (typeof rawCooldown === 'number')
@@ -142,6 +143,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
         }
     }
+    // ▲▲▲ [수정된 부분 끝] ▲▲▲
     
     const Aref = db.doc(`chars/${attackerId}`);
     const Bref = db.doc(`chars/${defenderId}`);
