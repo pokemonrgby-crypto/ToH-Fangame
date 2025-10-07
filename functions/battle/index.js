@@ -22,28 +22,42 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // firebase functions:sec
 function stripFences(s = '') {
     return String(s).trim().replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
 }
+// (기존 코드 상단...)
+
+// ▼▼▼ 이 함수 전체를 교체하세요 ▼▼▼
 function tryJsonSafe(t) {
     if (!t) return null;
     try {
+        // 1. 코드 블록 마커(```) 제거
         let clean = stripFences(t);
-        // AI 응답이 중괄호로 시작하고 끝나도록 보정
+
+        // 2. 텍스트에서 첫 '{'와 마지막 '}'를 찾아 JSON 객체 부분만 추출
         const firstBrace = clean.indexOf('{');
         const lastBrace = clean.lastIndexOf('}');
         if (firstBrace !== -1 && lastBrace > firstBrace) {
             clean = clean.slice(firstBrace, lastBrace + 1);
         }
-        // 후행 쉼표(trailing comma) 제거
+
+        // 3. JSON 문법 오류를 유발하는 후행 쉼표(trailing comma) 제거
         clean = clean.replace(/,\s*([}\]])/g, '$1');
+
+        // 4. JSON에 포함될 수 있는 주석 제거
+        clean = clean.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
+
         return JSON.parse(clean);
     } catch (e) {
-        // 파싱 실패 시 에러를 로그에 남겨 디버깅을 돕습니다.
-        logger.error("Robust JSON parse failed", {
+        // 파싱 실패 시 원본 텍스트와 함께 로그를 남겨 디버깅을 돕습니다.
+        logger.error("Gemini JSON parse failed (after robust cleaning)", {
             rawText: String(t).slice(0, 500),
             error: e.message
         });
+        // 파싱에 실패하면 null을 반환하여 이후 코드에서 오류를 처리하도록 합니다.
         return null;
     }
 }
+// ▲▲▲ 이 함수 전체를 교체하세요 ▲▲▲
+
+// (이하 기존 코드...)
 
 // Gemini 호출 (서버 직통)
 async function callGeminiServer(model, systemText, userText, temperature = 0.85, maxOutputTokens = 8192) {
