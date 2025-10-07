@@ -288,9 +288,7 @@ export async function showBattle(){
     </div>
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        // ▼▼▼ [수정된 부분] ▼▼▼
         <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (300 코인)</button>
-        // ▲▲▲ [수정된 부분] ▲▲▲
         <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
     </div>
@@ -300,11 +298,10 @@ export async function showBattle(){
     location.hash = intent?.charId ? `#/char/${intent.charId}` : '#/home';
   };
 
-  // ▼▼▼ [수정된 부분] ▼▼▼
   const btnReset = document.getElementById('btnResetCooldown');
   if (btnReset) {
     btnReset.onclick = async () => {
-      if (!confirm('100 코인을 사용하여 배틀 쿨타임을 초기화하시겠습니까?')) return;
+      if (!confirm('300 코인을 사용하여 배틀 쿨타임을 초기화하시겠습니까?')) return;
       btnReset.disabled = true;
       try {
         await resetCooldownWithCoins();
@@ -321,7 +318,6 @@ export async function showBattle(){
       }
     };
   }
-  // ▲▲▲ [수정된 부분] ▲▲▲
 
   let myCharData = null;
   let opponentCharData = null;
