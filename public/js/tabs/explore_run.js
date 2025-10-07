@@ -235,6 +235,12 @@ const handleChoice = async (index) => {
     showToast('오류가 발생했어. 잠시 후 상태를 다시 동기화할게.');
     try {
       state = await getActiveRun(runId);
+      // [PATCH] 에러 후에도 전투가 잡혀 있으면 즉시 전투 화면으로
+if (state && state.pending_battle) {
+  location.hash = `#/explore-battle/${state.id}`;
+  return;
+}
+
       render(state);
     } catch (fetchError) {
       console.error('[explore] Failed to fetch state after error', fetchError);
