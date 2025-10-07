@@ -1100,17 +1100,17 @@ function appendItems(items){
 async function fetchNext(){
     if(busy || done || !mode) return;
     busy = true;
-    const out = [];
+    const out = []; // <--- 매번 새로 배열을 만듭니다.
     try{
       const charRef = `chars/${c.id}`;
 
       if(mode==='battle'){
         if(!doneA){
+          // 1. 공격자(attacker)인 로그를 15개 가져옴
           const partsA = [ fx.where('attacker_char','==', charRef), fx.orderBy('endedAt','desc') ];
           if(lastA) partsA.push(startAfter(lastA));
           partsA.push(fx.limit(15));
           const qA = fx.query(fx.collection(db,'battle_logs'), ...partsA);
-          // [수정] fx.getDocs -> getDocsFromServer: 항상 서버에서 최신 목록을 가져옵니다.
           const sA = await getDocsFromServer(qA);
           const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
           if(arrA.length < 15) doneA = true;
@@ -1118,43 +1118,19 @@ async function fetchNext(){
           out.push(...arrA);
         }
         if(!doneD){
+          // 2. 방어자(defender)인 로그를 15개 가져옴
           const partsD = [ fx.where('defender_char','==', charRef), fx.orderBy('endedAt','desc') ];
           if(lastD) partsD.push(startAfter(lastD));
           partsD.push(fx.limit(15));
           const qD = fx.query(fx.collection(db,'battle_logs'), ...partsD);
-          // [수정] fx.getDocs -> getDocsFromServer: 항상 서버에서 최신 목록을 가져옵니다.
           const sD = await getDocsFromServer(qD);
           const arrD=[]; sD.forEach(d=>arrD.push({ id:d.id, ...d.data() }));
           if(arrD.length < 15) doneD = true;
           if(sD.docs.length) lastD = sD.docs[sD.docs.length-1];
           out.push(...arrD);
         }
-        out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
-        if(doneA && doneD && out.length===0) done = true;
-      }
-      else if(mode==='encounter'){ // <-- [수정] 기존 encounter 로직을 그대로 사용합니다.
-        if(!doneA){
-          const partsA = [ fx.where('a_char','==', charRef), fx.orderBy('endedAt','desc') ];
-          if(lastA) partsA.push(startAfter(lastA));
-          partsA.push(fx.limit(15));
-          const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
-          const sA = await getDocsFromServer(qA);
-          const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
-          if(arrA.length < 15) doneA = true;
-          if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
-          out.push(...arrA);
-        }
-        if(!doneD){
-          const partsB = [ fx.where('b_char','==', charRef), fx.orderBy('endedAt','desc') ];
-          if(lastD) partsB.push(startAfter(lastD));
-          partsB.push(fx.limit(15));
-          const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
-          const sB = await getDocsFromServer(qB);
-          const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
-          if(arrB.length < 15) doneD = true;
-          if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
-          out.push(...arrB);
-        }
+        
+        // 3. 위에서 가져온 두 묶음(최대 30개)을 시간순으로 정렬
         out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
         if(doneA && doneD && out.length===0) done = true;
       }
