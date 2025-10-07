@@ -79,6 +79,7 @@ export function prettyTime(ts){
   if (!ts) return '-';
   if (typeof ts === 'number') return fmt(new Date(ts));
   if (typeof ts === 'string') return fmt(new Date(ts)); // ISO 문자열 직접 파싱
+  if (typeof ts?.toDate === 'function') return fmt(ts.toDate()); // Firestore Timestamp
   if (typeof ts?.toMillis === 'function') return fmt(new Date(ts.toMillis()));
   const sec = (ts?._seconds ?? ts?.seconds);
   const nano = (ts?._nanoseconds ?? ts?.nanoseconds ?? 0);
