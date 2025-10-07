@@ -164,7 +164,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 </INPUT>
     `.trim();
 
-    // 3. AI 호출 (단일 호출)
+    // 3. AI 호출 (단일 호출로 시나리오 생성, 선택, 최종 로그 작성을 모두 처리)
     const finalRaw = await callGeminiServer('gemini-2.5-flash', systemPrompt, userPrompt);
     const finalJson = tryJsonSafe(finalRaw);
 
