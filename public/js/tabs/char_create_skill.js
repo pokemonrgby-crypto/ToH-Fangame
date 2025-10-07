@@ -32,11 +32,13 @@ export default async function showCreateSkillPage() {
     const charData = charSnap.data();
     const userData = userSnap.exists() ? userSnap.data() : {};
     const currentCoins = userData.coins || 0;
-    const skills = Array.isArray(charData.abilities_all) ? charData.abilities_all.filter(s => s.name) : [];
+    const skills = (Array.isArray(charData.abilities_all) ? charData.abilities_all : []).filter(s => s.name && s.desc_soft);
     const canCreate = skills.length < 8;
-    const cost = 500 + (skills.length * 500);
+    const additionalSkills = Math.max(0, skills.length - 4);
+    const cost = 500 + (additionalSkills * 500);
+    
     const lastCreatedAt = userData.lastSkillCreatedAt?.toMillis() || 0;
-    const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + CREATE_COOLDOWN_SEC * 1000 - Date.now()) / 1000));
+    const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + CREATE_COOLDOWN_MS - Date.now()) / 1000));
 
     root.innerHTML = `
       <section class="container narrow">
@@ -54,17 +56,21 @@ export default async function showCreateSkillPage() {
             </div>
           </div>
 
-          <div class="col" style="gap: 12px; margin-top: 16px;">
+          <div class="col" style="gap: 16px; margin-top: 16px;">
             <div>
-                <label class="kv-label">생성 방식</label>
+                <label class="kv-label">1. 생성 방식</label>
                 <select id="generation-mode" class="input">
                     <option value="auto">AI 자동 생성</option>
                     <option value="manual">이름 수동 입력</option>
                 </select>
             </div>
             <div id="manual-name-wrapper" style="display:none;">
-                <label class="kv-label">스킬 이름</label>
+                <label class="kv-label">2. 스킬 이름 (직접 입력)</label>
                 <input id="skill-name" class="input" placeholder="스킬 이름 (최대 20자)" maxlength="20">
+            </div>
+            <div>
+                <label class="kv-label">3. 스킬 컨셉 (AI에게 전달할 내용)</label>
+                <textarea id="skill-prompt" class="input" rows="4" placeholder="원하는 스킬의 컨셉이나 키워드를 자유롭게 적어주세요. (최대 200자)" maxlength="200"></textarea>
             </div>
           </div>
           
@@ -117,9 +123,14 @@ export default async function showCreateSkillPage() {
     btnCreate.addEventListener('click', async () => {
         const generationMode = modeSelect.value;
         const customName = document.getElementById('skill-name').value.trim();
+        const userPrompt = document.getElementById('skill-prompt').value.trim();
 
         if (generationMode === 'manual' && !customName) {
             showToast('스킬 이름을 입력해주세요.');
+            return;
+        }
+        if (!userPrompt) {
+            showToast('스킬 컨셉을 입력해주세요.');
             return;
         }
 
@@ -128,20 +139,22 @@ export default async function showCreateSkillPage() {
 
         try {
             const generateNewSkill = httpsCallable(func, 'generateNewSkill');
-            const result = await generateNewSkill({ charId, generationMode, customName });
+            const result = await generateNewSkill({ charId, generationMode, customName, userPrompt });
 
             if (result.data.ok) {
                 const { generatedSkill, cost } = result.data;
                 const confirmed = await showConfirmationModal(generatedSkill, cost);
                 if (confirmed) {
                     await applySkill(charId, generatedSkill);
+                } else {
+                    // 사용자가 취소했으므로 쿨타임을 다시 설정하지 않도록 페이지를 새로고침합니다.
+                    showCreateSkillPage();
                 }
             }
         } catch (error) {
             showToast(`생성 실패: ${error.message}`);
-        } finally {
-            // 쿨타임 다시 설정
-            showCreateSkillPage();
+            // 실패 시에는 쿨타임이 돌지 않으므로 즉시 버튼 상태를 갱신합니다.
+            updateButtonState(0);
         }
     });
 
@@ -162,7 +175,7 @@ async function showConfirmationModal(skill, cost) {
                 <div class="kv-card" style="margin-top: 12px;">
                     <div class="kv-label">이름</div>
                     <p><b>${esc(skill.name)}</b></p>
-                    <div class="kv-label" style="margin-top: 8px;">설명</div>
+                    <div class="kv-label" style="margin-top: 8px;">설명 (140자 이내)</div>
                     <p>${esc(skill.desc_soft)}</p>
                 </div>
                 <div class="text-dim" style="font-size:13px; margin-top: 12px;">이 스킬을 🪙 ${cost.toLocaleString()} 코인을 지불하고 캐릭터에 적용하시겠습니까?</div>
@@ -197,5 +210,7 @@ async function applySkill(charId, skill) {
         location.hash = `#/char/${charId}`;
     } catch (error) {
         showToast(`적용 실패: ${error.message}`);
+        // 적용 실패 시, 다시 시도할 수 있도록 페이지를 새로고침합니다.
+        showCreateSkillPage();
     }
 }
