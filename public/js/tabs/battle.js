@@ -18,6 +18,8 @@ const getCooldownStatus = httpsCallable(func, 'getCooldownStatus');
 const setGlobalCooldown = httpsCallable(func, 'setGlobalCooldown');
 const resetCooldownWithCoins = httpsCallable(func, 'resetCooldownWithCoins');
 
+// ANCHOR: [수정] 쿨타임 인터벌 ID를 파일 최상단으로 이동하여 중복 실행 방지
+let cooldownIntervalId = null;
 
 
 // ---------- utils ----------
@@ -73,10 +75,14 @@ function applyGlobalCooldown(seconds){ const until = Date.now() + (seconds*1000)
 
 
 // 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
-// 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
 async function mountCooldownOnButton(btn, mode, labelReady) {
-  const btnReset = document.getElementById('btnResetCooldown'); // 리셋 버튼
-  let intervalId = null;
+  // ANCHOR: [수정] 함수가 호출될 때마다 기존에 실행되던 타이머를 확실히 제거합니다.
+  if (cooldownIntervalId) {
+    clearInterval(cooldownIntervalId);
+    cooldownIntervalId = null;
+  }
+
+  const btnReset = document.getElementById('btnResetCooldown');
   let remainMs = 0;
 
   const tick = () => {
@@ -85,14 +91,15 @@ async function mountCooldownOnButton(btn, mode, labelReady) {
     if (remainMs > 0) {
       btn.disabled = true;
       btn.textContent = `${labelReady} (${s}s)`;
-      if (btnReset) btnReset.style.display = 'inline-flex'; // 쿨타임 있을 때 보이기
+      if (btnReset) btnReset.style.display = 'inline-flex';
     } else {
       btn.disabled = false;
       btn.textContent = labelReady;
-      if (btnReset) btnReset.style.display = 'none'; // 쿨타임 없으면 숨기기
-      if (intervalId) {
-        clearInterval(intervalId);
-        intervalId = null;
+      if (btnReset) btnReset.style.display = 'none';
+      // ANCHOR: [수정] 타이머가 끝나면 다시 한번 확실히 제거합니다.
+      if (cooldownIntervalId) {
+        clearInterval(cooldownIntervalId);
+        cooldownIntervalId = null;
       }
     }
   };
@@ -106,7 +113,8 @@ async function mountCooldownOnButton(btn, mode, labelReady) {
 
       tick();
       if (remainMs > 0) {
-        intervalId = setInterval(tick, 500);
+        // ANCHOR: [수정] 파일 전역 변수에 인터벌 ID를 할당합니다.
+        cooldownIntervalId = setInterval(tick, 500);
       }
     }
   } catch (e) {
@@ -304,9 +312,7 @@ export async function showBattle(){
       try {
         await resetCooldownWithCoins();
         showToast('쿨타임이 초기화되었습니다.');
-        // ▼▼▼ [수정된 부분] ▼▼▼
         localStorage.removeItem('toh.cooldown.allUntilMs');
-        // ▲▲▲ [수정된 부분] ▲▲▲
         const btnStart = document.getElementById('btnStart');
         if (btnStart) {
           await mountCooldownOnButton(btnStart, 'battle', labelReady);
@@ -370,11 +376,6 @@ export async function showBattle(){
         }
         btnStart.disabled = true;
 
-      // ▼▼▼ [수정된 부분] ▼▼▼
-      // 쿨타임을 미리 설정하던 코드를 모두 삭제합니다.
-      // try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown pre-start failed', e); }
-      // try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_) {}
-
       try {
         // 실제 배틀 시작 로직만 남겨둡니다.
         await startBattleProcess(myCharData, opponentCharData);
@@ -383,7 +384,6 @@ export async function showBattle(){
         // 실패 시 버튼 쿨타임을 다시 마운트합니다.
         await mountCooldownOnButton(btnStart, 'battle', labelReady);
       }
-      // ▲▲▲ [수정된 부분] ▲▲▲
     };
 
 
