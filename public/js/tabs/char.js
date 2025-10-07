@@ -205,7 +205,8 @@ export async function showCharDetail(){
   }
 }
 
-async function render(c){
+// anchor: 렌더 함수 시그니처 수정
+async function render(c, activeTab, activeSub){
   const root = document.getElementById('view');
   const tier = tierOf(c.elo||1000);
   const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
@@ -373,15 +374,15 @@ if (btnLike) {
   };
 
   // 초기 활성화 탭 설정
-  let initialTab = activeTab;
+  let initialTab = activeTab; // <-- 인자로 받은 activeTab 사용
   if(!['bio','loadout','growth','history'].includes(initialTab)) initialTab = 'bio';
 
   tabs.forEach(b => {
     if (b.dataset.tab === initialTab) {
       b.classList.add('active');
-      renderTabContent(initialTab, activeSub);
+      renderTabContent(initialTab, activeSub); // <-- 인자로 받은 activeSub 사용
     }
-  });
+  })
 
 
   tabs.forEach(b=>b.onclick=()=>{
