@@ -289,7 +289,7 @@ export async function showBattle(){
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
         // ▼▼▼ [수정된 부분] ▼▼▼
-        <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (100 코인)</button>
+        <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (300 코인)</button>
         // ▲▲▲ [수정된 부분] ▲▲▲
         <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
