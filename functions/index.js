@@ -150,6 +150,38 @@ exports.setGlobalCooldown = onCall({ region:'us-central1' }, async (req)=>{
   return { ok:true };
 });
 
+
+// === [신규] 코인으로 쿨타임 초기화 ===
+exports.resetCooldownWithCoins = onCall({ region:'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+  const COST = 300;
+  const userRef = db.doc(`users/${uid}`);
+
+  await db.runTransaction(async (tx) => {
+    const userSnap = await tx.get(userRef);
+    if (!userSnap.exists) {
+      throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+    }
+    const userData = userSnap.data() || {};
+    const userCoins = userData.coins || 0;
+
+    if (userCoins < COST) {
+      throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${COST})`);
+    }
+
+    tx.update(userRef, {
+      coins: FieldValue.increment(-COST),
+      cooldown_all_until: 0 // 쿨타임을 0으로 설정하여 즉시 초기화
+    });
+  });
+
+  logger.info(`User ${uid} reset their cooldown for ${COST} coins.`);
+  return { ok: true, paid: COST };
+});
+
+
 // === [신규] 주간 길드 기여도 초기화 (매주 월요일 0시 실행) ===
 exports.resetWeeklyGuildPoints = onSchedule({
     schedule: "every monday 00:00",
