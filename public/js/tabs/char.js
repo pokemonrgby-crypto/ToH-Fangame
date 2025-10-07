@@ -194,7 +194,8 @@ export async function showCharDetail(){
         return; 
     }
     
-    await render(c, tab, sub);
+    // [수정]: tab과 sub 인자를 render 함수로 전달
+    await render(c, tab, sub); 
   }catch(e){
     console.error('[char] load error', e);
     const msg = e?.code==='permission-denied'
