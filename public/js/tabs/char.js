@@ -11,7 +11,7 @@ import { getUserInventory } from '../api/user.js';
 import { showToast } from '../ui/toast.js';
 import { showItemDetailModal } from '../ui/item.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
-import { prettyTime } from '../ui/utils.js'; // ANCHOR: [추가] 날짜 포맷 함수 import
+import { prettyTime } from '../ui/utils.js';
 
 export function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({
@@ -217,6 +217,7 @@ async function render(c){
     }
   } catch (_) {}
 
+  // ANCHOR: [수정] 탭 버튼 UI 변경
   root.innerHTML = `
   <section class="container narrow">
     <div class="card p16 char-card">
@@ -255,9 +256,10 @@ async function render(c){
     </div>
     <div class="book-card mt16">
       <div class="bookmarks">
-        <button class="bookmark active" data-tab="bio">기본 소개 / 서사</button>
-        <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
-        <button class="bookmark" data-tab="history">배틀 / 조우 / 탐험 전적</button>
+        <button class="bookmark active" data-tab="bio">소개</button>
+        <button class="bookmark" data-tab="loadout">스킬/아이템</button>
+        <button class="bookmark" data-tab="history">타임라인</button>
+        ${isOwner ? `<button class="bookmark" data-tab="growth">성장</button>` : ''}
       </div>
       <div class="bookview" id="bookview"></div>
     </div>
@@ -341,6 +343,7 @@ if (btnLike) {
   });
 }
 
+  // ANCHOR: [수정] 탭 클릭 핸들러에 'growth' 추가
   const bv = root.querySelector('#bookview');
   const tabs = root.querySelectorAll('.bookmark');
   tabs.forEach(b=>b.onclick=()=>{
@@ -349,12 +352,37 @@ if (btnLike) {
     const t=b.dataset.tab;
     if(t==='bio') renderBio(c, bv);
     else if(t==='loadout') renderLoadout(c, bv);
+    else if(t==='growth') renderGrowth(c, bv);
     else renderHistory(c, bv);
   });
   renderBio(c, bv);
 }
 
-// ... (기존 코드와 동일)
+// ANCHOR: [추가] 성장 탭 렌더링 함수
+function renderGrowth(c, view) {
+  view.innerHTML = `
+    <div class="p12">
+      <div class="grid3">
+        <a href="#/char-create-skill?id=${c.id}" class="kv-card" style="text-decoration: none; color: inherit; text-align: center;">
+          <div style="font-size: 24px;">✨</div>
+          <div style="font-weight: 800; margin-top: 8px;">스킬 생성</div>
+          <div class="text-dim" style="font-size: 12px; margin-top: 4px;">새로운 스킬을 배웁니다. (최대 8개)</div>
+        </a>
+        <a href="#/char-enhance-skill?id=${c.id}" class="kv-card" style="text-decoration: none; color: inherit; text-align: center;">
+          <div style="font-size: 24px;">🚀</div>
+          <div style="font-weight: 800; margin-top: 8px;">스킬 성장</div>
+          <div class="text-dim" style="font-size: 12px; margin-top: 4px;">기존 스킬을 강화합니다. (미구현)</div>
+        </a>
+        <a href="#/char-progress-narrative?id=${c.id}" class="kv-card" style="text-decoration: none; color: inherit; text-align: center;">
+          <div style="font-size: 24px;">📜</div>
+          <div style="font-weight: 800; margin-top: 8px;">서사 진행</div>
+          <div class="text-dim" style="font-size: 12px; margin-top: 4px;">새로운 서사를 추가합니다. (미구현)</div>
+        </a>
+      </div>
+    </div>
+  `;
+}
+
 
 function mountFixedActions(c, isOwner){
   document.querySelector('.fixed-actions')?.remove();
@@ -408,6 +436,7 @@ function mountFixedActions(c, isOwner){
   bar.querySelector('#fabMockBattle').onclick = () => openMyCharPickerForMock(c.id, 'battle', goMock);
   bar.querySelector('#fabMockEncounter').onclick = () => openMyCharPickerForMock(c.id, 'encounter', goMock);
 }
+
 
 
 function renderBio(c, view){
