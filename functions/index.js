@@ -156,7 +156,7 @@ exports.resetCooldownWithCoins = onCall({ region:'us-central1' }, async (req) =>
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-  const COST = 300;
+  const COST = 1000;
   const userRef = db.doc(`users/${uid}`);
 
   await db.runTransaction(async (tx) => {
