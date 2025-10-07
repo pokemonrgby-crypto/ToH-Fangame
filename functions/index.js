@@ -23,6 +23,7 @@ const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
 const charFns = require('./character')(admin); // [추가] character.js 로드
 const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
+const historyFns = require('./history')(admin, { onCall, HttpsError });
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -713,7 +714,7 @@ exports.startEncounter = encounterV2.startEncounter;
 
 Object.assign(exports, raidFns);
 
-
+Object.assign(exports, historyFns);
 
 
 const guildFns = require('./guild')(admin, { onCall, HttpsError, logger });
