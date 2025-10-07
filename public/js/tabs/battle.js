@@ -238,8 +238,21 @@ async function startBattleProcess(myChar, opponentChar) {
         progress.update('완료! 결과 페이지로 이동합니다.', 100);
         
         // 쿨타임 적용
-        try { await setGlobalCooldown({ seconds: 300 }); } catch (e) { console.warn('setGlobalCooldown post-finish failed', e); }
-        try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(300); } catch (_) {}
+        try { await setGlobalCooldown({ seconds: 180 }); } catch (e) { console.warn('setGlobalCooldown post-finish failed', e); }
+        try { if (typeof applyGlobalCooldown === 'function') applyGlobalCooldown(180); } catch (_) {}
+
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        // 배틀 종료 후 즉시 다음 매칭이 가능하도록 클라이언트 측 매칭 잠금을 해제합니다.
+        try {
+            const intent = intentGuard('battle');
+            if (intent && intent.charId) {
+                const lockKey = _lockKey('battle', intent.charId);
+                sessionStorage.removeItem(lockKey);
+            }
+        } catch (e) {
+            console.warn('배틀 후 매칭 잠금 해제 실패', e);
+        }
+        // ▲▲▲ [수정된 부분] ▲▲▲
 
         setTimeout(() => {
             progress.remove();
