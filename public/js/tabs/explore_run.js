@@ -46,19 +46,22 @@ function renderHeader(box, run){
 }
 
 function eventLineHTML(ev) {
-  const kind = ev.dice?.eventKind || ev.kind || 'narrative';
-  const note = ev.note || '이벤트가 발생했습니다.';
-  const styleMap = {
-    combat: { border: '#ff5b66', title: '전투 발생' },
-    item:   { border: '#f3c34f', title: '아이템 발견' },
-    risk:   { border: '#f3c34f', title: '위험 감수' },
-    safe:   { border: '#4aa3ff', title: '안전한 휴식' },
-    narrative: { border: '#6e7b91', title: '이야기 진행' },
-    'combat-retreat': { border: '#ff5b66', title: '후퇴' },
-  };
-  const { border, title } = styleMap[kind] || styleMap.narrative;
-  const formattedNote = esc(note).replace(/(\[선택:.*?\])/g, '<span style="color: #8c96a8;">$1</span>');
-  return `<div class="kv-card" style="border-left:3px solid ${border};padding-left:10px">
+    const kind = ev.dice?.eventKind || ev.kind || 'narrative';
+    const note = ev.note || '이벤트가 발생했습니다.';
+    const styleMap = {
+        combat: { border: '#ff5b66', title: '전투 발생' },
+        item: { border: '#f3c34f', title: '아이템 발견' },
+        risk: { border: '#f3c34f', title: '위험 감수' },
+        safe: { border: '#4aa3ff', title: '안전한 휴식' },
+        narrative: { border: '#6e7b91', title: '이야기 진행' },
+        'combat-retreat': { border: '#ff5b66', title: '후퇴' },
+        'combat-win': { border: '#57d165', title: '전투 승리' },
+        'combat-loss': { border: '#ff5b66', title: '전투 패배' },
+        'combat-log': { border: '#8c96a8', title: '전투 로그' },
+    };
+    const { border, title } = styleMap[kind] || styleMap.narrative;
+    const formattedNote = esc(note).replace(/(\[선택:.*?\])/g, '<span style="color: #8c96a8;">$1</span>');
+    return `<div class="kv-card" style="border-left:3px solid ${border};padding-left:10px">
       <div style="font-weight:800">${title}</div>
       <div class="text-dim" style="font-size:12px; white-space: pre-wrap; line-height: 1.6;">${formattedNote}</div>
     </div>`;
@@ -163,55 +166,76 @@ export async function showExploreRun() {
     bindButtons(runState);
   };
 
- const bindButtons = (runState) => {
-  if (runState.status !== 'ongoing') return;
+  const bindButtons = (runState) => {
+    if (runState.status !== 'ongoing') return;
 
-  if (runState.pending_choices) {
-      root.querySelectorAll('.choice-btn').forEach(btn => {
-          btn.onclick = (e) => {
-              // Disable all buttons immediately
-              root.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
-              handleChoice(parseInt(e.target.dataset.index, 10));
-          };
-      });
-  } else {
-      const btnMove = root.querySelector('#btnMove');
-      if (btnMove) {
-          btnMove.disabled = runState.stamina <= STAMINA_MIN;
-          btnMove.onclick = prepareNextTurn;
-      }
-      const btnGiveUp = root.querySelector('#btnGiveUp');
-      if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
-  }
-};
+    if (runState.pending_choices) {
+        root.querySelectorAll('.choice-btn').forEach(btn => {
+            btn.onclick = (e) => {
+                // Disable all buttons immediately
+                root.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+                handleChoice(parseInt(e.target.dataset.index, 10));
+            };
+        });
+    } else {
+        const btnMove = root.querySelector('#btnMove');
+        if (btnMove) {
+            btnMove.disabled = runState.stamina <= STAMINA_MIN;
+            btnMove.onclick = prepareNextTurn;
+        }
+        const btnGiveUp = root.querySelector('#btnGiveUp');
+        if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
+    }
+  };
 
+  const prepareNextTurn = async () => {
+    showLoading(true, 'AI가 다음 상황을 생성 중...');
+    try {
+      const pendingTurn = await serverPrepareNext(state.id);
+      state.pending_choices = pendingTurn;
+      render(state);
+    } catch (e) {
+      console.error('[explore] prepareNextTurn failed', e);
+      showToast('오류: 시나리오 생성에 실패했어');
+    } finally {
+      showLoading(false);
+    }
+  };
 
 
   const handleChoice = async (index) => {
     showLoading(true, '선택지 적용 중...');
     try {
-        // ANCHOR: [수정] 서버로부터 state를 포함한 전체 결과를 받습니다.
         const result = await serverApplyChoice(state.id, index); 
         
-        // ANCHOR: [수정] 서버가 보내준 최신 state로 클라이언트의 state를 덮어씁니다.
-        // 이렇게 하면 새로고침 없이도 모든 변경사항(스태미나, 이벤트 로그 등)이 반영됩니다.
         if (result.state) {
           state = { id: state.id, ...result.state };
+        } else {
+          state = await getActiveRun(runId);
         }
 
-        if (result.battle) {
+        if (state.pending_battle) {
             location.hash = `#/explore-battle/${state.id}`;
             return; 
         }
-        if (result.done) showToast('탐험이 종료되었어');
 
-        // ANCHOR: [수정] 업데이트된 state로 화면을 다시 그립니다.
+        if (state.status === 'ended') {
+            showToast('탐험이 종료되었어');
+        }
+
         render(state);
     } catch (e) {
         console.error('[explore] handleChoice failed', e);
-        showToast('선택 적용 중 오류가 발생했어');
+        showToast('오류가 발생했습니다. 잠시 후 상태를 다시 동기화합니다.');
+        try {
+          state = await getActiveRun(runId);
+          render(state);
+        } catch (fetchError) {
+          console.error('[explore] Failed to fetch state after error', fetchError);
+          showToast('상태 동기화에 실패했습니다. 탐험 선택 화면으로 돌아갑니다.');
+          location.hash = '#/adventure';
+        }
     } finally {
-        // 전투 화면으로 넘어가지 않았을 경우에만 로딩 오버레이를 제거합니다.
         if (location.hash.startsWith('#/explore-run/')) {
             showLoading(false);
         }
