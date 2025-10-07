@@ -16,9 +16,8 @@ import { func } from '../api/firebase.js';
 
 const getCooldownStatus = httpsCallable(func, 'getCooldownStatus');
 const setGlobalCooldown = httpsCallable(func, 'setGlobalCooldown');
-// ▼▼▼ [수정된 부분] ▼▼▼
 const resetCooldownWithCoins = httpsCallable(func, 'resetCooldownWithCoins');
-// ▲▲▲ [수정된 부분] ▲▲▲
+
 
 
 // ---------- utils ----------
@@ -74,7 +73,7 @@ function applyGlobalCooldown(seconds){ const until = Date.now() + (seconds*1000)
 
 
 // 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
-// ▼▼▼ [수정된 부분] ▼▼▼
+// 이 함수는 이제 서버에서 직접 쿨타임 정보를 가져와 버튼에 반영합니다.
 async function mountCooldownOnButton(btn, mode, labelReady) {
   const btnReset = document.getElementById('btnResetCooldown'); // 리셋 버튼
   let intervalId = null;
@@ -115,7 +114,6 @@ async function mountCooldownOnButton(btn, mode, labelReady) {
     btn.textContent = '정보 조회 실패';
   }
 }
-// ▲▲▲ [수정된 부분] ▲▲▲
 // ---------- Battle Progress & Logic ----------
 
 function showBattleProgressUI(myChar, opponentChar) {
@@ -288,7 +286,7 @@ export async function showBattle(){
     </div>
     <div class="card p16 mt16" id="toolPanel">
       <div style="display:flex;gap:8px;justify-content:flex-end">
-        <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (300 코인)</button>
+        <button class="btn ghost" id="btnResetCooldown" style="display:none;">쿨타임 초기화 (1000 코인)</button>
         <button class="btn" id="btnStart" disabled>${labelReady}</button>
       </div>
     </div>
@@ -301,12 +299,14 @@ export async function showBattle(){
   const btnReset = document.getElementById('btnResetCooldown');
   if (btnReset) {
     btnReset.onclick = async () => {
-      if (!confirm('300 코인을 사용하여 배틀 쿨타임을 초기화하시겠습니까?')) return;
+      if (!confirm('1000 코인을 사용하여 배틀 쿨타임을 초기화하시겠습니까?')) return;
       btnReset.disabled = true;
       try {
         await resetCooldownWithCoins();
         showToast('쿨타임이 초기화되었습니다.');
-        // 쿨타임 버튼 상태 즉시 갱신
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        localStorage.removeItem('toh.cooldown.allUntilMs');
+        // ▲▲▲ [수정된 부분] ▲▲▲
         const btnStart = document.getElementById('btnStart');
         if (btnStart) {
           await mountCooldownOnButton(btnStart, 'battle', labelReady);
