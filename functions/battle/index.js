@@ -24,7 +24,25 @@ function stripFences(s = '') {
 }
 function tryJsonSafe(t) {
     if (!t) return null;
-    try { return JSON.parse(stripFences(t)); } catch { return null; }
+    try {
+        let clean = stripFences(t);
+        // AI 응답이 중괄호로 시작하고 끝나도록 보정
+        const firstBrace = clean.indexOf('{');
+        const lastBrace = clean.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace > firstBrace) {
+            clean = clean.slice(firstBrace, lastBrace + 1);
+        }
+        // 후행 쉼표(trailing comma) 제거
+        clean = clean.replace(/,\s*([}\]])/g, '$1');
+        return JSON.parse(clean);
+    } catch (e) {
+        // 파싱 실패 시 에러를 로그에 남겨 디버깅을 돕습니다.
+        logger.error("Robust JSON parse failed", {
+            rawText: String(t).slice(0, 500),
+            error: e.message
+        });
+        return null;
+    }
 }
 
 // Gemini 호출 (서버 직통)
