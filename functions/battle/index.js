@@ -19,6 +19,12 @@ const { defineSecret } = require('firebase-functions/params');
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // firebase functions:secrets:set GEMINI_API_KEY
 
 // ---------- 공통 유틸 ----------
+const MODEL_POOL = ['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+
+function pickModels() {
+  const shuffled = [...MODEL_POOL].sort(() => 0.5 - Math.random());
+  return { primary: shuffled[0], fallback: shuffled[1] || shuffled[0] };
+}
 function stripFences(s = '') {
     return String(s).trim().replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
 }
@@ -208,7 +214,14 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     `.trim();
 
     // 3. AI 호출 (단일 호출로 시나리오 생성, 선택, 최종 로그 작성을 모두 처리)
-    const finalRaw = await callGeminiServer('gemini-2.5-flash', systemPrompt, userPrompt);
+    const { primary, fallback } = pickModels();
+    let finalRaw = '';
+    try {
+        finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt);
+    } catch (e) {
+        logger.warn(`[runBattleV2] Primary model ${primary} failed, trying fallback ${fallback}.`, { error: e.message });
+        finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt);
+    }
     const finalJson = tryJsonSafe(finalRaw);
 
     if (!finalJson || typeof finalJson.winner_index !== 'number') {
