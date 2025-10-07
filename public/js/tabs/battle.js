@@ -214,6 +214,12 @@ async function startBattleProcess(myChar, opponentChar) {
 
         progress.update('AI가 배틀 시나리오 생성 중...', 50);
 
+        const intentNow = (() => {
+           try { return JSON.parse(sessionStorage.getItem('toh.match.intent') || '{}'); }
+           catch(_) { return {}; }
+        })();
+        const isSimNow = !!intentNow?.sim;
+
         // [신규] 단일 서버 함수 호출
         const runBattleFn = httpsCallable(func, 'runBattleV2');
         const result = await runBattleFn({
@@ -221,6 +227,8 @@ async function startBattleProcess(myChar, opponentChar) {
             defenderId: opponentChar.id,
             worldId: myChar.world_id,
             simulate: isSimNow,
+            // AI용 데이터는 서버에서 다시 만들지만, 클라이언트 데이터를 함께 보내면 디버깅에 용이할 수 있음
+            // _clientData: { attacker: attackerData, defender: defenderData, relation } 
         });
 
         if (!result.data.ok) {
