@@ -2,6 +2,8 @@
 import { auth, db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { serverBattleAction, serverBattleFlee } from '../api/explore.js';
+// [추가] Firestore 서버에서 직접 데이터를 가져오기 위한 함수를 import합니다.
+import { getDocFromServer } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
 
 // --- 유틸리티 함수 ---
 function esc(s){ return String(s??'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
@@ -41,7 +43,8 @@ export async function showExploreBattle() {
   }
 
   const runRef = fx.doc(db, 'explore_runs', runId);
-  const runSnap = await fx.getDoc(runRef);
+  // [수정] getDoc 대신 getDocFromServer를 사용하여 항상 최신 데이터를 가져옵니다.
+  const runSnap = await getDocFromServer(runRef);
 
   if (!runSnap.exists() || !runSnap.data().pending_battle) {
     root.innerHTML = `<section class="container narrow"><div class="kv-card">활성화된 전투가 없습니다. 탐험 화면으로 돌아갑니다.</div></section>`;
