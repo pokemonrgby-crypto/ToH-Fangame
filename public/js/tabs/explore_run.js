@@ -163,37 +163,72 @@ export async function showExploreRun() {
     bindButtons(runState);
   };
 
-  const bindButtons = (runState) => {
-    if (runState.status !== 'ongoing') return;
+ const bindButtons = (runState) => {
+  if (runState.status !== 'ongoing') return;
 
-    if (runState.pending_choices) {
-        root.querySelectorAll('.choice-btn').forEach(btn => {
-            btn.onclick = () => handleChoice(parseInt(btn.dataset.index, 10));
-        });
-    } else {
-        const btnMove = root.querySelector('#btnMove');
-        if (btnMove) {
-            btnMove.disabled = runState.stamina <= STAMINA_MIN;
-            btnMove.onclick = prepareNextTurn;
-        }
-        const btnGiveUp = root.querySelector('#btnGiveUp');
-        if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
-    }
-  };
+  if (runState.pending_choices) {
+      root.querySelectorAll('.choice-btn').forEach(btn => {
+          btn.onclick = (e) => {
+              // Disable all buttons immediately
+              root.querySelectorAll('.choice-btn').forEach(b => b.disabled = true);
+              handleChoice(parseInt(e.target.dataset.index, 10));
+          };
+      });
+  } else {
+      const btnMove = root.querySelector('#btnMove');
+      if (btnMove) {
+          btnMove.disabled = runState.stamina <= STAMINA_MIN;
+          btnMove.onclick = prepareNextTurn;
+      }
+      const btnGiveUp = root.querySelector('#btnGiveUp');
+      if (btnGiveUp) btnGiveUp.onclick = () => endRun('giveup');
+  }
+};
 
-  const prepareNextTurn = async () => {
-    showLoading(true, 'AI가 다음 상황을 생성 중...');
+const handleChoice = async (index) => {
+    // Buttons are already disabled by the new bindButtons logic
+    showLoading(true, '선택지 적용 중...');
     try {
-      const pendingTurn = await serverPrepareNext(state.id);
-      state.pending_choices = pendingTurn;
-      render(state); // ← 여기서 즉시 리렌더
+        const result = await serverApplyChoice(state.id, index); 
+        
+        // Always trust the server's state
+        if (result.state) {
+          state = { id: state.id, ...result.state };
+        } else {
+          // If server for some reason didn't return state, fetch it manually
+          state = await getActiveRun(runId);
+        }
+
+        if (state.pending_battle) {
+            location.hash = `#/explore-battle/${state.id}`;
+            return; 
+        }
+
+        if (state.status === 'ended') {
+            showToast('탐험이 종료되었어');
+        }
+
+        render(state); // Re-render with the fresh state
     } catch (e) {
-      console.error('[explore] prepareNextTurn failed', e);
-      showToast('오류: 시나리오 생성에 실패했어');
+        console.error('[explore] handleChoice failed', e);
+        showToast('오류가 발생했습니다. 잠시 후 상태를 다시 동기화합니다.');
+        // On error, the server state might have changed. Fetch the truth from the server.
+        try {
+          state = await getActiveRun(runId);
+          render(state);
+        } catch (fetchError) {
+          console.error('[explore] Failed to fetch state after error', fetchError);
+          showToast('상태 동기화에 실패했습니다. 탐험 선택 화면으로 돌아갑니다.');
+          location.hash = '#/adventure';
+        }
     } finally {
-      showLoading(false);
+        // Only hide loading if we are not navigating away
+        if (location.hash.startsWith('#/explore-run/')) {
+            showLoading(false);
+        }
     }
   };
+
 
 
   const handleChoice = async (index) => {
