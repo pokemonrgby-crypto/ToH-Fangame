@@ -65,7 +65,6 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
 
-        // ANCHOR: [수정] .exists()를 .exists로 변경
         if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
         const charData = charSnap.data();
         if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
@@ -133,7 +132,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             const userRef = db.doc(`users/${uid}`);
 
             const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
-            if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+            if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
             
             const charData = charSnap.data();
             if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
