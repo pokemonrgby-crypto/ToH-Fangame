@@ -17,18 +17,28 @@ const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch
 
 const { defineSecret } = require('firebase-functions/params');
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // firebase functions:secrets:set GEMINI_API_KEY
-
+const BATTLE_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["title", "content", "winner_index"],
+  properties: {
+    title: { type: "string", maxLength: 200 },
+    content: { type: "string", maxLength: 9000 },
+    winner_index: { type: "integer", enum: [0, 1] },
+    exp_char0: { type: "integer" },
+    exp_char1: { type: "integer" }
+  }
+};
 // ---------- 공통 유틸 ----------
 function stripFences(s = '') {
     return String(s).trim().replace(/^```(?:json)?\s*/, '').replace(/```$/, '').trim();
 }
-// (기존 코드 상단...)
 
-// ▼▼▼ 이 함수 전체를 교체하세요 ▼▼▼
+// ▼▼▼ [수정] JSON 파싱 안정성 강화 함수 ▼▼▼
 function tryJsonSafe(t) {
     if (!t) return null;
     try {
-        // 1. 코드 블록 마커(```) 제거
+        // 1. 코드 블록 마커(```)와 앞뒤 공백 제거
         let clean = stripFences(t);
 
         // 2. 텍스트에서 첫 '{'와 마지막 '}'를 찾아 JSON 객체 부분만 추출
@@ -38,10 +48,10 @@ function tryJsonSafe(t) {
             clean = clean.slice(firstBrace, lastBrace + 1);
         }
 
-        // 3. JSON 문법 오류를 유발하는 후행 쉼표(trailing comma) 제거
+        // 3. JSON 문법 오류를 유발하는 후행 쉼표(trailing comma) 제거 (예: [1, 2,])
         clean = clean.replace(/,\s*([}\]])/g, '$1');
 
-        // 4. JSON에 포함될 수 있는 주석 제거
+        // 4. JSON에 포함될 수 있는 주석 제거 (예: // 주석)
         clean = clean.replace(/\/\*[\s\S]*?\*\/|([^\\:]|^)\/\/.*$/gm, '$1');
 
         return JSON.parse(clean);
@@ -55,42 +65,85 @@ function tryJsonSafe(t) {
         return null;
     }
 }
-// ▲▲▲ 이 함수 전체를 교체하세요 ▲▲▲
+// ▲▲▲ [수정] 여기까지 ▲▲▲
 
-// (이하 기존 코드...)
 
 // Gemini 호출 (서버 직통)
-async function callGeminiServer(model, systemText, userText, temperature = 0.85, maxOutputTokens = 8192) {
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY.value()}`;
-    const body = {
-        systemInstruction: { role: 'system', parts: [{ text: String(systemText || '') }] },
-        contents: [{ role: 'user', parts: [{ text: String(userText || '') }] }],
-        generationConfig: {
-            temperature,
-            maxOutputTokens,
-            topK: 40,
-            topP: 0.95,
-            candidateCount: 1,
-            responseMimeType: "application/json"
-        },
-        safetySettings: [
-            { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
-            { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
-        ]
-    };
-    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-    if (!res.ok) {
-        const txt = await res.text().catch(() => '');
-        throw new HttpsError('internal', `Gemini ${model} 호출 실패: ${res.status} ${txt}`);
-    }
-    const j = await res.json().catch(() => null);
-    const text = j?.candidates?.[0]?.content?.parts?.[0]?.text ?? '';
-    if (!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있음');
-    return text;
-}
+// ▼▼▼ [교체] 스키마+툴콜 강제, 안전 수신 버전 ▼▼▼
+async function callGeminiServer(
+  model,
+  systemText,
+  userText,
+  temperature = 0.85,
+  maxOutputTokens = 8192,
+  responseSchema = null
+) {
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY.value()}`;
 
+  const tools = responseSchema ? [{
+    functionDeclarations: [{
+      name: "deliver",
+      description: "배틀 결과를 구조화해 반환",
+      parameters: responseSchema
+    }]
+  }] : undefined;
+
+  const body = {
+    systemInstruction: { role: 'system', parts: [{ text: String(systemText || '') }] },
+    contents: [{ role: 'user', parts: [{ text: String(userText || '') }] }],
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+      topK: 40,
+      topP: 0.95,
+      candidateCount: 1,
+      responseMimeType: responseSchema ? "application/json" : "text/plain",
+      ...(responseSchema ? { responseSchema } : {})
+    },
+    ...(tools ? { tools, toolConfig: { functionCallingConfig: { mode: "ANY" } } } : {}),
+    safetySettings: [
+      { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
+      { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
+    ]
+  };
+
+  const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!res.ok) {
+    const txt = await res.text().catch(() => '');
+    throw new HttpsError('internal', `Gemini ${model} 호출 실패: ${res.status} ${txt}`);
+  }
+
+  const j = await res.json().catch(() => null);
+  const parts = j?.candidates?.[0]?.content?.parts || [];
+
+  // 1) 함수 호출(툴콜) 응답 우선
+  const fc = parts.find(p => p.functionCall)?.functionCall;
+  if (fc?.name === 'deliver' && fc?.args) {
+    return fc.args; // 이미 객체
+  }
+
+  // 2) 인라인 JSON 데이터 (드물지만 대비)
+  const inline = parts.find(p => p.inlineData || p.inline_data);
+  const inlineData = inline?.inlineData || inline?.inline_data;
+  if (inlineData?.mimeType === 'application/json' || inlineData?.mime_type === 'application/json') {
+    const raw = Buffer.from(inlineData.data || '', 'base64').toString('utf8');
+    try {
+      return JSON.parse(raw);
+    } catch {}
+    return raw; // 최후: 텍스트로 반환
+  }
+
+  // 3) 텍스트(구 JSON 문자열) - 기존 호환
+  const text = parts.find(p => typeof p.text === 'string')?.text ?? '';
+  if (!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있음');
+  return text;
+}
+// ▲▲▲ [교체 끝] ▲▲▲
+
+
+// ( ... 이하 파일의 나머지 코드는 기존과 동일합니다 ... )
 // 서버에서 프롬프트 로드 (configs/prompts)
 async function fetchPromptDocServer(id) {
     const ref = db.doc('configs/prompts');
@@ -122,17 +175,13 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 
     if (!attackerId || !defenderId) throw new HttpsError('invalid-argument', 'attackerId/defenderId 필요');
 
-    // ▼▼▼ [수정된 부분 시작] ▼▼▼
     const userRef = db.doc(`users/${uid}`);
     const nowSec = Math.floor(Date.now() / 1000);
     
-    // userSnap과 userData를 if문 밖으로 이동
     const userSnap = await userRef.get();
     const userData = userSnap.exists ? userSnap.data() : {};
 
-    // 모의전이 아닐 경우에만 쿨타임을 다시 한번 확인합니다.
     if (!simulate) {
-        // functions/match.ts와 동일한 방식으로 쿨타임 값을 읽어옵니다.
         const rawCooldown = userData.cooldown_all_until;
         const cooldownUntil = (typeof rawCooldown === 'number')
             ? (Number(rawCooldown) || 0)
@@ -143,7 +192,6 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
         }
     }
-    // ▲▲▲ [수정된 부분 끝] ▲▲▲
     
     const Aref = db.doc(`chars/${attackerId}`);
     const Bref = db.doc(`chars/${defenderId}`);
@@ -159,10 +207,8 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
         relationNote = noteSnap.exists ? String(noteSnap.data()?.note || '없음') : '없음';
     } catch { relationNote = '없음'; }
 
-    // 1. 통합 시스템 프롬프트 로드
     const systemPrompt = await fetchPromptDocServer('battle_system_prompt_unified');
 
-    // 2. AI 입력 데이터 구성
     const simplifyForAI = (char, inv) => {
         const equippedSkills = (char.abilities_equipped || []).map(idx => (char.abilities_all || [])[idx]).filter(Boolean);
         const equippedItems = (char.items_equipped || []).map(id => inv.find(i => i.id === id)).filter(Boolean);
@@ -207,9 +253,12 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 </INPUT>
     `.trim();
 
-    // 3. AI 호출 (단일 호출로 시나리오 생성, 선택, 최종 로그 작성을 모두 처리)
-    const finalRaw = await callGeminiServer('gemini-2.5-flash', systemPrompt, userPrompt);
-    const finalJson = tryJsonSafe(finalRaw);
+    const finalOut = await callGeminiServer('gemini-2.5-flash', systemPrompt, userPrompt, 0.85, 8192, BATTLE_SCHEMA);
+const finalJson = (typeof finalOut === 'string') ? tryJsonSafe(finalOut) : finalOut;
+if (!finalJson) {
+  logger.error('battle V2 invalid response', { head: String(finalOut || '').slice(0, 400) });
+  throw new HttpsError('internal', 'AI가 유효한 배틀 결과를 반환하지 않았어');
+}
 
     if (!finalJson || typeof finalJson.winner_index !== 'number') {
         logger.error('battle V2 invalid response', { head: String(finalRaw || '').slice(0, 400) });
@@ -222,7 +271,6 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     const battleTitle = String(finalJson.title || '치열한 결투');
     const battleContent = String(finalJson.content || '결과를 생성하는 데 실패했습니다.');
 
-    // 4. 결과 저장
     const logRef = db.collection('battle_logs').doc();
     const sA = winner_index === 0 ? 1 : 0;
     const sB = winner_index === 1 ? 1 : 0;
@@ -289,7 +337,6 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
         });
     }
 
-    // 5. 쿨타임 적용
     const WINDOW = 180;
     const nowSecAfter = Math.floor(Date.now() / 1000);
     const uShot = await userRef.get();
@@ -301,10 +348,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     const untilSec = Math.max(existSec, nextBoundary);
     await userRef.set({ cooldown_all_until: untilSec }, { merge: true });
 
-    // ▼▼▼ [수정된 부분] ▼▼▼
     return { ok: true, logId: logRef.id, simulate };
-    // ▲▲▲ [수정된 부분] ▲▲▲
 });
 
-// 이전 함수(runBattleTextOnly)를 새 V2 함수를 가리키도록 하여 호환성을 유지합니다.
 exports.runBattleTextOnly = exports.runBattleV2;
