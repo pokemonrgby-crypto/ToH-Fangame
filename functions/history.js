@@ -3,6 +3,14 @@ module.exports = (admin, { onCall, HttpsError }) => {
     const db = admin.firestore();
     const { Timestamp } = admin.firestore;
 
+    // [추가] 숫자와 Timestamp 객체를 모두 밀리초로 변환하는 헬퍼 함수
+    const toMillis = (ts) => {
+        if (!ts) return 0;
+        if (typeof ts === 'number') return ts; // 이미 숫자 형식인 경우
+        if (typeof ts.toMillis === 'function') return ts.toMillis(); // Timestamp 객체인 경우
+        return 0;
+    };
+
     const getUserBattleHistory = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -14,12 +22,11 @@ module.exports = (admin, { onCall, HttpsError }) => {
         const BATTLE_LOGS = db.collection('battle_logs');
         const limitNum = Math.max(1, Math.min(30, Number(limit)));
 
-        // Firestore는 OR 쿼리를 지원하지 않으므로, 두 개의 쿼리를 병렬로 실행합니다.
         let queryA = BATTLE_LOGS.where('attacker_char', '==', charRef).orderBy('endedAt', 'desc').limit(limitNum);
         let queryB = BATTLE_LOGS.where('defender_char', '==', charRef).orderBy('endedAt', 'desc').limit(limitNum);
 
         if (cursor) {
-            // 커서(마지막으로 가져온 항목의 타임스탬프)가 있으면 그 지점부터 가져옵니다.
+            // [수정] 커서가 숫자(밀리초)이므로 Timestamp 객체로 변환하여 쿼리
             const startAfterTimestamp = Timestamp.fromMillis(Number(cursor));
             queryA = queryA.startAfter(startAfterTimestamp);
             queryB = queryB.startAfter(startAfterTimestamp);
@@ -28,20 +35,20 @@ module.exports = (admin, { onCall, HttpsError }) => {
         const [snapA, snapB] = await Promise.all([queryA.get(), queryB.get()]);
 
         const results = [];
-        snapA.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
-        snapB.forEach(doc => results.push({ id: doc.id, ...doc.data() }));
+        // [수정] 데이터를 가져올 때 endedAt을 밀리초로 변환하여 저장
+        snapA.forEach(doc => results.push({ id: doc.id, ...doc.data(), endedAtMillis: toMillis(doc.data().endedAt) }));
+        snapB.forEach(doc => results.push({ id: doc.id, ...doc.data(), endedAtMillis: toMillis(doc.data().endedAt) }));
 
-        // 서버에서 두 결과를 합친 후 시간순으로 완벽하게 정렬합니다.
-        results.sort((a, b) => (b.endedAt?.toMillis?.() ?? 0) - (a.endedAt?.toMillis?.() ?? 0));
+        // [수정] 밀리초 기준으로 완벽하게 정렬
+        results.sort((a, b) => b.endedAtMillis - a.endedAtMillis);
         
-        // 요청된 개수(limit)만큼만 잘라서 클라이언트에 반환합니다.
         const finalResults = results.slice(0, limitNum);
 
-        // 다음 페이지를 요청할 때 사용할 커서를 생성합니다.
         let nextCursor = null;
         if (finalResults.length === limitNum) {
             const lastItem = finalResults[finalResults.length - 1];
-            nextCursor = lastItem.endedAt?.toMillis?.() ?? null;
+            // [수정] 다음 커서도 밀리초 값으로 설정
+            nextCursor = lastItem.endedAtMillis ?? null;
         }
 
         return {
