@@ -572,79 +572,79 @@ async function renderBioSub(which, c, sv){
 }
 
 async function openItemPicker(c, onSave) {
-  const inv = await getUserInventory();
-  ensureItemCss();
+  const inv = await getUserInventory();
+  ensureItemCss();
 
-  let selectedIds = [...(c.items_equipped || [])];
+  let selectedIds = [...(c.items_equipped || [])];
 
-  const back = document.createElement('div');
-  back.className = 'modal-back';
-  back.dataset.kind = 'item-picker';
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.dataset.kind = 'item-picker';
 
-  back.style.zIndex = '8000';
+  back.style.zIndex = '8000';
 
-  const renderModalContent = () => {
-    back.innerHTML = `
-      <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-          <div style="font-weight:900; font-size: 18px;">아이템 장착 관리</div>
-          <button class="btn ghost" id="mClose">닫기</button>
-        </div>
-        <div class="text-dim" style="font-size:13px; margin-top:4px;">아이템을 클릭하여 상세 정보를 보고, 다시 클릭하여 장착/해제하세요. (${selectedIds.length} / 3)</div>
-        <div class="item-picker-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; overflow-y: auto; padding: 5px; margin: 12px 0; flex-grow: 1;">
-          ${inv.length === 0 ? '<div class="text-dim" style="grid-column: 1 / -1;">보유한 아이템이 없습니다.</div>' :
-            inv.map(item => {
-              const style = rarityStyle(item.rarity);
-              const isSelected = selectedIds.includes(item.id);
-              return `
-                  <div class="kv-card item-picker-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''} ${isSelected ? 'selected' : ''}" data-item-id="${item.id}" style="padding:10px; border: 2px solid ${isSelected ? '#4aa3ff' : 'transparent'}; cursor:pointer;">
+  const renderModalContent = () => {
+    back.innerHTML = `
+      <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+          <div style="font-weight:900; font-size: 18px;">아이템 장착 관리</div>
+          <button class="btn ghost" id="mClose">닫기</button>
+        </div>
+        <div class="text-dim" style="font-size:13px; margin-top:4px;">아이템을 클릭하여 상세 정보를 보고, 다시 클릭하여 장착/해제하세요. (${selectedIds.length} / 3)</div>
+        <div class="item-picker-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; overflow-y: auto; padding: 5px; margin: 12px 0; flex-grow: 1;">
+          ${inv.length === 0 ? '<div class="text-dim" style="grid-column: 1 / -1;">보유한 아이템이 없습니다.</div>' :
+            inv.map(item => {
+              const style = rarityStyle(item.rarity);
+              const isSelected = selectedIds.includes(item.id);
+              return `
+                  <div class="kv-card item-picker-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''} ${isSelected ? 'selected' : ''}" data-item-id="${item.id}" style="padding:10px; border: 2px solid ${isSelected ? '#4aa3ff' : 'transparent'}; cursor:pointer;">
 
-                  <div style="font-weight:700; color: ${style.text}; pointer-events:none;">${esc(item.name)}</div>
-                  <div style="font-size:12px; opacity:.8; margin-top: 4px; height: 3em; overflow:hidden; pointer-events:none;">${esc(item.desc_soft || item.desc || item.description || (item.desc_long ? String(item.desc_long).split('\n')[0] : '-') )}</div>
-                </div>
-              `;
-            }).join('')
-          }
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:auto;flex-shrink:0;padding-top:12px;">
-          <button class="btn large" id="btnSaveItems">선택 완료</button>
-        </div>
-      </div>
-    `;
+                  <div style="font-weight:700; color: ${style.text}; pointer-events:none;">${esc(item.name)}</div>
+                  <div style="font-size:12px; opacity:.8; margin-top: 4px; height: 3em; overflow:hidden; pointer-events:none;">${esc(item.desc_soft || item.desc || item.description || (item.desc_long ? String(item.desc_long).split('\n')[0] : '-') )}</div>
+                </div>
+              `;
+            }).join('')
+          }
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:auto;flex-shrink:0;padding-top:12px;">
+          <button class="btn large" id="btnSaveItems">선택 완료</button>
+        </div>
+      </div>
+    `;
 
-    back.querySelectorAll('.item-picker-card').forEach(card => {
-        card.addEventListener('click', () => {
-            const itemId = card.dataset.itemId;
-            const item = inv.find(it => it.id === itemId);
-            if (!item) return;
-            
-            showItemDetailModal(item, {
-                equippedIds: selectedIds,
-                onUpdate: (newSelectedIds) => {
-                    selectedIds = newSelectedIds;
-                    renderModalContent();
-                }
-            });
-        });
-    });
+    back.querySelectorAll('.item-picker-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const itemId = card.dataset.itemId;
+            const item = inv.find(it => it.id === itemId);
+            if (!item) return;
+            
+            showItemDetailModal(item, {
+                equippedIds: selectedIds,
+                onUpdate: (newSelectedIds) => {
+                    selectedIds = newSelectedIds;
+                    renderModalContent();
+                }
+            });
+        });
+    });
 
-    back.querySelector('#mClose').onclick = () => back.remove();
-    back.querySelector('#btnSaveItems').onclick = async () => {
-      try {
-        await updateItemsEquipped(c.id, selectedIds);
-        showToast('아이템 장착 정보가 저장되었습니다.');
-        c.items_equipped = selectedIds;
-        onSave(selectedIds);
-        back.remove();
-      } catch (e) {
-        showToast('아이템 저장에 실패했습니다: ' + e.message);
-      }
-    };
-  };
+    back.querySelector('#mClose').onclick = () => back.remove();
+    back.querySelector('#btnSaveItems').onclick = async () => {
+      try {
+        await updateItemsEquipped(c.id, selectedIds);
+        showToast('아이템 장착 정보가 저장되었습니다.');
+        c.items_equipped = selectedIds;
+        onSave(selectedIds);
+        back.remove();
+      } catch (e) {
+        showToast('아이템 저장에 실패했습니다: ' + e.message);
+      }
+    };
+  };
 
-  renderModalContent();
-  document.body.appendChild(back);
-  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  renderModalContent();
+  document.body.appendChild(back);
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
 }
 
 async function renderLoadout(c, view){
