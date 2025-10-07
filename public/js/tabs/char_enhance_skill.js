@@ -1,7 +1,8 @@
 // /public/js/tabs/char_enhance_skill.js
 
 import { db, auth, fx, func } from '../api/firebase.js';
-import { httpsCallable } from '[https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js](https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js)';
+// [오류 수정] 아래 import 구문의 주소를 올바른 형식으로 수정했습니다.
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { confirmModal, promptModal, ensureModalCss } from '../ui/modal.js';
 
