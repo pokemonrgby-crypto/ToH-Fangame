@@ -49,7 +49,7 @@ export function rarityStyle(r) {
     myth:   { bg: '#3a0f14', border: '#ff5b66', text: '#ffc9ce', label: '신화' },
     aether: { 
       bg: '#2f2b3b', 
-      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5856d6, #af52de)', 
+      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5e5ce6, #ff2d55, #ff375f)', 
       text: '#f8f8f2', 
       label: '에테르' 
     },
@@ -986,7 +986,7 @@ async function renderHistory(c, view) {
           html = `
             <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
               <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
-              <div class="text-dim" style="font-size:12px;">${when}</div>
+              <div class="text-dim" style="font-size:12px">${when}</div>
               <div class="text-dim" style="font-size:12px; margin-top: 4px;">
                   기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
               </div>
