@@ -1,5 +1,5 @@
 // /public/js/tabs/char.js
-import { db, auth, fx } from '../api/firebase.js';
+import { db, auth, fx, func } from '../api/firebase.js';
 import { attachSupporterFX } from '../ui/supporter_fx.js';
 // [추가] getDocFromServer와 getDocsFromServer 함수를 직접 가져옵니다.
 import { startAfter, getDocFromServer, getDocsFromServer } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
@@ -10,6 +10,8 @@ import {
 import { getUserInventory } from '../api/user.js'; // 사용자 인벤토리 함수 import
 import { showToast } from '../ui/toast.js';
 import { showItemDetailModal } from '../ui/item.js';
+
+import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 
 // ---------- utils ----------
 // [추가] esc 함수를 다른 파일에서도 쓸 수 있도록 상단으로 옮기고 export 합니다.
@@ -924,7 +926,7 @@ function renderRich(text){
 }
 
 
-function renderHistory(c, view){
+async function renderHistory(c, view) {
   view.innerHTML = `
     <div class="p12">
       <h4>전적</h4>
@@ -956,18 +958,20 @@ function renderHistory(c, view){
     </div>
   `;
 
-  const box   = view.querySelector('#timelineBox');
-  const sent  = view.querySelector('#tlSentinel');
+  const box = view.querySelector('#timelineBox');
+  const sent = view.querySelector('#tlSentinel');
   const empty = view.querySelector('#tlEmpty');
-  const setTitle = (m)=> view.querySelector('#tlTitle').textContent =
-    (m==='battle'?'배틀 타임라인': m==='encounter'?'조우 타임라인':'탐험 타임라인');
+  const setTitle = (m) => view.querySelector('#tlTitle').textContent =
+    (m === 'battle' ? '배틀 타임라인' : m === 'encounter' ? '조우 타임라인' : m === 'raid' ? '레이드 타임라인' : '탐험 타임라인');
 
   let mode = null;
   let busy = false;
   let done = false;
 
-  let lastA=null, lastD=null, doneA=false, doneD=false;
-  let lastE=null, doneE=false;
+  // [수정] 페이지네이션 상태를 통합 커서 방식으로 변경
+  let nextCursor = null; // battle 모드용
+  let lastA = null, lastD = null, doneA = false, doneD = false; // encounter 모드용
+  let lastE = null, doneE = false; // explore 모드용
 
   const t = (ts)=> {
     try{
@@ -1097,97 +1101,115 @@ function appendItems(items){
     box.appendChild(frag);
 }
 
-async function fetchNext(){
-    if(busy || done || !mode) return;
+  async function fetchNext() {
+    if (busy || done || !mode) return;
     busy = true;
-    const out = []; // <--- 매번 새로 배열을 만듭니다.
-    try{
-      const charRef = `chars/${c.id}`;
 
-      if(mode==='battle'){
-        if(!doneA){
-          // 1. 공격자(attacker)인 로그를 15개 가져옴
-          const partsA = [ fx.where('attacker_char','==', charRef), fx.orderBy('endedAt','desc') ];
-          if(lastA) partsA.push(startAfter(lastA));
-          partsA.push(fx.limit(15));
-          const qA = fx.query(fx.collection(db,'battle_logs'), ...partsA);
-          const sA = await getDocsFromServer(qA);
-          const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
-          if(arrA.length < 15) doneA = true;
-          if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
-          out.push(...arrA);
+    try {
+      if (mode === 'battle') {
+        const callHistory = httpsCallable(func, 'getUserBattleHistory');
+        const { data } = await callHistory({
+          charId: c.id,
+          limit: 15,
+          cursor: nextCursor // 다음 페이지 요청 시 커서 사용
+        });
+
+        if (data.ok && data.logs) {
+          appendItems(data.logs);
+          nextCursor = data.nextCursor; // 다음 페이지 커서 저장
+          if (!nextCursor) {
+            done = true; // 다음 페이지가 없으면 종료
+          }
+        } else {
+          done = true;
         }
-        if(!doneD){
-          // 2. 방어자(defender)인 로그를 15개 가져옴
-          const partsD = [ fx.where('defender_char','==', charRef), fx.orderBy('endedAt','desc') ];
-          if(lastD) partsD.push(startAfter(lastD));
-          partsD.push(fx.limit(15));
-          const qD = fx.query(fx.collection(db,'battle_logs'), ...partsD);
-          const sD = await getDocsFromServer(qD);
-          const arrD=[]; sD.forEach(d=>arrD.push({ id:d.id, ...d.data() }));
-          if(arrD.length < 15) doneD = true;
-          if(sD.docs.length) lastD = sD.docs[sD.docs.length-1];
-          out.push(...arrD);
-        }
-        
-        // 3. 위에서 가져온 두 묶음(최대 30개)을 시간순으로 정렬
-        out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
-        if(doneA && doneD && out.length===0) done = true;
-      }
-     else if(mode==='raid'){
-        // 'raid_logs' 컬렉션을 쿼리하여 'party' 배열에 내 캐릭터 ID가 포함된 로그를 찾습니다.
+      } else {
+        // [기존 로직 유지] 조우, 탐험 등 다른 탭은 기존 방식을 그대로 사용합니다.
+        const out = [];
+        if (mode === 'encounter') {
+          if(!doneA){
+            const partsA = [ fx.where('a_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastA) partsA.push(startAfter(lastA));
+            partsA.push(fx.limit(15));
+            const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
+            const sA = await getDocsFromServer(qA);
+            const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
+            if(arrA.length < 15) doneA = true;
+            if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
+            out.push(...arrA);
+          }
+          if(!doneD){
+            const partsB = [ fx.where('b_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastD) partsB.push(startAfter(lastD));
+            partsB.push(fx.limit(15));
+            const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
+            const sB = await getDocsFromServer(qB);
+            const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
+            if(arrB.length < 15) doneD = true;
+            if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
+            out.push(...arrB);
+          }
+          out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
+          if(doneA && doneD && out.length===0) done = true;
+          appendItems(out);
+        } else if (mode === 'raid') {
           const q = fx.query(
               fx.collection(db, 'raid_logs'),
-              fx.where('party_ids', 'array-contains', c.id), // party_ids 필드를 로그에 추가해야 합니다.
+              fx.where('party_ids', 'array-contains', c.id),
               fx.orderBy('createdAt', 'desc'),
               fx.limit(15)
           );
           const s = await getDocsFromServer(q);
           const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
-          out.push(...arr);
-          done = true; // For simplicity, no pagination for raids yet.
-       }
-        else if(mode==='explore'){
-        if(!doneE){
-          const parts = [ fx.orderBy('endedAt','desc') ];
-          if(lastE) parts.push(startAfter(lastE));
-          parts.push(fx.limit(15));
-          const q = fx.query(
-            fx.collection(db,'explore_runs'),
-            fx.where('charRef','==', `chars/${c.id}`),
-            ...parts
-          );
-          // [수정] fx.getDocs -> getDocsFromServer: 항상 서버에서 최신 목록을 가져옵니다.
-          const s = await getDocsFromServer(q);
-          const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
-          if(arr.length < 15) doneE = true;
-          if(s.docs.length) lastE = s.docs[s.docs.length-1];
-          out.push(...arr);
-          if(doneE && out.length===0) done = true;
-        } else {
+          appendItems(arr);
           done = true;
+        } else if (mode === 'explore') {
+          if(!doneE){
+            const parts = [ fx.orderBy('endedAt','desc') ];
+            if(lastE) parts.push(startAfter(lastE));
+            parts.push(fx.limit(15));
+            const q = fx.query(
+              fx.collection(db,'explore_runs'),
+              fx.where('charRef','==', `chars/${c.id}`),
+              ...parts
+            );
+            const s = await getDocsFromServer(q);
+            const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
+            if(arr.length < 15) doneE = true;
+            if(s.docs.length) lastE = s.docs[s.docs.length-1];
+            appendItems(arr);
+            if(doneE && arr.length===0) done = true;
+          } else {
+            done = true;
+          }
         }
       }
-
-      appendItems(out);
-    }catch(e){
+    } catch (e) {
       console.error('[timeline] fetch error', e);
-    }finally{
+      showToast('기록을 불러오는 데 실패했습니다.');
+      done = true;
+    } finally {
       busy = false;
     }
   }
 
-  function resetAndLoad(newMode){
+  function resetAndLoad(newMode) {
     mode = newMode;
     setTitle(mode);
     box.innerHTML = '';
-    empty.style.display = 'block'; // [수정] empty의 display를 block으로 초기화
-    busy = false; done = false;
+    empty.style.display = 'block';
+    busy = false;
+    done = false;
+    
+    // [수정] 페이지네이션 상태 초기화
+    nextCursor = null; 
     lastA = lastD = lastE = null;
     doneA = doneD = doneE = false;
+    
     fetchNext();
   }
 
+  // ... (IntersectionObserver 및 이벤트 리스너 코드는 기존과 동일)
   const io = new IntersectionObserver((entries)=>{
     entries.forEach((en)=>{
       if(en.isIntersecting) fetchNext();
