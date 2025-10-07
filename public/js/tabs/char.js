@@ -860,280 +860,280 @@ function renderRich(text){
 
 
 async function renderHistory(c, view) {
-  view.innerHTML = `
-    <div class="p12">
-      <h4>전적</h4>
-      <div class="grid3 mt8">
-        <button class="kv-card" id="cardBattle" style="text-align:left;cursor:pointer">
-          <div class="kv-label">배틀</div><div>${c.battle_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardEncounter" style="text-align:left;cursor:pointer">
-          <div class="kv-label">조우</div><div>${c.encounter_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardExplore" style="text-align:left;cursor:pointer">
-          <div class="kv-label">탐험</div><div>${c.explore_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardRaid" style="text-align:left;cursor:pointer">
-          <div class="kv-label">레이드</div><div>${c.raid_count || 0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-      </div>
+  view.innerHTML = `
+    <div class="p12">
+      <h4>전적</h4>
+      <div class="grid3 mt8">
+        <button class="kv-card" id="cardBattle" style="text-align:left;cursor:pointer">
+          <div class="kv-label">배틀</div><div>${c.battle_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardEncounter" style="text-align:left;cursor:pointer">
+          <div class="kv-label">조우</div><div>${c.encounter_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardExplore" style="text-align:left;cursor:pointer">
+          <div class="kv-label">탐험</div><div>${c.explore_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardRaid" style="text-align:left;cursor:pointer">
+          <div class="kv-label">레이드</div><div>${c.raid_count || 0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+      </div>
 
-      <div class="kv-card mt12">
-        <div class="kv-label" id="tlTitle">상세 타임라인</div>
-        <div id="timelineBox" class="col" style="gap:8px"></div>
-        <div id="tlSentinel" style="height:1px"></div>
-        <div id="tlEmpty" class="text-dim" style="margin-top:8px">상세 타임라인은 추후 추가될 예정이야.</div>
-      </div>
-    </div>
-  `;
+      <div class="kv-card mt12">
+        <div class="kv-label" id="tlTitle">상세 타임라인</div>
+        <div id="timelineBox" class="col" style="gap:8px"></div>
+        <div id="tlSentinel" style="height:1px"></div>
+        <div id="tlEmpty" class="text-dim" style="margin-top:8px">상세 타임라인은 추후 추가될 예정이야.</div>
+      </div>
+    </div>
+  `;
 
-  const box = view.querySelector('#timelineBox');
-  const sent = view.querySelector('#tlSentinel');
-  const empty = view.querySelector('#tlEmpty');
-  const setTitle = (m) => view.querySelector('#tlTitle').textContent =
-    (m === 'battle' ? '배틀 타임라인' : m === 'encounter' ? '조우 타임라인' : m === 'raid' ? '레이드 타임라인' : '탐험 타임라인');
+  const box = view.querySelector('#timelineBox');
+  const sent = view.querySelector('#tlSentinel');
+  const empty = view.querySelector('#tlEmpty');
+  const setTitle = (m) => view.querySelector('#tlTitle').textContent =
+    (m === 'battle' ? '배틀 타임라인' : m === 'encounter' ? '조우 타임라인' : m === 'raid' ? '레이드 타임라인' : '탐험 타임라인');
 
-  let mode = null;
-  let busy = false;
-  let done = false;
+  let mode = null;
+  let busy = false;
+  let done = false;
 
-  let nextCursor = null;
-  let lastA = null, lastD = null, doneA = false, doneD = false;
-  let lastE = null, doneE = false;
+  let nextCursor = null;
+  let lastA = null, lastD = null, doneA = false, doneD = false;
+  let lastE = null, doneE = false;
 
-  // ANCHOR: [교체] appendItems 함수
-  function appendItems(items){
-    if(items.length) empty.style.display = 'none';
-    const frag = document.createDocumentFragment();
-    items.forEach(it=>{
-      let go = '#';
-      let html = '';
-      if(mode==='battle'){
-        const isAttacker = it.attacker_char === `chars/${c.id}`;
-        const opponentSnapshot = isAttacker ? it.defender_snapshot : it.attacker_snapshot;
-        const myExp = isAttacker ? it.exp_char0 : it.exp_char1;
+  // ANCHOR: [교체] appendItems 함수
+  function appendItems(items){
+    if(items.length) empty.style.display = 'none';
+    const frag = document.createDocumentFragment();
+    items.forEach(it=>{
+      let go = '#';
+      let html = '';
+      if(mode==='battle'){
+        const isAttacker = it.attacker_char === `chars/${c.id}`;
+        const opponentSnapshot = isAttacker ? it.defender_snapshot : it.attacker_snapshot;
+        const myExp = isAttacker ? it.exp_char0 : it.exp_char1;
 
-        let resultText, resultColor;
-        
-        if (it.simulated) {
-            resultText = '모의전';
-            resultColor = '#8b5cf6';
-        } else if ((isAttacker && it.winner === 0) || (!isAttacker && it.winner === 1)) {
-            resultText = '승리'; resultColor = '#3a8bff';
-        } else if ((isAttacker && it.winner === 1) || (!isAttacker && it.winner === 0)) {
-            resultText = '패배'; resultColor = '#ff425a';
-        } else {
-            resultText = '무승부'; resultColor = '#777';
-        }
-        
-        // ANCHOR: [수정] prettyTime 함수 사용
-        const when = prettyTime(it.endedAt);
-        go = `#/battlelog/${it.id}`;
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
-            <div style="flex-shrink: 0;">
-                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
-            </div>
-            <div style="flex-grow: 1; min-width: 0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
-                    <span style="font-weight: 700;">vs ${esc(opponentSnapshot.name)}</span>
-                </div>
-                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
-                    <span>${when}</span>
-                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
-                </div>
-            </div>
-          </div>`;
-      } else if(mode==='encounter'){
-        const isA = it.a_char === `chars/${c.id}`;
-        const opponentSnapshot = isA ? it.b_snapshot : it.a_snapshot;
-        const myExp = isA ? it.exp_a : it.exp_b;
-        const when = prettyTime(it.endedAt); // ANCHOR: [수정] prettyTime 함수 사용
-        go = `#/encounter-log/${it.id}`;
+        let resultText, resultColor;
+        
+        if (it.simulated) {
+            resultText = '모의전';
+            resultColor = '#8b5cf6';
+        } else if ((isAttacker && it.winner === 0) || (!isAttacker && it.winner === 1)) {
+            resultText = '승리'; resultColor = '#3a8bff';
+        } else if ((isAttacker && it.winner === 1) || (!isAttacker && it.winner === 0)) {
+            resultText = '패배'; resultColor = '#ff425a';
+        } else {
+            resultText = '무승부'; resultColor = '#777';
+        }
+        
+        // ANCHOR: [수정] prettyTime 함수 사용
+        const when = prettyTime(it.endedAt);
+        go = `#/battlelog/${it.id}`;
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
+            <div style="flex-shrink: 0;">
+                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
+            </div>
+            <div style="flex-grow: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
+                    <span style="font-weight: 700;">vs ${esc(opponentSnapshot.name)}</span>
+                </div>
+                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
+                    <span>${when}</span>
+                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
+                </div>
+            </div>
+          </div>`;
+      } else if(mode==='encounter'){
+        const isA = it.a_char === `chars/${c.id}`;
+        const opponentSnapshot = isA ? it.b_snapshot : it.a_snapshot;
+        const myExp = isA ? it.exp_a : it.exp_b;
+        const when = prettyTime(it.endedAt); // ANCHOR: [수정] prettyTime 함수 사용
+        go = `#/encounter-log/${it.id}`;
 
-        let resultText = '조우';
-        let resultColor = '#a3e635';
-        if (it.simulated) {
-            resultText = '모의조우';
-            resultColor = '#8b5cf6';
-        }
-        
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
-            <div style="flex-shrink: 0;">
-                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
-            </div>
-            <div style="flex-grow: 1; min-width: 0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
-                    <span style="font-weight: 700;">with ${esc(opponentSnapshot.name)}</span>
-                </div>
-                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
-                    <span>${when}</span>
-                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
-                </div>
-            </div>
-          </div>`;
+        let resultText = '조우';
+        let resultColor = '#a3e635';
+        if (it.simulated) {
+            resultText = '모의조우';
+            resultColor = '#8b5cf6';
+        }
+        
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
+            <div style="flex-shrink: 0;">
+                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
+            </div>
+            <div style="flex-grow: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
+                    <span style="font-weight: 700;">with ${esc(opponentSnapshot.name)}</span>
+                </div>
+                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
+                    <span>${when}</span>
+                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
+                </div>
+            </div>
+          </div>`;
 
-      } else if(mode==='raid'){
-          const myContribution = (it.contributions || []).find(con => con.charId === c.id);
-          const when = prettyTime(it.createdAt); // ANCHOR: [수정] prettyTime 함수 사용
-          go = `#/raidlog/${it.id}`;
-          html = `
-            <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
-              <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
-              <div class="text-dim" style="font-size:12px">${when}</div>
-              <div class="text-dim" style="font-size:12px; margin-top: 4px;">
-                  기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
-              </div>
-            </div>`;
-        
-      } else { // 'explore'
-        const when = prettyTime(it.endedAt || it.startedAt); // ANCHOR: [수정] prettyTime 함수 사용
-        go = `#/explorelog/${it.id}`;
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" 
-               style="display:flex;align-items:center;gap:12px;padding:10px;border-left:3px solid #4aa3ff">
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:800">
-                ${esc(it.world_name || it.world_id || '월드')} / ${esc(it.site_name || it.site_id || '지역')}
-              </div>
-              <div class="text-dim" style="font-size:12px">${when}</div>
-            </div>
-            <div class="text-dim" style="font-size:12px">턴 ${esc(it.turn || 0)}</div>
-          </div>`;
-      }
-      const wrap = document.createElement('div');
-      wrap.innerHTML = html;
-      const el = wrap.firstElementChild;
-      el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
-      frag.appendChild(el);
-    });
-    box.appendChild(frag);
-  }
+      } else if(mode==='raid'){
+          const myContribution = (it.contributions || []).find(con => con.charId === c.id);
+          const when = prettyTime(it.createdAt); // ANCHOR: [수정] prettyTime 함수 사용
+          go = `#/raidlog/${it.id}`;
+          html = `
+            <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
+              <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
+              <div class="text-dim" style="font-size:12px">${when}</div>
+              <div class="text-dim" style="font-size:12px; margin-top: 4px;">
+                  기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
+              </div>
+            </div>`;
+        
+      } else { // 'explore'
+        const when = prettyTime(it.endedAt || it.startedAt); // ANCHOR: [수정] prettyTime 함수 사용
+        go = `#/explorelog/${it.id}`;
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" 
+               style="display:flex;align-items:center;gap:12px;padding:10px;border-left:3px solid #4aa3ff">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:800">
+                ${esc(it.world_name || it.world_id || '월드')} / ${esc(it.site_name || it.site_id || '지역')}
+              </div>
+              <div class="text-dim" style="font-size:12px">${when}</div>
+            </div>
+            <div class="text-dim" style="font-size:12px">턴 ${esc(it.turn || 0)}</div>
+          </div>`;
+      }
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      const el = wrap.firstElementChild;
+      el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
+      frag.appendChild(el);
+    });
+    box.appendChild(frag);
+  }
 
-  async function fetchNext() {
-    if (busy || done || !mode) return;
-    busy = true;
+  async function fetchNext() {
+    if (busy || done || !mode) return;
+    busy = true;
 
-    try {
-      if (mode === 'battle') {
-        const callHistory = httpsCallable(func, 'getUserBattleHistory');
-        const { data } = await callHistory({
-          charId: c.id,
-          limit: 15,
-          cursor: nextCursor
-        });
+    try {
+      if (mode === 'battle') {
+        const callHistory = httpsCallable(func, 'getUserBattleHistory');
+        const { data } = await callHistory({
+          charId: c.id,
+          limit: 15,
+          cursor: nextCursor
+        });
 
-        if (data.ok && data.logs) {
-          appendItems(data.logs);
-          nextCursor = data.nextCursor;
-          if (!nextCursor) {
-            done = true;
-          }
-        } else {
-          done = true;
-        }
-      } else {
-        const out = [];
-        if (mode === 'encounter') {
-          if(!doneA){
-            const partsA = [ fx.where('a_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
-            if(lastA) partsA.push(startAfter(lastA));
-            partsA.push(fx.limit(15));
-            const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
-            const sA = await getDocsFromServer(qA);
-            const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
-            if(arrA.length < 15) doneA = true;
-            if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
-            out.push(...arrA);
-          }
-          if(!doneD){
-            const partsB = [ fx.where('b_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
-            if(lastD) partsB.push(startAfter(lastD));
-            partsB.push(fx.limit(15));
-            const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
-            const sB = await getDocsFromServer(qB);
-            const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
-            if(arrB.length < 15) doneD = true;
-            if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
-            out.push(...arrB);
-          }
-          out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
-          if(doneA && doneD && out.length===0) done = true;
-          appendItems(out);
-        } else if (mode === 'raid') {
-          const q = fx.query(
-              fx.collection(db, 'raid_logs'),
-              fx.where('party_ids', 'array-contains', c.id),
-              fx.orderBy('createdAt', 'desc'),
-              fx.limit(15)
-          );
-          const s = await getDocsFromServer(q);
-          const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
-          appendItems(arr);
-          done = true;
-        } else if (mode === 'explore') {
-          if(!doneE){
-            const parts = [ fx.orderBy('endedAt','desc') ];
-            if(lastE) parts.push(startAfter(lastE));
-            parts.push(fx.limit(15));
-            const q = fx.query(
-              fx.collection(db,'explore_runs'),
-              fx.where('charRef','==', `chars/${c.id}`),
-              ...parts
-            );
-            const s = await getDocsFromServer(q);
-            const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
-            if(arr.length < 15) doneE = true;
-            if(s.docs.length) lastE = s.docs[s.docs.length-1];
-            appendItems(arr);
-            if(doneE && arr.length===0) done = true;
-          } else {
-            done = true;
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[timeline] fetch error', e);
-      showToast('기록을 불러오는 데 실패했습니다.');
-      done = true;
-    } finally {
-      busy = false;
-    }
-  }
+        if (data.ok && data.logs) {
+          appendItems(data.logs);
+          nextCursor = data.nextCursor;
+          if (!nextCursor) {
+            done = true;
+          }
+        } else {
+          done = true;
+        }
+      } else {
+        const out = [];
+        if (mode === 'encounter') {
+          if(!doneA){
+            const partsA = [ fx.where('a_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastA) partsA.push(startAfter(lastA));
+            partsA.push(fx.limit(15));
+            const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
+            const sA = await getDocsFromServer(qA);
+            const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
+            if(arrA.length < 15) doneA = true;
+            if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
+            out.push(...arrA);
+          }
+          if(!doneD){
+            const partsB = [ fx.where('b_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastD) partsB.push(startAfter(lastD));
+            partsB.push(fx.limit(15));
+            const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
+            const sB = await getDocsFromServer(qB);
+            const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
+            if(arrB.length < 15) doneD = true;
+            if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
+            out.push(...arrB);
+          }
+          out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
+          if(doneA && doneD && out.length===0) done = true;
+          appendItems(out);
+        } else if (mode === 'raid') {
+          const q = fx.query(
+              fx.collection(db, 'raid_logs'),
+              fx.where('party_ids', 'array-contains', c.id),
+              fx.orderBy('createdAt', 'desc'),
+              fx.limit(15)
+          );
+          const s = await getDocsFromServer(q);
+          const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
+          appendItems(arr);
+          done = true;
+        } else if (mode === 'explore') {
+          if(!doneE){
+            const parts = [ fx.orderBy('endedAt','desc') ];
+            if(lastE) parts.push(startAfter(lastE));
+            parts.push(fx.limit(15));
+            const q = fx.query(
+              fx.collection(db,'explore_runs'),
+              fx.where('charRef','==', `chars/${c.id}`),
+              ...parts
+            );
+            const s = await getDocsFromServer(q);
+            const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
+            if(arr.length < 15) doneE = true;
+            if(s.docs.length) lastE = s.docs[s.docs.length-1];
+            appendItems(arr);
+            if(doneE && arr.length===0) done = true;
+          } else {
+            done = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[timeline] fetch error', e);
+      showToast('기록을 불러오는 데 실패했습니다.');
+      done = true;
+    } finally {
+      busy = false;
+    }
+  }
 
-  function resetAndLoad(newMode) {
-    mode = newMode;
-    setTitle(mode);
-    box.innerHTML = '';
-    empty.style.display = 'block';
-    busy = false;
-    done = false;
-    
-    nextCursor = null; 
-    lastA = lastD = lastE = null;
-    doneA = doneD = doneE = false;
-    
-    fetchNext();
-  }
+  function resetAndLoad(newMode) {
+    mode = newMode;
+    setTitle(mode);
+    box.innerHTML = '';
+    empty.style.display = 'block';
+    busy = false;
+    done = false;
+    
+    nextCursor = null; 
+    lastA = lastD = lastE = null;
+    doneA = doneD = doneE = false;
+    
+    fetchNext();
+  }
 
-  const io = new IntersectionObserver((entries)=>{
-    entries.forEach((en)=>{
-      if(en.isIntersecting) fetchNext();
-    });
-  }, { root: null, rootMargin: '600px 0px', threshold: 0 });
-  io.observe(sent);
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach((en)=>{
+      if(en.isIntersecting) fetchNext();
+    });
+  }, { root: null, rootMargin: '600px 0px', threshold: 0 });
+  io.observe(sent);
 
-  view.querySelector('#cardBattle')?.addEventListener('click', ()=> resetAndLoad('battle'));
-  view.querySelector('#cardEncounter')?.addEventListener('click', ()=> resetAndLoad('encounter'));
-  view.querySelector('#cardExplore')?.addEventListener('click', ()=> resetAndLoad('explore'));
-  view.querySelector('#cardRaid')?.addEventListener('click', ()=> resetAndLoad('raid'));
+  view.querySelector('#cardBattle')?.addEventListener('click', ()=> resetAndLoad('battle'));
+  view.querySelector('#cardEncounter')?.addEventListener('click', ()=> resetAndLoad('encounter'));
+  view.querySelector('#cardExplore')?.addEventListener('click', ()=> resetAndLoad('explore'));
+  view.querySelector('#cardRaid')?.addEventListener('click', ()=> resetAndLoad('raid'));
 }
 
 
