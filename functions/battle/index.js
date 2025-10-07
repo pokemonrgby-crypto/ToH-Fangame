@@ -13,6 +13,8 @@ try { admin.app(); } catch { admin.initializeApp(); }
 const db = admin.firestore();
 const { Timestamp, FieldValue } = require('firebase-admin/firestore');
 
+const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
+
 const { defineSecret } = require('firebase-functions/params');
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // firebase functions:secrets:set GEMINI_API_KEY
 
