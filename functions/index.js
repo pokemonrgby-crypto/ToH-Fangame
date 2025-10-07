@@ -137,7 +137,7 @@ exports.setGlobalCooldown = onCall({ region:'us-central1' }, async (req)=>{
       : (exist?.toMillis ? Math.floor(exist.toMillis()/1000) : 0);
 
     // [슬롯 고정] + [최소 유지시간 보장]
-    const WINDOW = 300;
+    const WINDOW = 180;
     const nextBoundary = Math.ceil(nowSec / WINDOW) * WINDOW;
     const minBySeconds = nowSec + Math.max(1, Math.min(600, Number(req.data?.seconds || 60)));
     const untilSec = Math.max(existSec, nextBoundary, minBySeconds);
