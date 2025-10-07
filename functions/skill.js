@@ -49,7 +49,7 @@ async function callGemini(apiKey, systemText, userText, modelName) {
 
 module.exports = (admin, { GEMINI_API_KEY }) => {
     const db = admin.firestore();
-    const CREATE_COOLDOWN_MS = 3 * 60 * 1000; // 3분 쿨타임
+    const CREATE_COOLDOWN_MS = 3 * 60 * 1000; // 3분 쿨타임 (공유)
 
     // 1단계: AI로 스킬 초안 생성
     const generateNewSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
@@ -78,7 +78,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const lastCreatedAt = userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0;
         if (Date.now() - lastCreatedAt < CREATE_COOLDOWN_MS) {
             const remaining = Math.ceil((CREATE_COOLDOWN_MS - (Date.now() - lastCreatedAt)) / 1000);
-            throw new HttpsError('resource-exhausted', `스킬 생성 쿨타임이 ${remaining}초 남았습니다.`);
+            throw new HttpsError('resource-exhausted', `스킬 생성/성장 쿨타임이 ${remaining}초 남았습니다.`);
         }
         
         const additionalSkills = Math.max(0, skills.length - 4);
@@ -110,7 +110,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const newSkill = {
             name: String(aiResult.name || '알 수 없는 스킬').slice(0, 20),
             desc_soft: String(aiResult.description || '').slice(0, 140),
-            level: 0 // [추가] 신규 스킬은 0레벨로 시작
+            level: 0 // 신규 스킬은 0레벨로 시작
         };
         
         // 쿨타임 기록만 먼저 처리
@@ -152,84 +152,135 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             }
 
             tx.update(userRef, { coins: FieldValue.increment(-cost) });
-            tx.update(charRef, { abilities_all: FieldValue.arrayUnion({ ...skill, level: 0 }) }); // [수정] 레벨 명시
+            tx.update(charRef, { abilities_all: FieldValue.arrayUnion({ ...skill, level: 0 }) }); // 레벨 명시
 
             return { ok: true, addedSkill: skill };
         });
     });
 
-    // [신규] 스킬 성장 함수
-    const enhanceSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
+    // 스킬 성장 1단계: AI 초안 생성
+    const initiateEnhanceSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-        const { charId, skillIndex } = req.data;
-        if (!charId || typeof skillIndex !== 'number') {
-            throw new HttpsError('invalid-argument', '캐릭터 ID와 스킬 인덱스가 필요합니다.');
+        const { charId, skillIndex, userPrompt } = req.data;
+        if (!charId || typeof skillIndex !== 'number' || !userPrompt) {
+            throw new HttpsError('invalid-argument', '캐릭터 ID, 스킬 인덱스, 사용자 프롬프트가 필요합니다.');
         }
 
+        const charRef = db.doc(`chars/${charId}`);
+        const userRef = db.doc(`users/${uid}`);
+
+        const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
+
+        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+        const charData = charSnap.data();
+        if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
+        
+        // 공유 쿨타임 확인
+        const lastCreatedAt = userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0;
+        if (Date.now() - lastCreatedAt < CREATE_COOLDOWN_MS) {
+            const remaining = Math.ceil((CREATE_COOLDOWN_MS - (Date.now() - lastCreatedAt)) / 1000);
+            throw new HttpsError('resource-exhausted', `스킬 생성/성장 쿨타임이 ${remaining}초 남았습니다.`);
+        }
+        
+        const skills = Array.isArray(charData.abilities_all) ? [...charData.abilities_all] : [];
+        const skillToEnhance = skills[skillIndex];
+        if (!skillToEnhance) throw new HttpsError('not-found', '존재하지 않는 스킬입니다.');
+
+        const currentLevel = skillToEnhance.level || 0;
+        if (currentLevel >= 3) throw new HttpsError('failed-precondition', '이미 최고 레벨입니다.');
+
+        const targetLevel = currentLevel + 1;
+        const costs = { 1: 100, 2: 300, 3: 500 };
+        const expReqs = { 1: 1000, 2: 3000, 3: 10000 };
+        
+        if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
+        if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
+
+        // AI 호출
+        const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_enhance_system || '';
+        if (!systemPrompt) throw new HttpsError('internal', '스킬 강화 프롬프트를 찾을 수 없습니다.');
+
+        const aiUserPrompt = JSON.stringify({
+            character: charData, // 캐릭터 전체 정보 전달
+            skill: skillToEnhance,
+            targetLevel,
+            userPrompt: userPrompt // 사용자 프롬프트 추가
+        }, null, 2);
+
+        const { primary, fallback } = pickModels();
+        let aiResult;
+        try {
+            aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, primary);
+        } catch (e) {
+            logger.warn(`Enhance skill primary model failed, trying fallback.`, { error: e.message });
+            aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, fallback);
+        }
+
+        const enhancedSkill = {
+            name: skillToEnhance.name, // 이름은 고정
+            desc_soft: aiResult.desc_soft,
+            level: targetLevel,
+        };
+
+        // 쿨타임 시작
+        await userRef.set({ lastSkillCreatedAt: FieldValue.serverTimestamp() }, { merge: true });
+
+        return { ok: true, enhancedSkill, cost: costs[targetLevel] };
+    });
+
+    // 스킬 성장 2단계: 최종 적용
+    const confirmEnhanceSkill = onCall({ region: 'us-central1' }, async (req) => {
+        const uid = req.auth?.uid;
+        if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+        const { charId, skillIndex, enhancedSkill } = req.data;
+        if (!charId || typeof skillIndex !== 'number' || !enhancedSkill) {
+            throw new HttpsError('invalid-argument', '필요한 정보가 누락되었습니다.');
+        }
+        
         return await db.runTransaction(async (tx) => {
             const charRef = db.doc(`chars/${charId}`);
             const userRef = db.doc(`users/${uid}`);
-            const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
 
+            const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
             if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+            
             const charData = charSnap.data();
             if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
-            
-            const userCoins = userSnap.data()?.coins || 0;
-            const totalExp = charData.exp_total || 0;
 
             const skills = Array.isArray(charData.abilities_all) ? [...charData.abilities_all] : [];
-            const skillToEnhance = skills[skillIndex];
-            if (!skillToEnhance) throw new HttpsError('not-found', '존재하지 않는 스킬입니다.');
-            
-            const currentLevel = skillToEnhance.level || 0;
-            if (currentLevel >= 3) throw new HttpsError('failed-precondition', '이미 최고 레벨입니다.');
+            const originalSkill = skills[skillIndex];
+            if (!originalSkill) throw new HttpsError('not-found', '원본 스킬을 찾을 수 없습니다.');
 
+            const currentLevel = originalSkill.level || 0;
             const targetLevel = currentLevel + 1;
+            
             const costs = { 1: 100, 2: 300, 3: 500 };
             const expReqs = { 1: 1000, 2: 3000, 3: 10000 };
+
+            if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
+            if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
+
+            // 글자 수 제한 적용
+            const limits = { 1: 250, 2: 400, 3: 600 };
+            const finalDescription = String(enhancedSkill.desc_soft || '').slice(0, limits[targetLevel]);
             
-            const cost = costs[targetLevel];
-            const expReq = expReqs[targetLevel];
-
-            if (userCoins < cost) throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${cost})`);
-            if (totalExp < expReq) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다. (필요: ${expReq})`);
-
-            // AI 호출하여 새 설명 생성
-            const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_enhance_system || '';
-            if (!systemPrompt) throw new HttpsError('internal', '스킬 강화 프롬프트를 찾을 수 없습니다.');
-
-            const aiUserPrompt = JSON.stringify({
-                character: { name: charData.name, summary: charData.summary },
-                skill: skillToEnhance,
-                targetLevel,
-            }, null, 2);
-
-            const { primary, fallback } = pickModels();
-            let aiResult;
-            try {
-                aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, primary);
-            } catch (e) {
-                logger.warn(`Enhance skill primary model failed, trying fallback.`, { error: e.message });
-                aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, fallback);
-            }
-
-            const enhancedSkill = {
-                ...skillToEnhance,
-                desc_soft: aiResult.desc_soft,
-                level: targetLevel,
+            const finalSkill = {
+                ...originalSkill,
+                desc_soft: finalDescription,
+                level: targetLevel
             };
 
-            skills[skillIndex] = enhancedSkill;
-            
-            tx.update(userRef, { coins: FieldValue.increment(-cost) });
+            skills[skillIndex] = finalSkill;
+
+            tx.update(userRef, { coins: FieldValue.increment(-costs[targetLevel]) });
             tx.update(charRef, { abilities_all: skills });
 
-            return { ok: true, updatedSkill: enhancedSkill, cost };
+            return { ok: true, finalSkill };
         });
     });
 
-    return { generateNewSkill, confirmAddSkill, enhanceSkill };
+    return { generateNewSkill, confirmAddSkill, initiateEnhanceSkill, confirmEnhanceSkill };
 };
