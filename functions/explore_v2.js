@@ -388,114 +388,124 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     if(!runId || !Number.isFinite(idx) || idx<0 || idx>2) throw new HttpsError('invalid-argument','index 0..2');
 
     const runRef = db.collection('explore_runs').doc(runId);
+    const s = await runRef.get();
+    if(!s.exists) throw new HttpsError('not-found','런 없음');
+    const run = s.data();
+    if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
+    if(run.status !== 'ongoing') throw new HttpsError('failed-precondition','이미 종료됨');
+
+    const pend = run.pending_choices;
+    if(!pend) throw new HttpsError('failed-precondition','대기 선택 없음');
+
+    const chosenDice = pend.diceResults[idx];
+    const chosenOutcome = pend.choice_outcomes[idx] || { event_type:'narrative' };
+
+    const resultText = String(chosenOutcome.result_text || '아무 일도 일어나지 않았다.').trim();
+    const narrativeLog = `${pend.narrative_text}\n\n[선택: ${pend.choices[idx] || ''}]\n→ ${resultText}`.trim().slice(0, 2300);
+    const diff = run.difficulty || 'normal';
     
-    return await db.runTransaction(async (tx) => {
-      const s = await tx.get(runRef);
-      if(!s.exists) throw new HttpsError('not-found','런 없음');
-      const run = s.data();
-      if(run.owner_uid !== uid) throw new HttpsError('permission-denied','소유자 아님');
-      if(run.status !== 'ongoing') throw new HttpsError('failed-precondition','이미 종료됨');
+    if (chosenOutcome.event_type === 'combat'){
+      const enemyBase = chosenOutcome.enemy || {};
+      const tier = chosenDice?.combat?.enemyTier || 'normal';
 
-      const pend = run.pending_choices;
-      if(!pend) throw new HttpsError('failed-precondition','대기 선택 없음');
-
-      // 💥 [수정] AI가 생성한 chosenOutcome 대신, 서버가 결정한 chosenDice를 기준으로 삼습니다.
-      const chosenDice = pend.diceResults[idx];
-      const chosenOutcome = pend.choice_outcomes[idx] || {}; // AI의 서술 텍스트는 계속 사용합니다.
-      const eventKind = chosenDice.eventKind; // <--- 서버가 결정한 실제 이벤트 종류
-
-      const resultText = String(chosenOutcome.result_text || '아무 일도 일어나지 않았다.').trim();
-      const narrativeLog = `${pend.narrative_text}\n\n[선택: ${pend.choices[idx] || ''}]\n→ ${resultText}`.trim().slice(0, 2300);
+      const charId = String(run.charRef || '').replace(/^chars\//, '');
+      const charSnap = await db.collection('chars').doc(charId).get();
+      const character = charSnap.exists ? charSnap.data() : {};
       
-      let updates = {
+      const hpTableByDiff = {
+        easy:   { trash: 2,  normal: 3,  elite: 5,  boss: 9 },
+        normal: { trash: 6,  normal: 8,  elite: 14, boss: 22 },
+        hard:   { trash: 8,  normal: 12, elite: 20, boss: 32 },
+        vhard:  { trash: 10, normal: 15, elite: 25, boss: 40 },
+        legend: { trash: 12, normal: 18, elite: 30, boss: 50 },
+        impossible: { trash: 50, normal: 100, elite: 200, boss: 500 },        
+      };
+
+      const baseHp = (hpTableByDiff[diff]?.[tier]) ?? 8;
+      const turnBonusRatio = (run.turn || 0) * 0.2;
+      const finalHp = Math.max(1, Math.round(baseHp * (1 + turnBonusRatio)));
+
+      const initialCombatHp = (typeof run.combat_hp === 'number') ? run.combat_hp : run.stamina;
+      const battleInfo = {
+        enemy: {
+          name: enemyBase.name || `${tier} 등급의 적`,
+          description: enemyBase.description || '',
+          skills: enemyBase.skills || [],
+          tier: tier,
+          hp: finalHp,
+          maxHp: finalHp,
+        },
+        playerHp: initialCombatHp,
+        turn: 0,
+        log: [narrativeLog]
+      };
+
+      await runRef.update({
+        pending_battle: battleInfo,
+        pending_choices: null,
         turn: FieldValue.increment(1),
         events: FieldValue.arrayUnion({
           t: Date.now(),
           note: narrativeLog,
           dice: chosenDice,
+          deltaStamina: 0
         }),
-        summary3: (pend.summary3_update || run.summary3 || ''),
-        pending_choices: null,
         prerolls: pend.nextPrerolls || run.prerolls,
+        combat_hp: initialCombatHp,
         updatedAt: Timestamp.now()
+      });
+      const fresh = await runRef.get();
+      return { ok:true, state: { id: runId, ...fresh.data() }, battle:true };
+    }
+
+    let newItem = null;
+    if (chosenOutcome.event_type === 'item' && chosenOutcome.item){
+      newItem = {
+        ...(chosenDice?.item||{}),
+        ...chosenOutcome.item,
+        id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,9)
       };
-      
-      let isBattle = false;
-      let isDone = false;
+      const userInvRef = db.collection('users').doc(uid);
+      await userInvRef.update({
+        items_all: FieldValue.arrayUnion(newItem)
+      }).catch((e) => {
+        logger.error(`Failed to add item to user inventory for uid: ${uid}`, { error: e.message, newItem });
+      });
+    }
 
-      // 💥 [수정] eventKind (서버 결정)에 따라 분기합니다.
-      switch (eventKind) {
-        case 'combat': {
-          isBattle = true;
-          const enemyBase = chosenOutcome.enemy || {}; // AI가 만든 적의 묘사는 사용
-          const tier = chosenDice?.combat?.enemyTier || 'normal';
-          const diff = run.difficulty || 'normal';
-          
-          const hpTableByDiff = { easy:{t:2,n:3,e:5,b:9}, normal:{t:6,n:8,e:14,b:22}, hard:{t:8,n:12,e:20,b:32}, vhard:{t:10,n:15,e:25,b:40}, legend:{t:12,n:18,e:30,b:50}, impossible:{t:50,n:100,e:200,b:500} };
-          const baseHp = (hpTableByDiff[diff]?.[tier[0]]) ?? 8;
-          const turnBonusRatio = (run.turn || 0) * 0.2;
-          const finalHp = Math.max(1, Math.round(baseHp * (1 + turnBonusRatio)));
-          
-          const initialCombatHp = (typeof run.combat_hp === 'number') ? run.combat_hp : run.stamina;
+    const delta = Number(chosenDice?.deltaStamina || 0);
+    const staminaNow = Math.max(0, (run.stamina||0) + delta);
+    const updates = {
+      stamina: staminaNow,
+      turn: (run.turn||0)+1,
+      events: FieldValue.arrayUnion({
+        t: Date.now(),
+        note: narrativeLog,
+        dice: { ...(chosenDice||{}), ...(newItem ? { item:newItem } : {}) },
+        deltaStamina: delta,
+      }),
+      summary3: (pend.summary3_update || run.summary3 || ''),
+      pending_choices: null,
+      prerolls: pend.nextPrerolls || run.prerolls,
+      updatedAt: Timestamp.now()
+    };
 
-          updates.pending_battle = {
-            enemy: {
-              name: enemyBase.name || `${tier} 등급의 적`,
-              description: enemyBase.description || '',
-              skills: enemyBase.skills || [],
-              tier: tier,
-              hp: finalHp,
-              maxHp: finalHp,
-            },
-            playerHp: initialCombatHp,
-            turn: 0,
-            log: [narrativeLog]
-          };
-          updates.combat_hp = initialCombatHp;
-          break;
-        }
-        case 'item': {
-          const userInvRef = db.collection('users').doc(uid);
-          const serverItemInfo = chosenDice.item; // 서버가 결정한 아이템 정보
-          const aiItemDesc = chosenOutcome.item || {}; // AI가 묘사한 아이템 정보
-          
-          // 💥 [수정] 최종 아이템은 서버 정보를 기준으로 하되, AI의 이름/설명만 사용합니다.
-          const newItem = {
-            id: 'item_' + Date.now() + '_' + Math.random().toString(36).slice(2,9),
-            name: aiItemDesc.name || `${serverItemInfo.rarity} 아이템`,
-            description: aiItemDesc.description || '탐험 중 발견한 아이템',
-            rarity: serverItemInfo.rarity,
-            isConsumable: serverItemInfo.isConsumable,
-            uses: serverItemInfo.uses,
-          };
-          
-          tx.update(userInvRef, { items_all: FieldValue.arrayUnion(newItem) });
-          // 이벤트 로그에도 최종 아이템 정보를 기록
-          updates.events = FieldValue.arrayUnion({
-              t: Date.now(),
-              note: narrativeLog,
-              dice: { ...chosenDice, item: newItem }, // 로그에 확정된 아이템 정보 기록
-          });
-          // Fall-through to apply stamina change
-        }
-        default: { // safe, risk, trap, narrative 등 아이템/전투 외 모든 이벤트
-          const delta = Number(chosenDice?.deltaStamina || 0);
-          const staminaNow = Math.max(0, (run.stamina||0) + delta);
-          updates.stamina = staminaNow;
-          
-          if(staminaNow <= 0){
-            updates.status = 'ended';
-            updates.reason = 'exhaust';
-            updates.endedAt = Timestamp.now();
-            isDone = true;
-          }
-          break;
-        }
-      }
+    await runRef.update(updates);
 
-      tx.update(runRef, updates);
-      return { ok:true, battle: isBattle, done: isDone };
-    });
+    if (staminaNow <= 0){
+      await runRef.update({
+        status: 'ended',
+        endedAt: Timestamp.now(),
+        reason: 'exhaust',
+        pending_choices: null,
+        updatedAt: Timestamp.now()
+      });
+      const endSnap = await runRef.get();
+      return { ok:true, state: endSnap.data(), done:true };
+    }
+
+    const snap = await runRef.get();
+    return { ok:true, state: { id: runId, ...snap.data() }, battle:false, done:false };
   });
   
   const endExploreV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
