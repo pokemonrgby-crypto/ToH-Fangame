@@ -38,7 +38,7 @@ export default async function showCreateSkillPage() {
     const cost = 500 + (additionalSkills * 500);
     
     const lastCreatedAt = userData.lastSkillCreatedAt?.toMillis() || 0;
-    const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + CREATE_COOLDOWN_MS - Date.now()) / 1000));
+    const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + (CREATE_COOLDOWN_SEC * 1000) - Date.now()) / 1000));
 
     root.innerHTML = `
       <section class="container narrow">
