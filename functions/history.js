@@ -3,11 +3,19 @@ module.exports = (admin, { onCall, HttpsError }) => {
     const db = admin.firestore();
     const { Timestamp } = admin.firestore;
 
-    // [추가] 숫자와 Timestamp 객체를 모두 밀리초로 변환하는 헬퍼 함수
+    // [추가] 숫자와 Timestamp 객체, ISO 문자열을 모두 밀리초로 변환하는 헬퍼 함수
     const toMillis = (ts) => {
         if (!ts) return 0;
         if (typeof ts === 'number') return ts; // 이미 숫자 형식인 경우
         if (typeof ts.toMillis === 'function') return ts.toMillis(); // Timestamp 객체인 경우
+        if (typeof ts === 'string') { // ISO 날짜 문자열인 경우
+            const d = new Date(ts);
+            if (!isNaN(d)) return d.getTime();
+        }
+        // 레거시 Timestamp 객체 형식일 경우
+        if (typeof ts === 'object' && ts._seconds !== undefined) {
+            return ts._seconds * 1000 + (ts._nanoseconds || 0) / 1000000;
+        }
         return 0;
     };
 
@@ -26,7 +34,6 @@ module.exports = (admin, { onCall, HttpsError }) => {
         let queryB = BATTLE_LOGS.where('defender_char', '==', charRef).orderBy('endedAt', 'desc').limit(limitNum);
 
         if (cursor) {
-            // [수정] 커서가 숫자(밀리초)이므로 Timestamp 객체로 변환하여 쿼리
             const startAfterTimestamp = Timestamp.fromMillis(Number(cursor));
             queryA = queryA.startAfter(startAfterTimestamp);
             queryB = queryB.startAfter(startAfterTimestamp);
@@ -35,19 +42,23 @@ module.exports = (admin, { onCall, HttpsError }) => {
         const [snapA, snapB] = await Promise.all([queryA.get(), queryB.get()]);
 
         const results = [];
-        // [수정] 데이터를 가져올 때 endedAt을 밀리초로 변환하여 저장
         snapA.forEach(doc => results.push({ id: doc.id, ...doc.data(), endedAtMillis: toMillis(doc.data().endedAt) }));
-        snapB.forEach(doc => results.push({ id: doc.id, ...doc.data(), endedAtMillis: toMillis(doc.data().endedAt) }));
-
-        // [수정] 밀리초 기준으로 완벽하게 정렬
+        snapB.forEach(doc => {
+            // 중복 방지 (이론적으로는 발생하지 않음)
+            if (!results.some(r => r.id === doc.id)) {
+                results.push({ id: doc.id, ...doc.data(), endedAtMillis: toMillis(doc.data().endedAt) });
+            }
+        });
+        
+        // endedAtMillis 기준으로 정확하게 정렬
         results.sort((a, b) => b.endedAtMillis - a.endedAtMillis);
         
         const finalResults = results.slice(0, limitNum);
 
         let nextCursor = null;
-        if (finalResults.length === limitNum) {
+        // 불러온 데이터(results)가 반환할 데이터(finalResults)보다 많으면 다음 페이지가 있다는 의미
+        if (results.length > limitNum) {
             const lastItem = finalResults[finalResults.length - 1];
-            // [수정] 다음 커서도 밀리초 값으로 설정
             nextCursor = lastItem.endedAtMillis ?? null;
         }
 
