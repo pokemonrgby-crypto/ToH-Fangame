@@ -122,20 +122,27 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 
     if (!attackerId || !defenderId) throw new HttpsError('invalid-argument', 'attackerId/defenderId 필요');
 
+    // ▼▼▼ [수정] 이 부분을 추가하세요. ▼▼▼
     const userRef = db.doc(`users/${uid}`);
     const nowSec = Math.floor(Date.now() / 1000);
-    const userSnap = await userRef.get();
-    const userData = userSnap.exists ? userSnap.data() : {};
-    const rawCooldown = userData.cooldown_all_until;
-    const cooldownUntil = (typeof rawCooldown === 'number')
-        ? (Number(rawCooldown) || 0)
-        : (rawCooldown?.toMillis ? Math.floor(rawCooldown.toMillis() / 1000) : 0);
 
-    if (cooldownUntil > nowSec) {
-        const left = cooldownUntil - nowSec;
-        throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
+    // 모의전이 아닐 경우에만 쿨타임을 다시 한번 확인합니다.
+    if (!simulate) {
+        const userSnap = await userRef.get();
+        const userData = userSnap.exists ? userSnap.data() : {};
+        
+        // functions/match.ts와 동일한 방식으로 쿨타임 값을 읽어옵니다.
+        const rawCooldown = userData.cooldown_all_until;
+        const cooldownUntil = (typeof rawCooldown === 'number')
+            ? (Number(rawCooldown) || 0)
+            : (rawCooldown?.toMillis ? Math.floor(rawCooldown.toMillis() / 1000) : 0);
+        
+        if (cooldownUntil > nowSec) {
+            const left = cooldownUntil - nowSec;
+            throw new HttpsError('failed-precondition', `공용 쿨타임이 ${left}초 남았습니다.`);
+        }
     }
-
+    
     const Aref = db.doc(`chars/${attackerId}`);
     const Bref = db.doc(`chars/${defenderId}`);
     const [As, Bs] = await Promise.all([Aref.get(), Bref.get()]);
