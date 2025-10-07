@@ -22,6 +22,7 @@ const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger,
 const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
 const charFns = require('./character')(admin); // [추가] character.js 로드
+const skillFns = require('./skill')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); 
 const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
 const historyFns = require('./history')(admin, { onCall, HttpsError });
 
@@ -776,6 +777,8 @@ Object.assign(exports, mailFns);
 Object.assign(exports, landFns);
 
 Object.assign(exports, farmFns);
+
+Object.assign(exports, skillFns);
 
 exports.getUserCharacters = charFns.getUserCharacters; // [추가]
 
