@@ -1,6 +1,4 @@
-// /public/js/router.js
-// 기존 파일 전체를 아래 코드로 교체하세요.
-
+// /public/js/router.js (전체 코드)
 export const routes = {
   '#/home': () => import('./tabs/home.js').then(m => (m.showHome || m.default)()),
   '#/adventure': () => import('./tabs/adventure.js').then(m => (m.showAdventure || m.default)()),
@@ -21,7 +19,6 @@ export const routes = {
   '#/economy': () => import('./tabs/economy.js').then(m => (m.default)()),
   '#/economy/shop':  () => import('./tabs/economy.js').then(m => (m.default)()),
   '#/economy/stock': () => import('./tabs/economy.js').then(m => (m.default)()),
-  '#/economy/mystocks': () => import('./tabs/economy.js').then(m => (m.default)()),
   '#/economy/estate':() => import('./tabs/economy.js').then(m => (m.default)()),
   '#/market': () => import('./tabs/market.js').then(m => (m.showMarket || m.default)()),
   '#/guild': () => import('./tabs/guild.js').then(m => (m.showGuild || m.default)()),
@@ -40,9 +37,6 @@ export function highlightTab() {
   const mainRoute = '#/' + hash.split('/')[1];
   let tabName = mainRoute.substring(2);
 
-  // [수정] /char/ID/xxx 경로에서 tabName이 'char'로 시작하면 'char'로 통일
-  if (tabName.startsWith('char')) tabName = 'char';
-  
   if (['economy', 'market', 'worldmap', 'land', 'land-management'].includes(tabName)) {
     tabName = 'plaza';
   }
@@ -66,24 +60,13 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/land/', '#/raidlog/', '#/land-management/'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/'
   ];
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
 
   if (matchedRoute) {
     const key = matchedRoute.endsWith('/') ? matchedRoute.slice(0, -1) : matchedRoute;
-    
-    // [수정] /char/ID/growth/create 등 상세 경로를 처리하기 위해 #/char로 매핑
-    const charSubMatch = hash.match(/^#\/char\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
-    if (charSubMatch && ['bio', 'loadout', 'growth', 'history', 'narrative'].includes(charSubMatch[2])) {
-        const handler = routes['#/char'];
-        if (handler) {
-            handler();
-            return;
-        }
-    }
-    
     const handler = routes[key];
     if (handler) {
       handler();
