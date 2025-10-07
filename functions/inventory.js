@@ -227,6 +227,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         legend: { min: 40, max: 1000 },
         myth:   { min: 100, max: 2500 },
         aether: { min: 250, max: 5000 },
+        alpha:  { min: 5000, max: 10000 }, // [추가]
+        omega:  { min: 5000, max: 10000 }  // [추가]
       };
       const range = ranges[R] || ranges.normal;
       let value = Math.max(range.min, Math.min(range.max, Math.floor(Number(G.aestheticValue) || range.min)));
