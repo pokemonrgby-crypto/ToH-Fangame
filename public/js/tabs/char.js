@@ -217,87 +217,89 @@ async function render(c){
     }
   } catch (_) {}
 
-  root.innerHTML = `
-  <section class="container narrow">
-    <div class="card p16 char-card">
-      <div class="char-header">
-        
-        <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
-          <div class="avatar-clip">
-            <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt=""
-                 onerror="this.src=''; this.classList.add('noimg')" />
-          </div>
 
-          
-          <div class="top-actions" style="z-index:99">
-            <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
-            ${isOwner? `<button class="fab-circle" id="btnUpload" title="이미지 업로드">⤴</button>`:''}
-          </div>
-        </div>
-        
-        <div class="char-name">${c.name||'(이름 없음)'}</div>
-        <div class="chips-row">
-          <span class="tier-chip" style="background:${tier.color}1a; color:#fff; border-color:${tier.color}80;">${tier.name || 'Tier'}</span>
-          <span class="chip">${worldName}</span>
-        </div>
-        <div class="expbar" aria-label="EXP" style="position:relative;width:100%;max-width:760px;height:10px;border-radius:999px;background:#0d1420;border:1px solid #273247;overflow:hidden;margin-top:8px;">
-          <div style="position:absolute;inset:0 auto 0 0;width:${expPct}%;background:linear-gradient(90deg,#4ac1ff,#7a9bff,#c2b5ff);box-shadow:0 0 12px #7ab8ff77 inset;"></div>
-          <div style="position:absolute;top:-22px;right:0;font-size:12px;color:#9aa5b1;">EXP ${expVal}</div>
-        </div>
-        <div class="char-stats4">
-          <div class="stat-box stat-win"><div class="k">승률</div><div class="v">${rateText(c.wins,c.losses)}</div></div>
-          <div class="stat-box stat-like"><div class="k">누적 좋아요</div><div class="v">${c.likes_total||0}</div></div>
-          <div class="stat-box stat-elo"><div class="k">Elo</div><div class="v">${c.elo||1000}</div></div>
-          <div class="stat-box stat-week"><div class="k">주간 좋아요</div><div class="v">${c.likes_weekly||0}</div></div>
-        </div>
-        <div class="char-counters">전투 ${c.battle_count||0} · 조우 ${c.encounter_count||0} · 탐험 ${c.explore_count||0}</div>
-      </div>
-    </div>
-    <div class="book-card mt16">
-      <div class="bookmarks">
-        <button class="bookmark active" data-tab="bio">기본 소개 / 서사</button>
-        <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
-        <button class="bookmark" data-tab="history">배틀 / 조우 / 탐험 전적</button>
-      </div>
-      <div class="bookview" id="bookview"></div>
-    </div>
-  </section>`;
+  root.innerHTML = `
+  <section class="container narrow">
+    <div class="card p16 char-card">
+      <div class="char-header">
+        
+        <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
+          <div class="avatar-clip">
+            <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt=""
+                 onerror="this.src=''; this.classList.add('noimg')" />
+          </div>
 
-  const wrap = root.querySelector('.avatar-wrap');
+          
+          <div class="top-actions" style="z-index:99">
+            <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
+            ${isOwner? `<button class="fab-circle" id="btnUpload" title="이미지 업로드">⤴</button>`:''}
+          </div>
+        </div>
+        
+        <div class="char-name">${c.name||'(이름 없음)'}</div>
+        <div class="chips-row">
+          <span class="tier-chip" style="background:${tier.color}1a; color:#fff; border-color:${tier.color}80;">${tier.name || 'Tier'}</span>
+          <span class="chip">${worldName}</span>
+        </div>
+        <div class="expbar" aria-label="EXP" style="position:relative;width:100%;max-width:760px;height:10px;border-radius:999px;background:#0d1420;border:1px solid #273247;overflow:hidden;margin-top:8px;">
+          <div style="position:absolute;inset:0 auto 0 0;width:${expPct}%;background:linear-gradient(90deg,#4ac1ff,#7a9bff,#c2b5ff);box-shadow:0 0 12px #7ab8ff77 inset;"></div>
+          <div style="position:absolute;top:-22px;right:0;font-size:12px;color:#9aa5b1;">EXP ${expVal}</div>
+        </div>
+        <div class="char-stats4">
+          <div class="stat-box stat-win"><div class="k">승률</div><div class="v">${rateText(c.wins,c.losses)}</div></div>
+          <div class="stat-box stat-like"><div class="k">누적 좋아요</div><div class="v">${c.likes_total||0}</div></div>
+          <div class="stat-box stat-elo"><div class="k">Elo</div><div class="v">${c.elo||1000}</div></div>
+          <div class="stat-box stat-week"><div class="k">주간 좋아요</div><div class="v">${c.likes_weekly||0}</div></div>
+        </div>
+        <div class="char-counters">전투 ${c.battle_count||0} · 조우 ${c.encounter_count||0} · 탐험 ${c.explore_count||0}</div>
+      </div>
+    </div>
+    <div class="book-card mt16">
+      <div class="bookmarks">
+        <button class="bookmark active" data-tab="bio">기본 소개 / 서사</button>
+        <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
+        <button class="bookmark" data-tab="history">배틀 / 조우 / 탐험 전적</button>
+      </div>
+      <div class="bookview" id="bookview"></div>
+    </div>
+  </section>`;
 
-  if (wrap && supporterTier && supporterTier !== 'none' && !wrap.dataset.fxAttached) {
-    wrap.dataset.fxAttached = '1';
-    
-    const validTiers = ['nexus', 'flame', 'galaxy', 'forest', 'orbits'];
-    
-    const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
-    
-    attachSupporterFX(wrap, effectTheme);
-  }
+  const wrap = root.querySelector('.avatar-wrap');
 
-  getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
-    const img = document.getElementById('charAvatar');
-    if(!url || !img) return;
-    const pre = new Image();
-    pre.onload = ()=> { img.src = url; };
-    pre.src = url;
-  }).catch(()=>{ /* keep thumbnail */ });
+  if (wrap && supporterTier && supporterTier !== 'none' && !wrap.dataset.fxAttached) {
+    wrap.dataset.fxAttached = '1';
+    
+    const validTiers = ['nexus', 'flame', 'galaxy', 'forest', 'orbits'];
+    
+    const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
+    
+    attachSupporterFX(wrap, effectTheme);
+  }
+
+  getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
+    const img = document.getElementById('charAvatar');
+    if(!url || !img) return;
+    const pre = new Image();
+    pre.onload = ()=> { img.src = url; };
+    pre.src = url;
+  }).catch(()=>{ /* keep thumbnail */ });
 
 
-  mountFixedActions(c, isOwner);
+  mountFixedActions(c, isOwner);
 
-  if(isOwner){
-    root.querySelector('#btnUpload')?.addEventListener('click', ()=>{
-      const i=document.createElement('input'); i.type='file'; i.accept='image/*';
-      i.onchange=async()=>{
-        const f=i.files?.[0]; if(!f) return;
-        await uploadAvatarSquare(c.id, f);
-        showToast('프로필 업데이트 완료!');
-        location.reload();
-      };
-      i.click();
-    });
-  }
+  if(isOwner){
+    root.querySelector('#btnUpload')?.addEventListener('click', ()=>{
+      const i=document.createElement('input'); i.type='file'; i.accept='image/*';
+      i.onchange=async()=>{
+        const f=i.files?.[0]; if(!f) return;
+        await uploadAvatarSquare(c.id, f);
+        showToast('프로필 업데이트 완료!');
+        location.reload();
+      };
+      i.click();
+    });
+  }
+  const btnLike = root.querySelector('#btnLike');
   const btnLike = root.querySelector('#btnLike');
 if (btnLike) {
   const LIKED_KEY = `toh_liked_${c.id}`;
