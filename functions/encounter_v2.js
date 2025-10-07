@@ -161,7 +161,7 @@ ${relationNote}
         // 공용 쿨타임 5분 부여
         const nowSim = Math.floor(Date.now() / 1000);
         await db.collection('users').doc(uid).set(
-          { cooldown_all_until: nowSim + 300 },
+          { cooldown_all_until: nowSim + 180 },
           { merge: true }
         );
 
@@ -279,7 +279,7 @@ ${result.content}
       // 8) 공용 쿨타임 5분
       const nowSecAfter = Math.floor(Date.now() / 1000);
       await db.collection('users').doc(uid).set(
-        { cooldown_all_until: nowSecAfter + 300 },
+        { cooldown_all_until: nowSecAfter + 180 },
         { merge: true }
       );
 
