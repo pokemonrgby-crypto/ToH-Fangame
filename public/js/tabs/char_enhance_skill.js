@@ -1,13 +1,67 @@
 // /public/js/tabs/char_enhance_skill.js
 
 import { db, auth, fx, func } from '../api/firebase.js';
-// [오류 수정] 아래 import 구문의 주소를 올바른 형식으로 수정했습니다.
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
-import { confirmModal, promptModal, ensureModalCss } from '../ui/modal.js';
+import { confirmModal, ensureModalCss } from '../ui/modal.js';
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function parseCharId() { return new URLSearchParams(location.hash.split('?')[1] || '').get('id'); }
+
+/**
+ * [신규] 스킬 성장을 위한 프롬프트(이름, 방향)를 입력받는 모달
+ * @param {object} skill - 성장시킬 스킬 객체
+ * @returns {Promise<{newName: string|null, userPrompt: string}|null>}
+ */
+async function openEnhancePromptModal(skill) {
+    ensureModalCss();
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-back';
+        back.innerHTML = `
+            <div class="modal-card" style="max-width: 560px;">
+                <div style="font-weight:900; font-size:18px;">'${esc(skill.name)}' 성장</div>
+                <div class="text-dim" style="font-size:13px; margin-top:4px;">스킬의 새로운 이름과 성장 방향을 AI에게 알려주세요.</div>
+                
+                <div style="margin-top:12px;">
+                    <label class="kv-label">새로운 스킬 이름 (선택, 최대 20자)</label>
+                    <input id="new-skill-name" class="input" placeholder="${esc(skill.name)}" maxlength="20">
+                </div>
+
+                <div style="margin-top:12px;">
+                    <label class="kv-label">성장 방향 프롬프트 (필수, 최대 300자)</label>
+                    <textarea id="skill-prompt" class="input" rows="4" placeholder="예: 좀 더 방어적으로 사용하거나, 아군을 보조하는 효과를 추가하고 싶어요." maxlength="300"></textarea>
+                </div>
+                
+                <div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px;">
+                    <button id="modal-cancel" class="btn ghost">취소</button>
+                    <button id="modal-ok" class="btn primary">AI에게 요청</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(back);
+        const close = (val) => { back.remove(); resolve(val); };
+        
+        const newNameInput = back.querySelector('#new-skill-name');
+        const promptInput = back.querySelector('#skill-prompt');
+
+        back.querySelector('#modal-cancel').onclick = () => close(null);
+        back.querySelector('#modal-ok').onclick = () => {
+            const userPrompt = promptInput.value.trim();
+            if (!userPrompt) {
+                showToast('성장 방향 프롬프트를 입력해주세요.');
+                return;
+            }
+            close({
+                newName: newNameInput.value.trim() || null,
+                userPrompt
+            });
+        };
+        back.addEventListener('click', e => { if (e.target === back) close(null); });
+        promptInput.focus();
+    });
+}
+
 
 export default async function showEnhanceSkillPage() {
     const root = document.getElementById('view');
@@ -67,39 +121,29 @@ export default async function showEnhanceSkillPage() {
                 const skill = skills.find(s => s.originalIndex === skillIndex);
                 if (!skill) return;
 
-                const userPrompt = await promptModal({
-                    title: `'${skill.name}' 성장`,
-                    hint: '스킬이 어떻게 성장하면 좋을지 AI에게 방향을 제시해주세요. (300자)',
-                    placeholder: '예: 좀 더 방어적으로 사용하거나, 아군을 보조하는 효과를 추가하고 싶어요.',
-                    maxLen: 300,
-                    okText: 'AI에게 요청'
-                });
-
-                if (userPrompt === null) return; // 사용자가 모달을 닫은 경우
+                const result = await openEnhancePromptModal(skill);
+                if (result === null) return;
+                const { newName, userPrompt } = result;
 
                 btn.disabled = true;
                 btn.textContent = 'AI 생성 중...';
 
                 try {
                     const initiateEnhanceSkill = httpsCallable(func, 'initiateEnhanceSkill');
-                    const result = await initiateEnhanceSkill({ charId, skillIndex, userPrompt });
+                    const response = await initiateEnhanceSkill({ charId, skillIndex, userPrompt, newName });
 
-                    if (result.data.ok) {
-                        const { enhancedSkill, cost } = result.data;
+                    if (response.data.ok) {
+                        const { enhancedSkill, cost } = response.data;
                         const confirmed = await showConfirmationModal(enhancedSkill, cost, skill);
                         if (confirmed) {
                             await applySkillEnhancement(charId, skillIndex, enhancedSkill);
                         } else {
-                           // 사용자가 최종 확인을 취소하면 쿨타임이 이미 시작되었으므로,
-                           // 페이지를 새로고침하는 대신 버튼 상태만 원래대로 되돌립니다.
                            showToast('성장을 취소했습니다.');
-                           btn.disabled = false;
-                           btn.textContent = '성장';
+                           showEnhanceSkillPage();
                         }
                     }
                 } catch (error) {
                     showToast(`성장 실패: ${error.message}`);
-                    // 실패 시에는 쿨타임이 돌지 않았을 수 있으므로 페이지를 새로고침하여 정확한 상태를 반영합니다.
                     showEnhanceSkillPage();
                 }
             };
@@ -144,6 +188,7 @@ function renderSkillCard(skill, totalExp, currentCoins) {
 
 async function showConfirmationModal(newSkill, cost, oldSkill) {
     ensureModalCss();
+    const nameChanged = newSkill.name !== oldSkill.name;
     return new Promise(resolve => {
         const back = document.createElement('div');
         back.className = 'modal-back';
@@ -152,7 +197,11 @@ async function showConfirmationModal(newSkill, cost, oldSkill) {
                 <div style="font-weight:900; font-size:18px;">스킬 성장 결과 확인</div>
                 <div class="kv-card" style="margin-top: 12px;">
                     <div class="kv-label">이름</div>
-                    <p><b>${esc(newSkill.name)}</b> <span class="chip">Lv.${oldSkill.level || 0} → Lv.${newSkill.level}</span></p>
+                    <p>
+                        ${nameChanged ? `<span class="text-dim" style="text-decoration: line-through;">${esc(oldSkill.name)}</span> → ` : ''}
+                        <b>${esc(newSkill.name)}</b> 
+                        <span class="chip">Lv.${oldSkill.level || 0} → Lv.${newSkill.level}</span>
+                    </p>
                     
                     <div class="kv-label" style="margin-top: 8px;">이전 설명</div>
                     <p class="text-dim" style="font-size:13px;">${esc(oldSkill.desc_soft)}</p>
@@ -184,15 +233,14 @@ async function showConfirmationModal(newSkill, cost, oldSkill) {
     });
 }
 
-async function applySkillEnhancement(charId, skillIndex, enhancedSkill) {
+async function applySkillEnhancement(charId, skillIndex, skill) {
     try {
         const confirmEnhanceSkill = httpsCallable(func, 'confirmEnhanceSkill');
-        await confirmEnhanceSkill({ charId, skillIndex, enhancedSkill });
+        await confirmEnhanceSkill({ charId, skillIndex, enhancedSkill: skill });
         showToast('스킬을 성공적으로 성장시켰습니다!');
         location.hash = `#/char/${charId}`;
     } catch (error) {
         showToast(`적용 실패: ${error.message}`);
-        // 적용 실패 시에는 쿨타임이 이미 돌았으므로, 페이지를 새로고침하여 정확한 쿨타임 상태를 보여줍니다.
         showEnhanceSkillPage();
     }
 }
