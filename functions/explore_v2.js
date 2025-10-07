@@ -388,13 +388,29 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const pend = run.pending_choices;
       if(!pend) throw new HttpsError('failed-precondition','대기 선택 없음');
 
-      const chosenDice = pend.diceResults?.[idx];
+      // [PATCH] 레거시/빈 선택 방어 + 친절한 에러 메시지
+      const inferDiceFromOutcome = (oc = {}) => {
+        const t = String(oc.event_type || oc.type || '').trim();
+        if (!t) return null;
+        if (t === 'combat') return { eventKind: 'combat', combat: { enemyTier: 'normal' }, deltaStamina: 0 };
+        if (t === 'item')   return { eventKind: 'item',   item:   { rarity: 'normal', isConsumable: true, uses: 1 }, deltaStamina: -1 };
+        if (t === 'risk')   return { eventKind: 'risk',   deltaStamina: -2 };
+        if (t === 'safe')   return { eventKind: 'safe',   deltaStamina:  0 };
+        if (t === 'narrative') return { eventKind: 'narrative', deltaStamina: -1 };
+        return null;
+      };
+
       const chosenOutcome = pend.choice_outcomes?.[idx] || {};
+      const chosenDice =
+        pend.diceResults?.[idx] ||
+        pend.dice_results?.[idx] || // [호환] 예전 스키마
+        inferDiceFromOutcome(chosenOutcome);
 
       if (!chosenDice) {
-        logger.error('Invalid choice index or corrupted pending_choices', { runId, index: idx, pending_choices: pend });
-        throw new HttpsError('internal', '선택한 결과(dice)를 찾을 수 없습니다.');
+        logger.warn('[advApplyChoiceV2] chosenDice missing (run may be old)', { runId, idx, pendKeys: Object.keys(pend||{}) });
+        throw new HttpsError('failed-precondition', '선택 데이터가 오래돼서 적용할 수 없어. 상단의 "계속 탐험"을 눌러 새 턴을 만들자!');
       }
+
 
       const eventKind = chosenDice.eventKind;
 
