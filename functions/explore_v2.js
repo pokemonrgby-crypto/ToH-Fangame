@@ -379,7 +379,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
     const runRef = db.collection('explore_runs').doc(runId);
     
-    return await db.runTransaction(async (tx) => {
+    // ANCHOR: [수정] 트랜잭션 결과를 받아 후속 처리를 위해 반환값을 받도록 수정
+    const { isBattle, isDone } = await db.runTransaction(async (tx) => {
       const s = await tx.get(runRef);
       if(!s.exists) throw new HttpsError('not-found','런 없음');
       const run = s.data();
@@ -479,8 +480,15 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       }
 
       tx.update(runRef, updates);
-      return { ok:true, battle: isBattle, done: isDone };
+      // ANCHOR: [수정] 트랜잭션의 결과를 객체로 반환
+      return { isBattle, isDone };
     });
+
+    // ANCHOR: [수정] 트랜잭션이 끝난 후, 최신 문서를 다시 읽어 클라이언트에 전달
+    const finalSnap = await runRef.get();
+    const finalState = finalSnap.exists() ? finalSnap.data() : null;
+
+    return { ok: true, battle: isBattle, done: isDone, state: finalState };
   });
   
   const endExploreV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
