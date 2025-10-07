@@ -6,8 +6,8 @@ import { getFirestore, Timestamp, FieldValue } from 'firebase-admin/firestore';
 if (!admin.apps.length) admin.initializeApp();
 
 type Mode = 'battle'|'encounter';
-const COOLDOWN_SEC = 300;
-const LOCK_SEC = 600;
+const COOLDOWN_SEC = 180;
+const LOCK_SEC = 3000;
 
 function nowSec(){ return Math.floor(Date.now()/1000); }
 // 'battle' 모드를 위해 가우시안 가중치 함수는 유지합니다.
