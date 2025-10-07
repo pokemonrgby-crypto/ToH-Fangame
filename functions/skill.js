@@ -4,7 +4,6 @@ const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 const { FieldValue } = require('firebase-admin/firestore');
 
-// AI 모델 풀
 const MODEL_POOL = ['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash'];
 
 function pickModels() {
@@ -12,7 +11,6 @@ function pickModels() {
   return { primary: shuffled[0], fallback: shuffled[1] || shuffled[0] };
 }
 
-// Gemini 호출 헬퍼
 async function callGemini(apiKey, systemText, userText, modelName) {
     const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
@@ -49,9 +47,8 @@ async function callGemini(apiKey, systemText, userText, modelName) {
 
 module.exports = (admin, { GEMINI_API_KEY }) => {
     const db = admin.firestore();
-    const CREATE_COOLDOWN_MS = 3 * 60 * 1000; // 3분 쿨타임 (공유)
+    const CREATE_COOLDOWN_MS = 3 * 60 * 1000;
 
-    // 1단계: AI로 스킬 초안 생성
     const generateNewSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -66,7 +63,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
 
-        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+        if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
         const charData = charSnap.data();
         if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
 
@@ -110,16 +107,14 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const newSkill = {
             name: String(aiResult.name || '알 수 없는 스킬').slice(0, 20),
             desc_soft: String(aiResult.description || '').slice(0, 140),
-            level: 0 // 신규 스킬은 0레벨로 시작
+            level: 0
         };
         
-        // 쿨타임 기록만 먼저 처리
         await userRef.set({ lastSkillCreatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
         return { ok: true, generatedSkill: newSkill, cost };
     });
     
-    // 2단계: 사용자가 확인 후 스킬 최종 적용
     const confirmAddSkill = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -152,18 +147,17 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             }
 
             tx.update(userRef, { coins: FieldValue.increment(-cost) });
-            tx.update(charRef, { abilities_all: FieldValue.arrayUnion({ ...skill, level: 0 }) }); // 레벨 명시
+            tx.update(charRef, { abilities_all: FieldValue.arrayUnion({ ...skill, level: 0 }) });
 
             return { ok: true, addedSkill: skill };
         });
     });
 
-    // 스킬 성장 1단계: AI 초안 생성
     const initiateEnhanceSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-        const { charId, skillIndex, userPrompt } = req.data;
+        const { charId, skillIndex, userPrompt, newName } = req.data;
         if (!charId || typeof skillIndex !== 'number' || !userPrompt) {
             throw new HttpsError('invalid-argument', '캐릭터 ID, 스킬 인덱스, 사용자 프롬프트가 필요합니다.');
         }
@@ -173,11 +167,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
 
-        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+        if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
         const charData = charSnap.data();
         if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
         
-        // 공유 쿨타임 확인
         const lastCreatedAt = userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0;
         if (Date.now() - lastCreatedAt < CREATE_COOLDOWN_MS) {
             const remaining = Math.ceil((CREATE_COOLDOWN_MS - (Date.now() - lastCreatedAt)) / 1000);
@@ -198,15 +191,15 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
         if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
 
-        // AI 호출
         const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_enhance_system || '';
         if (!systemPrompt) throw new HttpsError('internal', '스킬 강화 프롬프트를 찾을 수 없습니다.');
 
         const aiUserPrompt = JSON.stringify({
-            character: charData, // 캐릭터 전체 정보 전달
+            character: charData,
             skill: skillToEnhance,
             targetLevel,
-            userPrompt: userPrompt // 사용자 프롬프트 추가
+            userPrompt: userPrompt,
+            newName: newName || null
         }, null, 2);
 
         const { primary, fallback } = pickModels();
@@ -219,18 +212,16 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         }
 
         const enhancedSkill = {
-            name: skillToEnhance.name, // 이름은 고정
+            name: String(aiResult.name || skillToEnhance.name).slice(0, 20),
             desc_soft: aiResult.desc_soft,
             level: targetLevel,
         };
 
-        // 쿨타임 시작
         await userRef.set({ lastSkillCreatedAt: FieldValue.serverTimestamp() }, { merge: true });
 
         return { ok: true, enhancedSkill, cost: costs[targetLevel] };
     });
 
-    // 스킬 성장 2단계: 최종 적용
     const confirmEnhanceSkill = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -263,12 +254,12 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
             if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
 
-            // 글자 수 제한 적용
             const limits = { 1: 250, 2: 400, 3: 600 };
             const finalDescription = String(enhancedSkill.desc_soft || '').slice(0, limits[targetLevel]);
             
             const finalSkill = {
                 ...originalSkill,
+                name: String(enhancedSkill.name || originalSkill.name).slice(0, 20),
                 desc_soft: finalDescription,
                 level: targetLevel
             };
