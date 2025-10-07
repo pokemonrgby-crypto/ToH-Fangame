@@ -4,8 +4,8 @@ import { db, auth, fx, func } from '../api/firebase.js';
 import { attachSupporterFX } from '../ui/supporter_fx.js';
 import { startAfter, getDocFromServer, getDocsFromServer } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
 import {
-  tierOf, uploadAvatarSquare, updateAbilitiesEquipped, updateItemsEquipped,
-  getCharMainImageUrl, fetchWorlds, deleteRelation 
+  tierOf, uploadAvatarSquare, updateAbilitiesEquipped, updateItemsEquipped,
+  getCharMainImageUrl, fetchWorlds, deleteRelation 
 } from '../api/store.js';
 import { getUserInventory } from '../api/user.js';
 import { showToast } from '../ui/toast.js';
@@ -14,166 +14,153 @@ import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/fireba
 import { prettyTime } from '../ui/utils.js'; // ANCHOR: [추가] 날짜 포맷 함수 import
 
 export function esc(s){
-  return String(s ?? '').replace(/[&<>"']/g, c => ({
-    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
-  }[c]));
+  return String(s ?? '').replace(/[&<>"']/g, c => ({
+    '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+  }[c]));
 }
 
-// ANCHOR: function parseId(){
-function parseCharRoute(){
+function parseId(){
   const h = location.hash || '';
-  const m = h.match(/^#\/char\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
-
-  if (!m) return { charId:null, tab: 'bio', sub: null, detailId: null };
-
-  const charId = m[1];
-  const tabKey = m[2] || 'bio';
-  const subKey = m[3] || null;
-  
-  // /char/ID/narrative/NARRID 형태의 레거시 링크를 처리
-  if (tabKey === 'narrative' && subKey) { 
-    return { charId, tab: 'bio', sub: 'narrative', detailId: subKey }; 
-  }
-  
-  return { charId, tab: tabKey, sub: subKey, detailId: null };
+  const m = h.match(/^#\/char\/([^/]+)(?:\/narrative\/([^/]+))?$/);
+  return m ? { charId: m[1], narrId: m[2] || null } : { charId:null, narrId:null };
 }
 
 function rateText(w,l){ const W=+w||0, L=+l||0, T=W+L; return T? Math.round(W*100/T)+'%':'0%'; }
 function normalizeChar(c){
-  const out={...c};
-  out.elo = out.elo ?? 1000;
-  out.abilities_all = Array.isArray(out.abilities_all)? out.abilities_all : (Array.isArray(out.abilities)? out.abilities: []);
-  out.abilities_equipped = Array.isArray(out.abilities_equipped)? out.abilities_equipped.slice(0,2): [];
-  out.items_all = Array.isArray(out.items_all) ? out.items_all : [];
-  out.items_equipped = Array.isArray(out.items_equipped)? out.items_equipped.slice(0,3): [];
-  out.thumb_url = out.thumb_url || '';
-  out.image_url = out.thumb_url || out.image_b64 || out.image_url || '';
-  out.narrative_items = Array.isArray(out.narrative_items) ? out.narrative_items
-  : (out.narrative ? [{ title:'서사', body: out.narrative }] : []);
-  return out;
+  const out={...c};
+  out.elo = out.elo ?? 1000;
+  out.abilities_all = Array.isArray(out.abilities_all)? out.abilities_all : (Array.isArray(out.abilities)? out.abilities: []);
+  out.abilities_equipped = Array.isArray(out.abilities_equipped)? out.abilities_equipped.slice(0,2): [];
+  out.items_all = Array.isArray(out.items_all) ? out.items_all : [];
+  out.items_equipped = Array.isArray(out.items_equipped)? out.items_equipped.slice(0,3): [];
+  out.thumb_url = out.thumb_url || '';
+  out.image_url = out.thumb_url || out.image_b64 || out.image_url || '';
+  out.narrative_items = Array.isArray(out.narrative_items) ? out.narrative_items
+  : (out.narrative ? [{ title:'서사', body: out.narrative }] : []);
+  return out;
 }
 
 export function rarityStyle(r) {
-  const map = {
-    normal: { bg: '#2a2f3a', border: '#5f6673', text: '#c8d0dc', label: '일반' },
-    rare:   { bg: '#0f2742', border: '#3b78cf', text: '#cfe4ff', label: '레어' },
-    epic:   { bg: '#20163a', border: '#7e5cff', text: '#e6dcff', label: '유니크' },
-    legend: { bg: '#2b220b', border: '#f3c34f', text: '#ffe9ad', label: '레전드' },
-    myth:   { bg: '#3a0f14', border: '#ff5b66', text: '#ffc9ce', label: '신화' },
-    aether: { 
-      bg: '#2f2b3b', 
-      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5e5ce6, #ff2d55, #ff375f)', 
-      text: '#f8f8f2', 
-      label: '에테르' 
-    },
+  const map = {
+    normal: { bg: '#2a2f3a', border: '#5f6673', text: '#c8d0dc', label: '일반' },
+    rare:   { bg: '#0f2742', border: '#3b78cf', text: '#cfe4ff', label: '레어' },
+    epic:   { bg: '#20163a', border: '#7e5cff', text: '#e6dcff', label: '유니크' },
+    legend: { bg: '#2b220b', border: '#f3c34f', text: '#ffe9ad', label: '레전드' },
+    myth:   { bg: '#3a0f14', border: '#ff5b66', text: '#ffc9ce', label: '신화' },
+    aether: { 
+      bg: '#2f2b3b', 
+      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5e5ce6, #ff2d55, #ff375f)', 
+      text: '#f8f8f2', 
+      label: '에테르' 
+    },
 
-  };
-  return map[(r || '').toLowerCase()] || map.normal;
+  };
+  return map[(r || '').toLowerCase()] || map.normal;
 }
 
 export function isConsumableItem(it){ return !!(it?.consumable || it?.isConsumable); }
 export function getUsesLeft(it){
-  if (typeof it?.uses === 'number') return it.uses;
-  if (typeof it?.remainingUses === 'number') return it.remainingUses;
-  return null;
+  if (typeof it?.uses === 'number') return it.uses;
+  if (typeof it?.remainingUses === 'number') return it.remainingUses;
+  return null;
 }
 export function useBadgeHtml(it){
-  if (!isConsumableItem(it)) return '';
-  const left = getUsesLeft(it);
-  const label = (left === null) ? '소모품' : `남은 ${left}회`;
-  return `<span class="chip" style="margin-left:auto;font-size:11px;padding:2px 6px">${esc(label)}</span>`;
+  if (!isConsumableItem(it)) return '';
+  const left = getUsesLeft(it);
+  const label = (left === null) ? '소모품' : `남은 ${left}회`;
+  return `<span class="chip" style="margin-left:auto;font-size:11px;padding:2px 6px">${esc(label)}</span>`;
 }
 
 
 function ensureModalCss(){
-  if (document.getElementById('toh-modal-css')) return;
-  const st = document.createElement('style');
-  st.id = 'toh-modal-css';
-  st.textContent = `
-    .modal-back{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
-                background:rgba(0,0,0,.45)}
-    .modal-card{background:#0e1116;border:1px solid #273247;border-radius:14px;padding:14px;max-width:720px;width:92vw;
-                max-height:80vh;overflow:auto}
-  `;
-  document.head.appendChild(st);
+  if (document.getElementById('toh-modal-css')) return;
+  const st = document.createElement('style');
+  st.id = 'toh-modal-css';
+  st.textContent = `
+    .modal-back{position:fixed;inset:0;z-index:9999;display:flex;align-items:center;justify-content:center;
+                background:rgba(0,0,0,.45)}
+    .modal-card{background:#0e1116;border:1px solid #273247;border-radius:14px;padding:14px;max-width:720px;width:92vw;
+                max-height:80vh;overflow:auto}
+  `;
+  document.head.appendChild(st);
 }
 
 
 
 
 export function ensureItemCss() {
-  if (document.getElementById('toh-item-css')) return;
-  const st = document.createElement('style');
-  st.id = 'toh-item-css';
-  st.textContent = `
-  .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999}
-  .modal-card{background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;}
+  if (document.getElementById('toh-item-css')) return;
+  const st = document.createElement('style');
+  st.id = 'toh-item-css';
+  st.textContent = `
+  .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999}
+  .modal-card{background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;}
 
-  .shine-effect { position: relative; overflow: hidden; }
-  .shine-effect::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%); transform: rotate(30deg); animation: shine 3s infinite ease-in-out; pointer-events: none; }
-  @keyframes shine { 0% { transform: translateX(-75%) translateY(-25%) rotate(30deg); } 100% { transform: translateX(75%) translateY(25%) rotate(30deg); } }
-  .item-card { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; will-change: transform, box-shadow; outline: none; }
+  .shine-effect { position: relative; overflow: hidden; }
+  .shine-effect::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%); transform: rotate(30deg); animation: shine 3s infinite ease-in-out; pointer-events: none; }
+  @keyframes shine { 0% { transform: translateX(-75%) translateY(-25%) rotate(30deg); } 100% { transform: translateX(75%) translateY(25%) rotate(30deg); } }
+  .item-card { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; will-change: transform, box-shadow; outline: none; }
 .kv-card.item-card{
-  border:1px solid #273247;
-  border-radius:12px;
-  background:rgba(255,255,255,.03);
-  padding:10px;
+  border:1px solid #273247;
+  border-radius:12px;
+  background:rgba(255,255,255,.03);
+  padding:10px;
 }
 
 .kv-card.rarity-aether,
 .item.rarity-aether {
-  position: relative;
-  overflow: hidden;
-  border: 1px solid #fff;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #fff;
 }
 
 .kv-card.rarity-aether::before,
 .item.rarity-aether::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(
-    120deg,
-    #ff375f, #ff9f0a, #ffd60a, #34c759, #00c7be, #0a84ff, #5e5ce6, #ff2d55, #ff375f
-  );
-  background-size: 300% 300%;
-  filter: saturate(120%);
-  animation: aetherFlow 8s linear infinite;
-  z-index: 0;
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    #ff375f, #ff9f0a, #ffd60a, #34c759, #00c7be, #0a84ff, #5e5ce6, #ff2d55, #ff375f
+  );
+  background-size: 300% 300%;
+  filter: saturate(120%);
+  animation: aetherFlow 8s linear infinite;
+  z-index: 0;
 }
 
 .kv-card.rarity-aether::after,
 .item.rarity-aether::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: rgba(15,16,20,.65);
-  z-index: 1;
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: rgba(15,16,20,.65);
+  z-index: 1;
 }
 
 .kv-card.rarity-aether > *,
 .item.rarity-aether > * {
-  position: relative;
-  z-index: 2;
+  position: relative;
+  z-index: 2;
 }
 
 @keyframes aetherFlow {
-  0%   { background-position:   0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position:   0% 50%; }
+  0%   { background-position:   0% 50%; }
+  50%  { background-position: 100% 50%; }
+  100% { background-position:   0% 50%; }
 }
 
 @media (prefers-reduced-motion: reduce){
-  .kv-card.rarity-aether::before,
-  .item.rarity-aether::before { animation: none; }
+  .kv-card.rarity-aether::before,
+  .item.rarity-aether::before { animation: none; }
 }
 
-  .item-card:hover, .item-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.35); filter: brightness(1.05); }`;
-  document.head.appendChild(st);
+  .item-card:hover, .item-card:focus-visible { transform: translateY(-2px); box-shadow: 0 6px 18px rgba(0,0,0,.35); filter: brightness(1.05); }`;
+  document.head.appendChild(st);
 }
 
 export async function showCharDetail(){
-  const { charId, tab, sub, detailId } = parseCharRoute();
+  const { charId, narrId } = parseId();
   const root = document.getElementById('view');
   if(!root){ console.warn('[char] #view not found'); return; }
   if(!charId){
@@ -188,14 +175,8 @@ export async function showCharDetail(){
       return;
     }
     const c = normalizeChar({ id:snap.id, ...snap.data() });
-    
-    if (tab === 'bio' && sub === 'narrative' && detailId) { 
-        renderNarrativePage(c, detailId); 
-        return; 
-    }
-    
-    // [수정]: tab과 sub 인자를 render 함수로 전달
-    await render(c, tab, sub); 
+    if (narrId) { renderNarrativePage(c, narrId); return; }
+    else{ await render(c); }
   }catch(e){
     console.error('[char] load error', e);
     const msg = e?.code==='permission-denied'
@@ -205,37 +186,36 @@ export async function showCharDetail(){
   }
 }
 
-// anchor: 렌더 함수 시그니처 수정
-async function render(c, activeTab, activeSub){
-  const root = document.getElementById('view');
-  const tier = tierOf(c.elo||1000);
-  const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
-  
-  let supporterTier = '';
-  if (c.owner_uid) {
-    try {
-      const ownerSnap = await fx.getDoc(fx.doc(db, 'users', c.owner_uid));
-      if (ownerSnap.exists()) {
-        supporterTier = ownerSnap.data().supporter_tier;
-      }
-    } catch (e) {
-      console.warn("후원자 정보 조회 실패:", e);
-    }
-  }
-  const expVal = Number.isFinite(c.exp) ? c.exp : 0;
-  const expPct = Math.max(0, Math.min(100, (c.exp_progress ?? ((expVal)%100)) ));
-  const _rawWorlds = await fetchWorlds().catch(()=>null);
-  let worldName = c.world_id || 'world:default';
-  try {
-    const ws = Array.isArray(_rawWorlds) ? _rawWorlds : (_rawWorlds && Array.isArray(_rawWorlds.worlds)) ? _rawWorlds.worlds : _rawWorlds;
-    if (Array.isArray(ws)) {
-      const w = ws.find(x => (x.id === c.world_id) || (x.slug === c.world_id));
-      worldName = (w?.name) || worldName;
-    } else if (ws && typeof ws === 'object') {
-      const w = ws[c.world_id];
-      worldName = (typeof w === 'string') ? w : (w?.name || worldName);
-    }
-  } catch (_) {}
+async function render(c){
+  const root = document.getElementById('view');
+  const tier = tierOf(c.elo||1000);
+  const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
+  
+  let supporterTier = '';
+  if (c.owner_uid) {
+    try {
+      const ownerSnap = await fx.getDoc(fx.doc(db, 'users', c.owner_uid));
+      if (ownerSnap.exists()) {
+        supporterTier = ownerSnap.data().supporter_tier;
+      }
+    } catch (e) {
+      console.warn("후원자 정보 조회 실패:", e);
+    }
+  }
+  const expVal = Number.isFinite(c.exp) ? c.exp : 0;
+  const expPct = Math.max(0, Math.min(100, (c.exp_progress ?? ((expVal)%100)) ));
+  const _rawWorlds = await fetchWorlds().catch(()=>null);
+  let worldName = c.world_id || 'world:default';
+  try {
+    const ws = Array.isArray(_rawWorlds) ? _rawWorlds : (_rawWorlds && Array.isArray(_rawWorlds.worlds)) ? _rawWorlds.worlds : _rawWorlds;
+    if (Array.isArray(ws)) {
+      const w = ws.find(x => (x.id === c.world_id) || (x.slug === c.world_id));
+      worldName = (w?.name) || worldName;
+    } else if (ws && typeof ws === 'object') {
+      const w = ws[c.world_id];
+      worldName = (typeof w === 'string') ? w : (w?.name || worldName);
+    }
+  } catch (_) {}
 
   root.innerHTML = `
   <section class="container narrow">
@@ -274,11 +254,10 @@ async function render(c, activeTab, activeSub){
       </div>
     </div>
     <div class="book-card mt16">
-      <div class="bookmarks" id="char-tabs">
-        <button class="bookmark" data-tab="bio">소개</button>
+      <div class="bookmarks">
+        <button class="bookmark active" data-tab="bio">기본 소개 / 서사</button>
         <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
-        <button class="bookmark" data-tab="growth">성장</button>
-        <button class="bookmark" data-tab="history">타임라인</button>
+        <button class="bookmark" data-tab="history">배틀 / 조우 / 탐험 전적</button>
       </div>
       <div class="bookview" id="bookview"></div>
     </div>
@@ -364,251 +343,231 @@ if (btnLike) {
 
   const bv = root.querySelector('#bookview');
   const tabs = root.querySelectorAll('.bookmark');
-  
-  // [수정] 탭 클릭 시 해시를 업데이트하고 해당 탭을 렌더링
-  const renderTabContent = (tabKey, subKey)=>{
-    if(tabKey==='bio') renderBio(c, bv, subKey);
-    else if(tabKey==='loadout') renderLoadout(c, bv);
-    else if(tabKey==='growth') renderGrowth(c, bv, subKey);
-    else if(tabKey==='history') renderTimeline(c, bv);
-  };
-
-  // 초기 활성화 탭 설정
-  let initialTab = activeTab; // <-- 인자로 받은 activeTab 사용
-  if(!['bio','loadout','growth','history'].includes(initialTab)) initialTab = 'bio';
-
-  tabs.forEach(b => {
-    if (b.dataset.tab === initialTab) {
-      b.classList.add('active');
-      renderTabContent(initialTab, activeSub); // <-- 인자로 받은 activeSub 사용
-    }
-  })
-
-
   tabs.forEach(b=>b.onclick=()=>{
     tabs.forEach(x=>x.classList.remove('active'));
     b.classList.add('active');
     const t=b.dataset.tab;
-    // [수정] 메인 탭 변경 시 해시를 /char/ID/TABKEY 로 변경
-    location.hash = `#/char/${c.id}/${t}`;
-    renderTabContent(t, null); // 서브 키는 초기화
+    if(t==='bio') renderBio(c, bv);
+    else if(t==='loadout') renderLoadout(c, bv);
+    else renderHistory(c, bv);
   });
+  renderBio(c, bv);
 }
 
 // ... (기존 코드와 동일)
 
 function mountFixedActions(c, isOwner){
-  document.querySelector('.fixed-actions')?.remove();
+  document.querySelector('.fixed-actions')?.remove();
 
-  const bar = document.createElement('div');
-  bar.className = 'fixed-actions';
+  const bar = document.createElement('div');
+  bar.className = 'fixed-actions';
 
-  if (!auth.currentUser) {
-    return;
-  }
+  if (!auth.currentUser) {
+    return;
+  }
 
-  if (isOwner) {
-    bar.innerHTML = `
-      <button class="btn large" id="fabEncounter">조우 시작</button>
-      <button class="btn large primary" id="fabBattle">배틀 시작</button>
-    `;
-    document.body.appendChild(bar);
+  if (isOwner) {
+    bar.innerHTML = `
+      <button class="btn large" id="fabEncounter">조우 시작</button>
+      <button class="btn large primary" id="fabBattle">배틀 시작</button>
+    `;
+    document.body.appendChild(bar);
 
-    bar.querySelector('#fabBattle').onclick = ()=>{
-      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'battle', ts: Date.now() }));
-      location.hash = '#/battle';
-    };
-    bar.querySelector('#fabEncounter').onclick = ()=>{
-      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'encounter', ts: Date.now() }));
-      location.hash = '#/encounter';
-    };
-    return;
-  }
+    bar.querySelector('#fabBattle').onclick = ()=>{
+      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'battle', ts: Date.now() }));
+      location.hash = '#/battle';
+    };
+    bar.querySelector('#fabEncounter').onclick = ()=>{
+      sessionStorage.setItem('toh.match.intent', JSON.stringify({ charId:c.id, mode:'encounter', ts: Date.now() }));
+      location.hash = '#/encounter';
+    };
+    return;
+  }
 
-  bar.innerHTML = `
-    <button class="btn large btn-mock" id="fabMockEncounter">모의조우</button>
-    <button class="btn large btn-mock" id="fabMockBattle">모의전투</button>
-  `;
-  document.body.appendChild(bar);
+  bar.innerHTML = `
+    <button class="btn large btn-mock" id="fabMockEncounter">모의조우</button>
+    <button class="btn large btn-mock" id="fabMockBattle">모의전투</button>
+  `;
+  document.body.appendChild(bar);
 
-  function goMock(myCharId, mode){
-    if(!myCharId){
-      showToast('내 캐릭터가 없어. 먼저 캐릭터를 만들어줘!');
-      return;
-    }
-    sessionStorage.setItem('toh.match.intent', JSON.stringify({
-      charId: myCharId,
-      mode,
-      sim: true,
-      targetId: c.id,
-      ts: Date.now()
-    }));
-    location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
-  }
+  function goMock(myCharId, mode){
+    if(!myCharId){
+      showToast('내 캐릭터가 없어. 먼저 캐릭터를 만들어줘!');
+      return;
+    }
+    sessionStorage.setItem('toh.match.intent', JSON.stringify({
+      charId: myCharId,
+      mode,
+      sim: true,
+      targetId: c.id,
+      ts: Date.now()
+    }));
+    location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
+  }
 
-  bar.querySelector('#fabMockBattle').onclick = () => openMyCharPickerForMock(c.id, 'battle', goMock);
-  bar.querySelector('#fabMockEncounter').onclick = () => openMyCharPickerForMock(c.id, 'encounter', goMock);
+  bar.querySelector('#fabMockBattle').onclick = () => openMyCharPickerForMock(c.id, 'battle', goMock);
+  bar.querySelector('#fabMockEncounter').onclick = () => openMyCharPickerForMock(c.id, 'encounter', goMock);
 }
 
 
 function renderBio(c, view){
-  view.innerHTML = `
-    <div class="subtabs">
-      <button class="sub active" data-s="summary">기본 소개</button>
-      <button class="sub" data-s="narr">서사</button>
-      <button class="sub" data-s="epis">미니 에피소드</button>
-      <button class="sub" data-s="rel">관계</button>
-    </div>
-    <div id="subview" class="p12"></div>
-  `;
+  view.innerHTML = `
+    <div class="subtabs">
+      <button class="sub active" data-s="summary">기본 소개</button>
+      <button class="sub" data-s="narr">서사</button>
+      <button class="sub" data-s="epis">미니 에피소드</button>
+      <button class="sub" data-s="rel">관계</button>
+    </div>
+    <div id="subview" class="p12"></div>
+  `;
 
-  const sv = view.querySelector('#subview');
-  const subs = view.querySelectorAll('.subtabs .sub');
-  subs.forEach(b=>b.onclick=()=>{
-    subs.forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    renderBioSub(b.dataset.s, c, sv);
-  });
-  renderBioSub('summary', c, sv);
+  const sv = view.querySelector('#subview');
+  const subs = view.querySelectorAll('.subtabs .sub');
+  subs.forEach(b=>b.onclick=()=>{
+    subs.forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    renderBioSub(b.dataset.s, c, sv);
+  });
+  renderBioSub('summary', c, sv);
 }
 
 async function renderBioSub(which, c, sv){
-  if(which==='summary'){
-    sv.innerHTML = `
-      <div class="kv-label">기본 소개</div>
-      <div class="kv-card" style="white-space:pre-line">${esc(c.summary)||'-'}</div>
-    `;
-  } else if(which==='narr'){
-    const list = normalizeNarratives(c);
-    if(list.length === 0){
-      sv.innerHTML = `<div class="kv-card text-dim">아직 등록된 서사가 없어.</div>`;
-      return;
-    }
-    sv.innerHTML = `
-      <div class="kv-label">서사 목록</div>
-      <div class="list">
-        ${list.map(n => `
-          <button class="kv-card" data-nid="${esc(n.id)}" style="text-align:left; cursor:pointer">
-            <div style="font-weight:800; margin-bottom:6px">${esc(n.title || '서사')}</div>
-            <div style="
-              color:#9aa5b1;
-              display:-webkit-box;
-              -webkit-line-clamp:2;
-              -webkit-box-orient:vertical;
-              overflow:hidden;
-            ">
-              ${esc((n.long || '').replace(/\s+/g,' ').trim())}
-            </div>
-          </button>
-        `).join('')}
-      </div>
-    `;
-    sv.querySelectorAll('[data-nid]').forEach(btn=>{
-      btn.addEventListener('click', ()=>{
-        const nid = btn.getAttribute('data-nid');
-        location.hash = `#/char/${c.id}/narrative/${nid}`;
-      });
-    });
-  } else if(which==='epis'){
-    sv.innerHTML = `
-      <div class="kv-label">미니 에피소드</div>
-      <div class="kv-card text-dim">조우/배틀에서 생성된 에피소드가 여기에 쌓일 예정이야.</div>
-    `;
-  } else if(which==='rel'){
-    sv.innerHTML = `
-      <div class="kv-label">관계</div>
-      <div id="relList" class="col" style="gap:8px">불러오는 중...</div>
-    `;
-    
-    const box = sv.querySelector('#relList');
-    try {
-      const q = fx.query(fx.collection(db, 'relations'), fx.where('pair', 'array-contains', c.id), fx.limit(50));
-      const snapshot = await fx.getDocs(q);
+  if(which==='summary'){
+    sv.innerHTML = `
+      <div class="kv-label">기본 소개</div>
+      <div class="kv-card" style="white-space:pre-line">${esc(c.summary)||'-'}</div>
+    `;
+  } else if(which==='narr'){
+    const list = normalizeNarratives(c);
+    if(list.length === 0){
+      sv.innerHTML = `<div class="kv-card text-dim">아직 등록된 서사가 없어.</div>`;
+      return;
+    }
+    sv.innerHTML = `
+      <div class="kv-label">서사 목록</div>
+      <div class="list">
+        ${list.map(n => `
+          <button class="kv-card" data-nid="${esc(n.id)}" style="text-align:left; cursor:pointer">
+            <div style="font-weight:800; margin-bottom:6px">${esc(n.title || '서사')}</div>
+            <div style="
+              color:#9aa5b1;
+              display:-webkit-box;
+              -webkit-line-clamp:2;
+              -webkit-box-orient:vertical;
+              overflow:hidden;
+            ">
+              ${esc((n.long || '').replace(/\s+/g,' ').trim())}
+            </div>
+          </button>
+        `).join('')}
+      </div>
+    `;
+    sv.querySelectorAll('[data-nid]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const nid = btn.getAttribute('data-nid');
+        location.hash = `#/char/${c.id}/narrative/${nid}`;
+      });
+    });
+  } else if(which==='epis'){
+    sv.innerHTML = `
+      <div class="kv-label">미니 에피소드</div>
+      <div class="kv-card text-dim">조우/배틀에서 생성된 에피소드가 여기에 쌓일 예정이야.</div>
+    `;
+  } else if(which==='rel'){
+    sv.innerHTML = `
+      <div class="kv-label">관계</div>
+      <div id="relList" class="col" style="gap:8px">불러오는 중...</div>
+    `;
+    
+    const box = sv.querySelector('#relList');
+    try {
+      const q = fx.query(fx.collection(db, 'relations'), fx.where('pair', 'array-contains', c.id), fx.limit(50));
+      const snapshot = await fx.getDocs(q);
 
-      if (snapshot.empty) {
-        box.innerHTML = `<div class="kv-card text-dim">아직 관계를 맺은 캐릭터가 없습니다.</div>`;
-        return;
-      }
-      
-      const rels = [];
-      snapshot.forEach(doc => rels.push({ id: doc.id, ...doc.data() }));
+      if (snapshot.empty) {
+        box.innerHTML = `<div class="kv-card text-dim">아직 관계를 맺은 캐릭터가 없습니다.</div>`;
+        return;
+      }
+      
+      const rels = [];
+      snapshot.forEach(doc => rels.push({ id: doc.id, ...doc.data() }));
 
-      const detailedRelPromises = rels.map(async (r) => {
-        if (!r.a_charRef || !r.b_charRef) {
-          console.warn('Skipping malformed relation document:', r);
-          return null;
-        }
+      const detailedRelPromises = rels.map(async (r) => {
+        if (!r.a_charRef || !r.b_charRef) {
+          console.warn('Skipping malformed relation document:', r);
+          return null;
+        }
 
-        const otherCharId = r.a_charRef.endsWith(c.id) ? r.b_charRef.replace('chars/','') : r.a_charRef.replace('chars/','');
-        
-        const [otherCharSnap, noteSnap] = await Promise.all([
-          fx.getDoc(fx.doc(db, 'chars', otherCharId)),
-          fx.getDoc(fx.doc(db, 'relations', r.id, 'meta', 'note'))
-        ]);
-        
-        return {
-          ...r,
-          otherChar: otherCharSnap.exists() ? { id: otherCharId, ...otherCharSnap.data() } : { id: otherCharId, name: '(알수없음)', thumb_url: '' },
-          note: noteSnap.exists() ? noteSnap.data().note : '메모 없음'
-        };
-      });
-      
-      const detailedRels = (await Promise.all(detailedRelPromises)).filter(Boolean);
+        const otherCharId = r.a_charRef.endsWith(c.id) ? r.b_charRef.replace('chars/','') : r.a_charRef.replace('chars/','');
+        
+        const [otherCharSnap, noteSnap] = await Promise.all([
+          fx.getDoc(fx.doc(db, 'chars', otherCharId)),
+          fx.getDoc(fx.doc(db, 'relations', r.id, 'meta', 'note'))
+        ]);
+        
+        return {
+          ...r,
+          otherChar: otherCharSnap.exists() ? { id: otherCharId, ...otherCharSnap.data() } : { id: otherCharId, name: '(알수없음)', thumb_url: '' },
+          note: noteSnap.exists() ? noteSnap.data().note : '메모 없음'
+        };
+      });
+      
+      const detailedRels = (await Promise.all(detailedRelPromises)).filter(Boolean);
 
-      if (detailedRels.length === 0) {
-        box.innerHTML = `<div class="kv-card text-dim">아직 관계를 맺은 캐릭터가 없습니다.</div>`;
-        return;
-      }
+      if (detailedRels.length === 0) {
+        box.innerHTML = `<div class="kv-card text-dim">아직 관계를 맺은 캐릭터가 없습니다.</div>`;
+        return;
+      }
 
-      box.innerHTML = detailedRels.map(r => {
-        const isParty = auth.currentUser && (c.owner_uid === auth.currentUser.uid || r.otherChar.owner_uid === auth.currentUser.uid);
-        
-        return `
-        <button class="kv-card" data-relation-id="${r.id}" style="text-align: left; width: 100%; cursor: pointer;">
-          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-            <div style="display:flex; align-items:center; gap: 10px;">
-              <img src="${esc(r.otherChar.thumb_url)}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #111;">
-              <div>
-                <div style="font-weight:700;">🤝 ${esc(r.otherChar.name)}</div>
-                <div class="text-dim" style="font-size:12px; margin-top: 4px;">클릭하여 상세보기</div>
-              </div>
-            </div>
-            ${isParty ? `<button class="btn ghost small btn-delete-relation" data-del-id1="${c.id}" data-del-id2="${r.otherChar.id}">삭제</button>` : ''}
-          </div>
-        </button>
-      `}).join('');
+      box.innerHTML = detailedRels.map(r => {
+        const isParty = auth.currentUser && (c.owner_uid === auth.currentUser.uid || r.otherChar.owner_uid === auth.currentUser.uid);
+        
+        return `
+        <button class="kv-card" data-relation-id="${r.id}" style="text-align: left; width: 100%; cursor: pointer;">
+          <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+            <div style="display:flex; align-items:center; gap: 10px;">
+              <img src="${esc(r.otherChar.thumb_url)}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: #111;">
+              <div>
+                <div style="font-weight:700;">🤝 ${esc(r.otherChar.name)}</div>
+                <div class="text-dim" style="font-size:12px; margin-top: 4px;">클릭하여 상세보기</div>
+              </div>
+            </div>
+            ${isParty ? `<button class="btn ghost small btn-delete-relation" data-del-id1="${c.id}" data-del-id2="${r.otherChar.id}">삭제</button>` : ''}
+          </div>
+        </button>
+      `}).join('');
 
-      box.addEventListener('click', (e) => {
-        const deleteButton = e.target.closest('.btn-delete-relation');
-        if (deleteButton) {
-          e.stopPropagation();
-          if (!confirm('정말로 이 관계를 삭제하시겠습니까?')) return;
-          
-          const id1 = deleteButton.dataset.delId1;
-          const id2 = deleteButton.dataset.delId2;
-          deleteRelation(id1, id2)
-            .then(() => {
-              showToast('관계를 삭제했습니다.');
-              renderBioSub('rel', c, sv);
-            })
-            .catch(err => showToast(`삭제 실패: ${err.message}`));
-          return;
-        }
+      box.addEventListener('click', (e) => {
+        const deleteButton = e.target.closest('.btn-delete-relation');
+        if (deleteButton) {
+          e.stopPropagation();
+          if (!confirm('정말로 이 관계를 삭제하시겠습니까?')) return;
+          
+          const id1 = deleteButton.dataset.delId1;
+          const id2 = deleteButton.dataset.delId2;
+          deleteRelation(id1, id2)
+            .then(() => {
+              showToast('관계를 삭제했습니다.');
+              renderBioSub('rel', c, sv);
+            })
+            .catch(err => showToast(`삭제 실패: ${err.message}`));
+          return;
+        }
 
-        const card = e.target.closest('button[data-relation-id]');
-        if (card) {
-          const relId = card.dataset.relationId;
-          const relationData = detailedRels.find(r => r.id === relId);
-          if (relationData) {
-            showRelationDetailModal(c, relationData.otherChar, relationData);
-          }
-        }
-      });
-    } catch (e) {
-      console.error('관계 로딩 실패:', e);
-      box.innerHTML = `<div class="kv-card text-dim">관계를 불러오는 중 오류가 발생했습니다.</div>`;
-    }
-  }
+        const card = e.target.closest('button[data-relation-id]');
+        if (card) {
+          const relId = card.dataset.relationId;
+          const relationData = detailedRels.find(r => r.id === relId);
+          if (relationData) {
+            showRelationDetailModal(c, relationData.otherChar, relationData);
+          }
+        }
+      });
+    } catch (e) {
+      console.error('관계 로딩 실패:', e);
+      box.innerHTML = `<div class="kv-card text-dim">관계를 불러오는 중 오류가 발생했습니다.</div>`;
+    }
+  }
 }
 
 async function openItemPicker(c, onSave) {
@@ -688,218 +647,218 @@ async function openItemPicker(c, onSave) {
 }
 
 async function renderLoadout(c, view){
-    ensureItemCss();
-  const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
+    ensureItemCss();
+  const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
 
-  const abilitiesAll = Array.isArray(c.abilities_all) ? c.abilities_all : [];
-  const equippedAb = Array.isArray(c.abilities_equipped)
-    ? c.abilities_equipped.filter(i=>Number.isInteger(i)&&i>=0&&i<abilitiesAll.length).slice(0,2)
-    : [];
-  
-  let equippedItemIds = Array.isArray(c.items_equipped)? c.items_equipped.slice(0,3): [];
-  
-  let inv = [];
-  if (isOwner) {
-    inv = await getUserInventory();
-  } else {
-    try {
-      const userDocRef = fx.doc(db, 'users', c.owner_uid);
-      const userDocSnap = await fx.getDoc(userDocRef);
-      inv = userDocSnap.exists() ? (userDocSnap.data().items_all || []) : [];
-    } catch (e) {
-      console.error("Failed to get opponent inventory:", e);
-      inv = [];
-    }
-  }
+  const abilitiesAll = Array.isArray(c.abilities_all) ? c.abilities_all : [];
+  const equippedAb = Array.isArray(c.abilities_equipped)
+    ? c.abilities_equipped.filter(i=>Number.isInteger(i)&&i>=0&&i<abilitiesAll.length).slice(0,2)
+    : [];
+  
+  let equippedItemIds = Array.isArray(c.items_equipped)? c.items_equipped.slice(0,3): [];
+  
+  let inv = [];
+  if (isOwner) {
+    inv = await getUserInventory();
+  } else {
+    try {
+      const userDocRef = fx.doc(db, 'users', c.owner_uid);
+      const userDocSnap = await fx.getDoc(userDocRef);
+      inv = userDocSnap.exists() ? (userDocSnap.data().items_all || []) : [];
+    } catch (e) {
+      console.error("Failed to get opponent inventory:", e);
+      inv = [];
+    }
+  }
 
-  view.innerHTML = `
-    <div class="p12">
-      <h4>스킬 (4개 중 <b>${isOwner ? '반드시 2개 선택' : '목록'}</b>)</h4>
-      ${abilitiesAll.length===0
-        ? `<div class="kv-card text-dim">등록된 스킬이 없어.</div>`
-        : `<div class="grid2 mt8">
-            ${abilitiesAll.map((ab,i)=>`
-              <label class="skill">
-                <input type="checkbox" data-i="${i}" ${equippedAb.includes(i) ? 'checked' : ''} ${isOwner ? '' : 'disabled'}/>
-                <div>
-                  <div class="name">${ab?.name || ('스킬 ' + (i+1))}</div>
-                  <div class="desc">${ab?.desc_soft || '-'}</div>
-                </div>
-              </label>`).join('')}
-          </div>`}
-    </div>
-    <div class="p12">
-      <h4 class="mt12">아이템 장착 (최대 3개)</h4>
-      <div class="grid3 mt8" id="slots"></div>
-      ${isOwner ? `<button id="btnEquip" class="btn mt8">인벤토리에서 선택/교체</button>` : ''}
-    </div>
-  `;
+  view.innerHTML = `
+    <div class="p12">
+      <h4>스킬 (4개 중 <b>${isOwner ? '반드시 2개 선택' : '목록'}</b>)</h4>
+      ${abilitiesAll.length===0
+        ? `<div class="kv-card text-dim">등록된 스킬이 없어.</div>`
+        : `<div class="grid2 mt8">
+            ${abilitiesAll.map((ab,i)=>`
+              <label class="skill">
+                <input type="checkbox" data-i="${i}" ${equippedAb.includes(i) ? 'checked' : ''} ${isOwner ? '' : 'disabled'}/>
+                <div>
+                  <div class="name">${ab?.name || ('스킬 ' + (i+1))}</div>
+                  <div class="desc">${ab?.desc_soft || '-'}</div>
+                </div>
+              </label>`).join('')}
+          </div>`}
+    </div>
+    <div class="p12">
+      <h4 class="mt12">아이템 장착 (최대 3개)</h4>
+      <div class="grid3 mt8" id="slots"></div>
+      ${isOwner ? `<button id="btnEquip" class="btn mt8">인벤토리에서 선택/교체</button>` : ''}
+    </div>
+  `;
 
-  if(isOwner && abilitiesAll.length>0){
-    const boxes = Array.from(view.querySelectorAll('.skill input[type=checkbox]'));
-    boxes.forEach(b=>{
-      b.onchange = async ()=>{
-        const on = boxes.filter(x=>x.checked).map(x=>+x.dataset.i);
-        if(on.length>2){ b.checked = false; showToast('스킬은 딱 2개만!'); return; }
-        if(on.length===2){
-          try{ await updateAbilitiesEquipped(c.id, on); showToast('스킬 저장 완료'); }
-          catch(e){ showToast('스킬 저장 실패: 로그인/권한을 확인해줘'); }
-        }
-      };
-    });
-  }
+  if(isOwner && abilitiesAll.length>0){
+    const boxes = Array.from(view.querySelectorAll('.skill input[type=checkbox]'));
+    boxes.forEach(b=>{
+      b.onchange = async ()=>{
+        const on = boxes.filter(x=>x.checked).map(x=>+x.dataset.i);
+        if(on.length>2){ b.checked = false; showToast('스킬은 딱 2개만!'); return; }
+        if(on.length===2){
+          try{ await updateAbilitiesEquipped(c.id, on); showToast('스킬 저장 완료'); }
+          catch(e){ showToast('스킬 저장 실패: 로그인/권한을 확인해줘'); }
+        }
+      };
+    });
+  }
 
-  const slotBox = view.querySelector('#slots');
-  const renderSlots = ()=>{
-    slotBox.innerHTML = [0,1,2].map(slotIndex => {
-      const docId = equippedItemIds[slotIndex];
-      if(!docId) return `<div class="slot">(비어 있음)</div>`;
+  const slotBox = view.querySelector('#slots');
+  const renderSlots = ()=>{
+    slotBox.innerHTML = [0,1,2].map(slotIndex => {
+      const docId = equippedItemIds[slotIndex];
+      if(!docId) return `<div class="slot">(비어 있음)</div>`;
 
-      const it = inv.find(i => i.id === docId);
-      if(!it) return `<div class="slot" style="color: #ff5b66;">(아이템 정보 없음)</div>`;
+      const it = inv.find(i => i.id === docId);
+      if(!it) return `<div class="slot" style="color: #ff5b66;">(아이템 정보 없음)</div>`;
 
-      const style = rarityStyle(it.rarity);
-      const isAether = (it.rarity || '').toLowerCase() === 'aether';
-      const borderStyle = isAether ? '' : `border-left: 3px solid ${style.border};`;
+      const style = rarityStyle(it.rarity);
+      const isAether = (it.rarity || '').toLowerCase() === 'aether';
+      const borderStyle = isAether ? '' : `border-left: 3px solid ${style.border};`;
 
-      return `
-        <button class="kv-card item-card ${isAether ? 'rarity-aether' : ''}" data-item-id="${it.id}"
-          style="text-align:left; cursor:pointer; ${borderStyle} ${isAether ? '' : `background:${style.bg};`}">
+      return `
+        <button class="kv-card item-card ${isAether ? 'rarity-aether' : ''}" data-item-id="${it.id}"
+          style="text-align:left; cursor:pointer; ${borderStyle} ${isAether ? '' : `background:${style.bg};`}">
 
-          <div class="name" style="color:${style.text}">${it.name || '아이템'}</div>
-          <div class="desc" style="font-size:12px; opacity:0.8;">${esc(it.desc_soft || it.desc || it.description || (it.desc_long ? String(it.desc_long).split('\n')[0] : '-') )}</div>
-        </button>`;
-    }).join('');
+          <div class="name" style="color:${style.text}">${it.name || '아이템'}</div>
+          <div class="desc" style="font-size:12px; opacity:0.8;">${esc(it.desc_soft || it.desc || it.description || (it.desc_long ? String(it.desc_long).split('\n')[0] : '-') )}</div>
+        </button>`;
+    }).join('');
 
-    slotBox.querySelectorAll('.item-card[data-item-id]').forEach(btn => {
-        btn.onclick = () => {
-            const itemId = btn.dataset.itemId;
-            const item = inv.find(i => i.id === itemId);
-            if(item) {
-                showItemDetailModal(item);
-            }
-        };
-    });
-  };
-  renderSlots();
+    slotBox.querySelectorAll('.item-card[data-item-id]').forEach(btn => {
+        btn.onclick = () => {
+            const itemId = btn.dataset.itemId;
+            const item = inv.find(i => i.id === itemId);
+            if(item) {
+                showItemDetailModal(item);
+            }
+        };
+    });
+  };
+  renderSlots();
 
-  if(isOwner){
-    view.querySelector('#btnEquip')?.addEventListener('click', ()=>{
-      openItemPicker(c, (newIds) => {
-        if (Array.isArray(newIds)) {
-          c.items_equipped = [...newIds];
-          equippedItemIds = [...newIds];
-          renderSlots();
-          showToast('아이템 장착이 갱신됐어!');
-        }
-      });
-    });
-  }
+  if(isOwner){
+    view.querySelector('#btnEquip')?.addEventListener('click', ()=>{
+      openItemPicker(c, (newIds) => {
+        if (Array.isArray(newIds)) {
+          c.items_equipped = [...newIds];
+          equippedItemIds = [...newIds];
+          renderSlots();
+          showToast('아이템 장착이 갱신됐어!');
+        }
+      });
+    });
+  }
 }
 
 
 function normalizeNarratives(c){
-  if (Array.isArray(c.narratives) && c.narratives.length){
-    return c.narratives.map(n => ({
-      id: n.id || ('n'+Math.random().toString(36).slice(2)),
-      title: n.title || '서사',
-      long: n.long || '',
-      short: n.short || ''
-    }));
-  }
-  if (Array.isArray(c.narrative_items) && c.narrative_items.length){
-    return c.narrative_items.map((it, i) => ({
-      id: 'legacy-'+i,
-      title: it.title || '서사',
-      long: it.body || '',
-      short: ''
-    }));
-  }
-  return [];
+  if (Array.isArray(c.narratives) && c.narratives.length){
+    return c.narratives.map(n => ({
+      id: n.id || ('n'+Math.random().toString(36).slice(2)),
+      title: n.title || '서사',
+      long: n.long || '',
+      short: n.short || ''
+    }));
+  }
+  if (Array.isArray(c.narrative_items) && c.narrative_items.length){
+    return c.narrative_items.map((it, i) => ({
+      id: 'legacy-'+i,
+      title: it.title || '서사',
+      long: it.body || '',
+      short: ''
+    }));
+  }
+  return [];
 }
 
 function renderNarrativePage(c, narrId){
-  const root = document.getElementById('view');
-  const list = normalizeNarratives(c);
-  const n = list.find(x=>x.id===narrId) || list[0];
-  if(!n){
-    root.innerHTML = `<section class="container narrow"><div class="kv-card text-dim">해당 서사를 찾을 수 없어.</div></section>`;
-    return;
-  }
+  const root = document.getElementById('view');
+  const list = normalizeNarratives(c);
+  const n = list.find(x=>x.id===narrId) || list[0];
+  if(!n){
+    root.innerHTML = `<section class="container narrow"><div class="kv-card text-dim">해당 서사를 찾을 수 없어.</div></section>`;
+    return;
+  }
 
-  root.innerHTML = `
-  <section class="container narrow">
-    <div class="book-card mt16">
-      <div class="bookmarks">
-        <button class="bookmark" onclick="location.hash='#/char/${c.id}'">← 캐릭터로 돌아가기</button>
-      </div>
-      <div class="bookview" id="nView">
-        <div class="kv-card">
-          <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(n.title || '서사')}</div>
-          <div id="nLong" style="margin-bottom:10px"></div>
+  root.innerHTML = `
+  <section class="container narrow">
+    <div class="book-card mt16">
+      <div class="bookmarks">
+        <button class="bookmark" onclick="location.hash='#/char/${c.id}'">← 캐릭터로 돌아가기</button>
+      </div>
+      <div class="bookview" id="nView">
+        <div class="kv-card">
+          <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(n.title || '서사')}</div>
+          <div id="nLong" style="margin-bottom:10px"></div>
 
-          <div class="kv-label">요약</div>
-          <div>${esc(n.short || '(요약이 아직 없어요)')}</div>
-        </div>
-      </div>
-    </div>
-  </section>`;
+          <div class="kv-label">요약</div>
+          <div>${esc(n.short || '(요약이 아직 없어요)')}</div>
+        </div>
+      </div>
+    </div>
+  </section>`;
 
-  const nLongNode = document.getElementById('nLong');
-  if (nLongNode) nLongNode.innerHTML = renderRich(n.long || '-');
+  const nLongNode = document.getElementById('nLong');
+  if (nLongNode) nLongNode.innerHTML = renderRich(n.long || '-');
 
 }
 
 function applyInlineMarks(html){
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-  html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, function(_, pre, inner){
-    return pre + '<i>' + inner + '</i>';
-  });
-  return html;
+  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
+  html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, function(_, pre, inner){
+    return pre + '<i>' + inner + '</i>';
+  });
+  return html;
 }
 
 function renderRich(text){
-  var s = String(text||'').replace(/\r\n?/g,'\n');
-  var lines = s.split('\n');
-  var out = [];
-  var inList = false;
+  var s = String(text||'').replace(/\r\n?/g,'\n');
+  var lines = s.split('\n');
+  var out = [];
+  var inList = false;
 
-  function flushList(){ if(inList){ out.push('</ul>'); inList=false; } }
+  function flushList(){ if(inList){ out.push('</ul>'); inList=false; } }
 
-  for(var i=0;i<lines.length;i++){
-    var raw = lines[i];
-    var empty = /^\s*$/.test(raw);
-    var escd  = esc(raw);
+  for(var i=0;i<lines.length;i++){
+    var raw = lines[i];
+    var empty = /^\s*$/.test(raw);
+    var escd  = esc(raw);
 
-    if(empty){ flushList(); continue; }
+    if(empty){ flushList(); continue; }
 
-    if(/^###\s+/.test(raw)){ flushList(); out.push('<h4 style="font-weight:800;font-size:15px;margin:10px 0 4px;">'+ escd.replace(/^###\s+/, '') +'</h4>'); continue; }
-    if(/^##\s+/.test(raw)){  flushList(); out.push('<h3 style="font-weight:850;font-size:16px;margin:12px 0 6px;">'+ escd.replace(/^##\s+/, '') +'</h3>'); continue; }
-    if(/^#\s+/.test(raw)){   flushList(); out.push('<h2 style="font-weight:900;font-size:18px;margin:14px 0 8px;">'+ escd.replace(/^#\s+/, '') +'</h2>'); continue; }
+    if(/^###\s+/.test(raw)){ flushList(); out.push('<h4 style="font-weight:800;font-size:15px;margin:10px 0 4px;">'+ escd.replace(/^###\s+/, '') +'</h4>'); continue; }
+    if(/^##\s+/.test(raw)){  flushList(); out.push('<h3 style="font-weight:850;font-size:16px;margin:12px 0 6px;">'+ escd.replace(/^##\s+/, '') +'</h3>'); continue; }
+    if(/^#\s+/.test(raw)){   flushList(); out.push('<h2 style="font-weight:900;font-size:18px;margin:14px 0 8px;">'+ escd.replace(/^#\s+/, '') +'</h2>'); continue; }
 
-    if(/^>\s+/.test(raw)){
-      flushList();
-      var q = applyInlineMarks(escd.replace(/^>\s+/, ''));
-      out.push('<blockquote style="margin:8px 0;padding:8px 10px;border-left:3px solid rgba(122,155,255,.7);background:rgba(122,155,255,.06);border-radius:8px;">'+ q +'</blockquote>');
-      continue;
-    }
+    if(/^>\s+/.test(raw)){
+      flushList();
+      var q = applyInlineMarks(escd.replace(/^>\s+/, ''));
+      out.push('<blockquote style="margin:8px 0;padding:8px 10px;border-left:3px solid rgba(122,155,255,.7);background:rgba(122,155,255,.06);border-radius:8px;">'+ q +'</blockquote>');
+      continue;
+    }
 
-    if(/^\*\s+/.test(raw)){
-      if(!inList){ out.push('<ul style="margin:6px 0 8px 18px;list-style:disc;">'); inList=true; }
-      var li = applyInlineMarks(escd.replace(/^\*\s+/, ''));
-      out.push('<li>'+ li +'</li>');
-      continue;
-    }
+    if(/^\*\s+/.test(raw)){
+      if(!inList){ out.push('<ul style="margin:6px 0 8px 18px;list-style:disc;">'); inList=true; }
+      var li = applyInlineMarks(escd.replace(/^\*\s+/, ''));
+      out.push('<li>'+ li +'</li>');
+      continue;
+    }
 
-    flushList();
-    out.push('<p style="margin:6px 0 6px;">'+ applyInlineMarks(escd) +'</p>');
-  }
-  flushList();
-  return out.join('');
+    flushList();
+    out.push('<p style="margin:6px 0 6px;">'+ applyInlineMarks(escd) +'</p>');
+  }
+  flushList();
+  return out.join('');
 }
 
 
-async function renderTimeline(c, view) {
+async function renderHistory(c, view) {
   view.innerHTML = `
     <div class="p12">
       <h4>전적</h4>
@@ -1047,14 +1006,14 @@ async function renderTimeline(c, view) {
             </div>
             <div class="text-dim" style="font-size:12px">턴 ${esc(it.turn || 0)}</div>
           </div>`;
-  	  }
-  	  const wrap = document.createElement('div');
-  	  wrap.innerHTML = html;
-  	  const el = wrap.firstElementChild;
-  	  el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
-  	  frag.appendChild(el);
-  	});
-  	box.appendChild(frag);
+      }
+      const wrap = document.createElement('div');
+      wrap.innerHTML = html;
+      const el = wrap.firstElementChild;
+      el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
+      frag.appendChild(el);
+    });
+    box.appendChild(frag);
   }
 
   async function fetchNext() {
@@ -1211,7 +1170,7 @@ function showRelationDetailModal(myChar, otherChar, relation) {
           <img src="${esc(otherChar.thumb_url)}" onerror="this.style.display='none'" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ccc;">
            <div style="font-weight: 700; margin-top: 6px;">${esc(otherChar.name)}</div>
         </a>
-        </div>
+      </div>
 
       <div class="kv-card" style="padding: 12px;">
         <div class="kv-label">AI가 분석한 관계</div>
@@ -1291,135 +1250,6 @@ async function openMyCharPickerForMock(opponentId, mode, onSelect) {
       onSelect(selectedCharId, mode);
     };
   });
-}
-
-async function renderGrowth(c, view, activeSub='main') {
-    const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
-    const maxSkills = 8;
-    const currentSkills = c.abilities_all.length;
-    const canCreateSkill = isOwner && currentSkills < maxSkills;
-    const canUpgradeSkill = isOwner;
-
-    // Sub-route handling
-    if (activeSub === 'create') return renderSkillCreatePage(c, view);
-    if (activeSub === 'upgrade') return renderSkillUpgradePage(c, view);
-    if (activeSub === 'narrate') return renderNarratePage(c, view);
-    
-    // Default main view
-    view.innerHTML = `
-      <div class="p12">
-        <div class="kv-label">캐릭터 성장 메뉴</div>
-        <div class="grid2" style="gap:12px;">
-          
-          <button class="kv-card" id="btnGrowthCreate" style="text-align:left; padding:16px; cursor:pointer;" ${canCreateSkill ? '' : `disabled title="스킬은 최대 ${maxSkills}개입니다. (${currentSkills}/${maxSkills})"`} data-go="create">
-            <div style="font-weight:900; font-size:16px;">스킬 생성 ✨</div>
-            <div class="text-dim" style="font-size:13px; margin-top:4px;">AI가 새로운 스킬을 생성합니다.</div>
-            <div class="chip" style="margin-top:8px;">🪙 1,000 코인</div>
-          </button>
-          
-          <button class="kv-card" id="btnGrowthUpgrade" style="text-align:left; padding:16px; cursor:pointer;" ${canUpgradeSkill ? '' : 'disabled title="내 캐릭터만 가능"'} data-go="upgrade">
-            <div style="font-weight:900; font-size:16px;">스킬 성장 📈</div>
-            <div class="text-dim" style="font-size:13px; margin-top:4px;">보유 경험치를 사용하여 스킬 레벨을 올립니다.</div>
-            <div class="chip" style="margin-top:8px;">EXP 소모</div>
-          </button>
-          
-          <button class="kv-card" id="btnGrowthNarrate" style="text-align:left; padding:16px; cursor:pointer;" ${isOwner ? '' : 'disabled title="내 캐릭터만 가능"'} data-go="narrate">
-            <div style="font-weight:900; font-size:16px;">서사 진행 📝</div>
-            <div class="text-dim" style="font-size:13px; margin-top:4px;">미니 에피소드를 추가하고 서사를 발전시킵니다.</div>
-            <div class="chip" style="margin-top:8px;">자원 소모 (미구현)</div>
-          </button>
-          
-        </div>
-      </div>
-    `;
-    
-    if (isOwner) {
-        view.querySelectorAll('[data-go]').forEach(btn => {
-            if (btn.disabled) return;
-            btn.onclick = () => {
-                location.hash = `#/char/${c.id}/growth/${btn.dataset.go}`;
-            };
-        });
-    }
-}
-
-// [ADD] Placeholder for Skill Create Page
-function renderSkillCreatePage(c, view) {
-    view.innerHTML = `
-      <div class="p12">
-        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">스킬 생성 ✨</h4></div>
-        <div class="kv-card mt12">
-          <div class="kv-label">캐릭터: ${esc(c.name)}</div>
-          <p>AI가 현재 캐릭터의 특징과 서사에 맞는 새로운 스킬을 생성합니다.</p>
-          <p style="font-weight:bold; color:#f3c34f;">비용: 🪙 1,000 코인</p>
-          <hr style="margin:12px 0; border-color:#273247;">
-          <textarea id="skill-prompt" class="input" rows="5" placeholder="원하는 스킬 컨셉을 300자 이내로 입력하세요. (예: 그림자 속에서 순간 이동하는 능력, 강력한 방어 마법 등)"></textarea>
-          <div style="text-align:right; margin-top:8px;">
-            <button class="btn primary" id="btn-create-skill" disabled>스킬 생성 요청 (미구현)</button>
-          </div>
-        </div>
-      </div>
-    `;
-    view.querySelector('#btn-create-skill').disabled = !auth.currentUser;
-}
-
-// [ADD] Placeholder for Skill Upgrade Page
-function renderSkillUpgradePage(c, view) {
-    const skills = c.abilities_all || [];
-    
-    view.innerHTML = `
-      <div class="p12">
-        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">스킬 성장 📈</h4></div>
-        <div class="kv-card mt12">
-          <div class="kv-label">현재 보유 경험치</div>
-          <div style="font-weight:bold; font-size:16px;">Total EXP: ${c.exp_total || 0}</div>
-          <p class="text-dim" style="font-size:13px; margin-top:4px;">보유 EXP를 사용하여 스킬 레벨을 성장시킬 수 있습니다.</p>
-          <hr style="margin:12px 0; border-color:#273247;">
-          <div class="col" style="gap:12px;">
-            ${skills.map((s, i) => {
-                const skillName = s.name || `스킬 ${i + 1}`;
-                const skillKey = (skillName.toLowerCase().replace(/\s/g, '_'));
-                const skillStat = c.skills?.[skillKey] || (typeof c.skills?.[skillKey] === 'number' ? { level: c.skills[skillKey], exp: 0, nextExp: 100 } : { level: 0, exp: 0, nextExp: 100 });
-                const level = skillStat.level || 0;
-                const exp = skillStat.exp || 0;
-                const nextExp = skillStat.nextExp || 100;
-                const cost = 1000; // 임시 성장 비용
-                
-                return `
-                  <div class="kv-card" style="padding:10px;">
-                    <div style="font-weight:700; display:flex; justify-content:space-between;">
-                        ${esc(skillName)} (Lv. ${level})
-                        <button class="btn small primary" id="btn-upgrade-${i}" disabled>성장 요청 (EXP ${cost})</button>
-                    </div>
-                    <div class="text-dim" style="font-size:12px; margin-top:4px;">
-                      다음 레벨까지: ${exp} / ${nextExp} EXP
-                    </div>
-                  </div>
-                `;
-            }).join('')}
-          </div>
-        </div>
-      </div>
-    `;
-    view.querySelectorAll('button[id^="btn-upgrade-"]').forEach(btn => btn.disabled = true);
-}
-
-// [ADD] Placeholder for Narrate Page
-function renderNarratePage(c, view) {
-    view.innerHTML = `
-      <div class="p12">
-        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">서사 진행 📝</h4></div>
-        <div class="kv-card mt12">
-          <p>캐릭터의 서사에 새로운 장을 추가합니다. AI가 입력된 키워드를 바탕으로 이야기를 발전시킵니다.</p>
-          <p style="font-weight:bold; color:#7dd3fc;">기능 준비 중</p>
-          <hr style="margin:12px 0; border-color:#273247;">
-          <textarea id="narrative-prompt" class="input" rows="5" placeholder="새로운 서사의 키워드를 입력하세요. (예: 잃어버린 유물 발견, 강력한 적과의 조우, 새로운 동료와의 만남 등)"></textarea>
-          <div style="text-align:right; margin-top:8px;">
-            <button class="btn primary" id="btn-submit-narrative" disabled>서사 추가 요청</button>
-          </div>
-        </div>
-      </div>
-    `;
 }
 
 export default showCharDetail;
