@@ -2,7 +2,7 @@
 import { db, auth, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { getActiveRun, serverPrepareNext, serverApplyChoice, serverEndRun } from '../api/explore.js';
-
+let __applyingChoice = false;
 const STAMINA_MIN = 0;
 
 // ---------- 유틸리티 함수 ----------
@@ -203,44 +203,53 @@ export async function showExploreRun() {
   };
 
 
-  const handleChoice = async (index) => {
-    showLoading(true, '선택지 적용 중...');
-    try {
-        const result = await serverApplyChoice(state.id, index); 
-        
-        if (result.state) {
-          state = { id: state.id, ...result.state };
-        } else {
-          state = await getActiveRun(runId);
-        }
+const handleChoice = async (index) => {
+  // ▼ 중복 실행 방지
+  if (__applyingChoice) return;
+  __applyingChoice = true;
 
-        if (state.pending_battle) {
-            location.hash = `#/explore-battle/${state.id}`;
-            return; 
-        }
+  showLoading(true, '선택지 적용 중...');
+  try {
+    const result = await serverApplyChoice(state.id, index);
 
-        if (state.status === 'ended') {
-            showToast('탐험이 종료되었어');
-        }
-
-        render(state);
-    } catch (e) {
-        console.error('[explore] handleChoice failed', e);
-        showToast('오류가 발생했습니다. 잠시 후 상태를 다시 동기화합니다.');
-        try {
-          state = await getActiveRun(runId);
-          render(state);
-        } catch (fetchError) {
-          console.error('[explore] Failed to fetch state after error', fetchError);
-          showToast('상태 동기화에 실패했습니다. 탐험 선택 화면으로 돌아갑니다.');
-          location.hash = '#/adventure';
-        }
-    } finally {
-        if (location.hash.startsWith('#/explore-run/')) {
-            showLoading(false);
-        }
+    // 서버가 state를 안 줄 때 대비: 강제 동기화
+    if (result && result.state) {
+      state = { id: state.id, ...result.state };
+    } else {
+      state = await getActiveRun(runId);
     }
-  };
+
+    // ▼ 배틀 즉시 진입: 서버의 battle 플래그 혹은 state.pending_battle 둘 다 확인
+    if ((result && result.battle === true) || state.pending_battle) {
+      location.hash = `#/explore-battle/${state.id}`;
+      return;
+    }
+
+    if (state.status === 'ended') {
+      showToast('탐험이 종료되었어');
+    }
+
+    render(state);
+  } catch (e) {
+    console.error('[explore] handleChoice failed', e);
+    showToast('오류가 발생했어. 잠시 후 상태를 다시 동기화할게.');
+    try {
+      state = await getActiveRun(runId);
+      render(state);
+    } catch (fetchError) {
+      console.error('[explore] Failed to fetch state after error', fetchError);
+      showToast('동기화에도 실패했어. 탐험 선택 화면으로 돌아갈게.');
+      location.hash = '#/adventure';
+    }
+  } finally {
+    // ▼ 해제
+    __applyingChoice = false;
+    if (location.hash.startsWith('#/explore-run/')) {
+      showLoading(false);
+    }
+  }
+};
+
 
   const endRun = async (reason) => {
     if (state.status !== 'ongoing') return;
