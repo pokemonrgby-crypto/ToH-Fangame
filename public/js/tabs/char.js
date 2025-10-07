@@ -300,7 +300,6 @@ async function render(c){
     });
   }
   const btnLike = root.querySelector('#btnLike');
-  const btnLike = root.querySelector('#btnLike');
 if (btnLike) {
   const LIKED_KEY = `toh_liked_${c.id}`;
   if (localStorage.getItem(LIKED_KEY)) {
