@@ -100,7 +100,12 @@ function teardownMailbox() {
 
 
 async function boot() {
-  try { // [추가] 전체 실행 코드를 try-catch 블록으로 감쌉니다.
+  try {
+    // [수정] 앱 시작 시 리디렉션 결과가 있는지 먼저 확인합니다.
+    await getRedirectResult(auth).catch(error => {
+      console.warn("getRedirectResult error on boot:", error);
+    });
+      
     // 1. 월드 데이터를 먼저 로드합니다.
     await fetchWorlds();
 
@@ -204,10 +209,6 @@ async function onClickAuthButton() {
   } catch (e) {
     console.error('[auth] error', e);
     showToast(auth.currentUser ? '로그아웃 실패' : '로그인 실패');
-  } finally {
-    try {
-      await getRedirectResult(auth);
-    } catch {}
   }
 }
 
