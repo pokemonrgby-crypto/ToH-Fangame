@@ -160,30 +160,30 @@ export function ensureItemCss() {
 }
 
 export async function showCharDetail(){
-  const { charId, narrId } = parseId();
-  const root = document.getElementById('view');
-  if(!root){ console.warn('[char] #view not found'); return; }
-  if(!charId){
-    root.innerHTML='<section class="container narrow"><p>잘못된 경로</p></section>';
-    return;
-  }
+  const { charId, narrId } = parseId();
+  const root = document.getElementById('view');
+  if(!root){ console.warn('[char] #view not found'); return; }
+  if(!charId){
+    root.innerHTML='<section class="container narrow"><p>잘못된 경로</p></section>';
+    return;
+  }
 
-  try{
-    const snap = await getDocFromServer(fx.doc(db,'chars', charId));
-    if(!snap.exists()){
-      root.innerHTML='<section class="container narrow"><p>캐릭터가 없네</p></section>';
-      return;
-    }
-    const c = normalizeChar({ id:snap.id, ...snap.data() });
-    if (narrId) { renderNarrativePage(c, narrId); return; }
-    else{ await render(c); }
-  }catch(e){
-    console.error('[char] load error', e);
-    const msg = e?.code==='permission-denied'
-      ? '권한이 없어 캐릭터를 불러올 수 없어. 먼저 로그인해줘!'
-      : '캐릭터 로딩 중 오류가 났어.';
-    root.innerHTML = `<section class="container narrow"><p>${msg}</p><pre class="text-dim" style="white-space:pre-wrap">${e?.message || e}</pre></section>`;
-  }
+  try{
+    const snap = await getDocFromServer(fx.doc(db,'chars', charId));
+    if(!snap.exists()){
+      root.innerHTML='<section class="container narrow"><p>캐릭터가 없네</p></section>';
+      return;
+    }
+    const c = normalizeChar({ id:snap.id, ...snap.data() });
+    if (narrId) { renderNarrativePage(c, narrId); return; }
+    else{ await render(c); }
+  }catch(e){
+    console.error('[char] load error', e);
+    const msg = e?.code==='permission-denied'
+      ? '권한이 없어 캐릭터를 불러올 수 없어. 먼저 로그인해줘!'
+      : '캐릭터 로딩 중 오류가 났어.';
+    root.innerHTML = `<section class="container narrow"><p>${msg}</p><pre class="text-dim" style="white-space:pre-wrap">${e?.message || e}</pre></section>`;
+  }
 }
 
 async function render(c){
