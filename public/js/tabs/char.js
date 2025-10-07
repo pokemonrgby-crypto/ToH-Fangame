@@ -19,10 +19,23 @@ export function esc(s){
   }[c]));
 }
 
-function parseId(){
-  const h = location.hash || '';
-  const m = h.match(/^#\/char\/([^/]+)(?:\/narrative\/([^/]+))?$/);
-  return m ? { charId: m[1], narrId: m[2] || null } : { charId:null, narrId:null };
+// ANCHOR: function parseId(){
+function parseCharRoute(){
+  const h = location.hash || '';
+  const m = h.match(/^#\/char\/([^/]+)(?:\/([^/]+))?(?:\/([^/]+))?$/);
+
+  if (!m) return { charId:null, tab: 'bio', sub: null, detailId: null };
+
+  const charId = m[1];
+  const tabKey = m[2] || 'bio';
+  const subKey = m[3] || null;
+  
+  // /char/ID/narrative/NARRID 형태의 레거시 링크를 처리
+  if (tabKey === 'narrative' && subKey) { 
+    return { charId, tab: 'bio', sub: 'narrative', detailId: subKey }; 
+  }
+  
+  return { charId, tab: tabKey, sub: subKey, detailId: null };
 }
 
 function rateText(w,l){ const W=+w||0, L=+l||0, T=W+L; return T? Math.round(W*100/T)+'%':'0%'; }
@@ -160,30 +173,35 @@ export function ensureItemCss() {
 }
 
 export async function showCharDetail(){
-  const { charId, narrId } = parseId();
-  const root = document.getElementById('view');
-  if(!root){ console.warn('[char] #view not found'); return; }
-  if(!charId){
-    root.innerHTML='<section class="container narrow"><p>잘못된 경로</p></section>';
-    return;
-  }
+  const { charId, tab, sub, detailId } = parseCharRoute();
+  const root = document.getElementById('view');
+  if(!root){ console.warn('[char] #view not found'); return; }
+  if(!charId){
+    root.innerHTML='<section class="container narrow"><p>잘못된 경로</p></section>';
+    return;
+  }
 
-  try{
-    const snap = await getDocFromServer(fx.doc(db,'chars', charId));
-    if(!snap.exists()){
-      root.innerHTML='<section class="container narrow"><p>캐릭터가 없네</p></section>';
-      return;
-    }
-    const c = normalizeChar({ id:snap.id, ...snap.data() });
-    if (narrId) { renderNarrativePage(c, narrId); return; }
-    else{ await render(c); }
-  }catch(e){
-    console.error('[char] load error', e);
-    const msg = e?.code==='permission-denied'
-      ? '권한이 없어 캐릭터를 불러올 수 없어. 먼저 로그인해줘!'
-      : '캐릭터 로딩 중 오류가 났어.';
-    root.innerHTML = `<section class="container narrow"><p>${msg}</p><pre class="text-dim" style="white-space:pre-wrap">${e?.message || e}</pre></section>`;
-  }
+  try{
+    const snap = await getDocFromServer(fx.doc(db,'chars', charId));
+    if(!snap.exists()){
+      root.innerHTML='<section class="container narrow"><p>캐릭터가 없네</p></section>';
+      return;
+    }
+    const c = normalizeChar({ id:snap.id, ...snap.data() });
+    
+    if (tab === 'bio' && sub === 'narrative' && detailId) { 
+        renderNarrativePage(c, detailId); 
+        return; 
+    }
+    
+    await render(c, tab, sub);
+  }catch(e){
+    console.error('[char] load error', e);
+    const msg = e?.code==='permission-denied'
+      ? '권한이 없어 캐릭터를 불러올 수 없어. 먼저 로그인해줘!'
+      : '캐릭터 로딩 중 오류가 났어.';
+    root.innerHTML = `<section class="container narrow"><p>${msg}</p><pre class="text-dim" style="white-space:pre-wrap">${e?.message || e}</pre></section>`;
+  }
 }
 
 async function render(c){
@@ -217,141 +235,162 @@ async function render(c){
     }
   } catch (_) {}
 
-  root.innerHTML = `
-  <section class="container narrow">
-    <div class="card p16 char-card">
-      <div class="char-header">
-        
-        <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
-          <div class="avatar-clip">
-            <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt=""
-                 onerror="this.src=''; this.classList.add('noimg')" />
-          </div>
+  root.innerHTML = `
+  <section class="container narrow">
+    <div class="card p16 char-card">
+      <div class="char-header">
+        
+        <div class="avatar-wrap ${supporterTier ? `supporter-${supporterTier}` : ''}" style="border-color:${tier.color}">
+          <div class="avatar-clip">
+            <img id="charAvatar" src="${c.thumb_url||c.image_b64||c.image_url||''}" alt=""
+                 onerror="this.src=''; this.classList.add('noimg')" />
+          </div>
 
-          
-          <div class="top-actions" style="z-index:99">
-            <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
-            ${isOwner? `<button class="fab-circle" id="btnUpload" title="이미지 업로드">⤴</button>`:''}
-          </div>
-        </div>
-        
-        <div class="char-name">${c.name||'(이름 없음)'}</div>
-        <div class="chips-row">
-          <span class="tier-chip" style="background:${tier.color}1a; color:#fff; border-color:${tier.color}80;">${tier.name || 'Tier'}</span>
-          <span class="chip">${worldName}</span>
-        </div>
-        <div class="expbar" aria-label="EXP" style="position:relative;width:100%;max-width:760px;height:10px;border-radius:999px;background:#0d1420;border:1px solid #273247;overflow:hidden;margin-top:8px;">
-          <div style="position:absolute;inset:0 auto 0 0;width:${expPct}%;background:linear-gradient(90deg,#4ac1ff,#7a9bff,#c2b5ff);box-shadow:0 0 12px #7ab8ff77 inset;"></div>
-          <div style="position:absolute;top:-22px;right:0;font-size:12px;color:#9aa5b1;">EXP ${expVal}</div>
-        </div>
-        <div class="char-stats4">
-          <div class="stat-box stat-win"><div class="k">승률</div><div class="v">${rateText(c.wins,c.losses)}</div></div>
-          <div class="stat-box stat-like"><div class="k">누적 좋아요</div><div class="v">${c.likes_total||0}</div></div>
-          <div class="stat-box stat-elo"><div class="k">Elo</div><div class="v">${c.elo||1000}</div></div>
-          <div class="stat-box stat-week"><div class="k">주간 좋아요</div><div class="v">${c.likes_weekly||0}</div></div>
-        </div>
-        <div class="char-counters">전투 ${c.battle_count||0} · 조우 ${c.encounter_count||0} · 탐험 ${c.explore_count||0}</div>
-      </div>
-    </div>
-    <div class="book-card mt16">
-      <div class="bookmarks">
-        <button class="bookmark active" data-tab="bio">기본 소개 / 서사</button>
-        <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
-        <button class="bookmark" data-tab="history">배틀 / 조우 / 탐험 전적</button>
-      </div>
-      <div class="bookview" id="bookview"></div>
-    </div>
-  </section>`;
+          
+          <div class="top-actions" style="z-index:99">
+            <button class="fab-circle" id="btnLike" title="좋아요">♥</button>
+            ${isOwner? `<button class="fab-circle" id="btnUpload" title="이미지 업로드">⤴</button>`:''}
+          </div>
+        </div>
+        
+        <div class="char-name">${c.name||'(이름 없음)'}</div>
+        <div class="chips-row">
+          <span class="tier-chip" style="background:${tier.color}1a; color:#fff; border-color:${tier.color}80;">${tier.name || 'Tier'}</span>
+          <span class="chip">${worldName}</span>
+        </div>
+        <div class="expbar" aria-label="EXP" style="position:relative;width:100%;max-width:760px;height:10px;border-radius:999px;background:#0d1420;border:1px solid #273247;overflow:hidden;margin-top:8px;">
+          <div style="position:absolute;inset:0 auto 0 0;width:${expPct}%;background:linear-gradient(90deg,#4ac1ff,#7a9bff,#c2b5ff);box-shadow:0 0 12px #7ab8ff77 inset;"></div>
+          <div style="position:absolute;top:-22px;right:0;font-size:12px;color:#9aa5b1;">EXP ${expVal}</div>
+        </div>
+        <div class="char-stats4">
+          <div class="stat-box stat-win"><div class="k">승률</div><div class="v">${rateText(c.wins,c.losses)}</div></div>
+          <div class="stat-box stat-like"><div class="k">누적 좋아요</div><div class="v">${c.likes_total||0}</div></div>
+          <div class="stat-box stat-elo"><div class="k">Elo</div><div class="v">${c.elo||1000}</div></div>
+          <div class="stat-box stat-week"><div class="k">주간 좋아요</div><div class="v">${c.likes_weekly||0}</div></div>
+        </div>
+        <div class="char-counters">전투 ${c.battle_count||0} · 조우 ${c.encounter_count||0} · 탐험 ${c.explore_count||0}</div>
+      </div>
+    </div>
+    <div class="book-card mt16">
+      <div class="bookmarks" id="char-tabs">
+        <button class="bookmark" data-tab="bio">소개</button>
+        <button class="bookmark" data-tab="loadout">스킬 / 아이템</button>
+        <button class="bookmark" data-tab="growth">성장</button>
+        <button class="bookmark" data-tab="history">타임라인</button>
+      </div>
+      <div class="bookview" id="bookview"></div>
+    </div>
+  </section>`;
 
-  const wrap = root.querySelector('.avatar-wrap');
+  const wrap = root.querySelector('.avatar-wrap');
 
-  if (wrap && supporterTier && supporterTier !== 'none' && !wrap.dataset.fxAttached) {
-    wrap.dataset.fxAttached = '1';
-    
-    const validTiers = ['nexus', 'flame', 'galaxy', 'forest', 'orbits'];
-    
-    const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
-    
-    attachSupporterFX(wrap, effectTheme);
-  }
+  if (wrap && supporterTier && supporterTier !== 'none' && !wrap.dataset.fxAttached) {
+    wrap.dataset.fxAttached = '1';
+    
+    const validTiers = ['nexus', 'flame', 'galaxy', 'forest', 'orbits'];
+    
+    const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
+    
+    attachSupporterFX(wrap, effectTheme);
+  }
 
-  getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
-    const img = document.getElementById('charAvatar');
-    if(!url || !img) return;
-    const pre = new Image();
-    pre.onload = ()=> { img.src = url; };
-    pre.src = url;
-  }).catch(()=>{ /* keep thumbnail */ });
+  getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
+    const img = document.getElementById('charAvatar');
+    if(!url || !img) return;
+    const pre = new Image();
+    pre.onload = ()=> { img.src = url; };
+    pre.src = url;
+  }).catch(()=>{ /* keep thumbnail */ });
 
 
-  mountFixedActions(c, isOwner);
+  mountFixedActions(c, isOwner);
 
-  if(isOwner){
-    root.querySelector('#btnUpload')?.addEventListener('click', ()=>{
-      const i=document.createElement('input'); i.type='file'; i.accept='image/*';
-      i.onchange=async()=>{
-        const f=i.files?.[0]; if(!f) return;
-        await uploadAvatarSquare(c.id, f);
-        showToast('프로필 업데이트 완료!');
-        location.reload();
-      };
-      i.click();
-    });
-  }
-  const btnLike = root.querySelector('#btnLike');
+  if(isOwner){
+    root.querySelector('#btnUpload')?.addEventListener('click', ()=>{
+      const i=document.createElement('input'); i.type='file'; i.accept='image/*';
+      i.onchange=async()=>{
+        const f=i.files?.[0]; if(!f) return;
+        await uploadAvatarSquare(c.id, f);
+        showToast('프로필 업데이트 완료!');
+        location.reload();
+      };
+      i.click();
+    });
+  }
+  const btnLike = root.querySelector('#btnLike');
 if (btnLike) {
-  const LIKED_KEY = `toh_liked_${c.id}`;
-  if (localStorage.getItem(LIKED_KEY)) {
-    btnLike.style.background = '#ff69b4';
-    btnLike.innerHTML = '❤️';
-    btnLike.disabled = true;
-  }
+  const LIKED_KEY = `toh_liked_${c.id}`;
+  if (localStorage.getItem(LIKED_KEY)) {
+    btnLike.style.background = '#ff69b4';
+    btnLike.innerHTML = '❤️';
+    btnLike.disabled = true;
+  }
 
-  btnLike.addEventListener('click', async () => {
-    if (!auth.currentUser) return showToast('로그인해야 좋아요를 누를 수 있어.');
-    if (isOwner) return showToast('자기 캐릭터는 좋아할 수 없어!');
-    if (localStorage.getItem(LIKED_KEY)) return showToast('이미 좋아한 캐릭터야.');
+  btnLike.addEventListener('click', async () => {
+    if (!auth.currentUser) return showToast('로그인해야 좋아요를 누를 수 있어.');
+    if (isOwner) return showToast('자기 캐릭터는 좋아할 수 없어!');
+    if (localStorage.getItem(LIKED_KEY)) return showToast('이미 좋아한 캐릭터야.');
 
-    try {
-      btnLike.disabled = true;
-      const ref = fx.doc(db, 'chars', c.id);
-      await fx.updateDoc(ref, {
-        likes_total:  fx.increment(1),
-        likes_weekly: fx.increment(1),
-        updatedAt:    fx.serverTimestamp()
-      });
+    try {
+      btnLike.disabled = true;
+      const ref = fx.doc(db, 'chars', c.id);
+      await fx.updateDoc(ref, {
+        likes_total:  fx.increment(1),
+        likes_weekly: fx.increment(1),
+        updatedAt:    fx.serverTimestamp()
+      });
 
 
-      localStorage.setItem(LIKED_KEY, '1');
+      localStorage.setItem(LIKED_KEY, '1');
 
-      showToast('좋아요! 이 캐릭터를 응원합니다.');
-      btnLike.style.background = '#ff69b4';
-      btnLike.innerHTML = '❤️';
+      showToast('좋아요! 이 캐릭터를 응원합니다.');
+      btnLike.style.background = '#ff69b4';
+      btnLike.innerHTML = '❤️';
 
-      const likeStat = root.querySelector('.stat-like .v');
-      if (likeStat) likeStat.textContent = (parseInt(likeStat.textContent, 10) || 0) + 1;
-      const weekStat = root.querySelector('.stat-week .v');
-      if (weekStat) weekStat.textContent = (parseInt(weekStat.textContent, 10) || 0) + 1;
+      const likeStat = root.querySelector('.stat-like .v');
+      if (likeStat) likeStat.textContent = (parseInt(likeStat.textContent, 10) || 0) + 1;
+      const weekStat = root.querySelector('.stat-week .v');
+      if (weekStat) weekStat.textContent = (parseInt(weekStat.textContent, 10) || 0) + 1;
 
-    } catch (e) {
-      console.error('[like] error', e);
-      showToast(`좋아요 실패: ${e.message}`);
-      btnLike.disabled = false;
-    }
-  });
+    } catch (e) {
+      console.error('[like] error', e);
+      showToast(`좋아요 실패: ${e.message}`);
+      btnLike.disabled = false;
+    }
+  });
 }
 
-  const bv = root.querySelector('#bookview');
-  const tabs = root.querySelectorAll('.bookmark');
-  tabs.forEach(b=>b.onclick=()=>{
-    tabs.forEach(x=>x.classList.remove('active'));
-    b.classList.add('active');
-    const t=b.dataset.tab;
-    if(t==='bio') renderBio(c, bv);
-    else if(t==='loadout') renderLoadout(c, bv);
-    else renderHistory(c, bv);
-  });
-  renderBio(c, bv);
+  const bv = root.querySelector('#bookview');
+  const tabs = root.querySelectorAll('.bookmark');
+  
+  // [수정] 탭 클릭 시 해시를 업데이트하고 해당 탭을 렌더링
+  const renderTabContent = (tabKey, subKey)=>{
+    if(tabKey==='bio') renderBio(c, bv, subKey);
+    else if(tabKey==='loadout') renderLoadout(c, bv);
+    else if(tabKey==='growth') renderGrowth(c, bv, subKey);
+    else if(tabKey==='history') renderTimeline(c, bv);
+  };
+
+  // 초기 활성화 탭 설정
+  let initialTab = activeTab;
+  if(!['bio','loadout','growth','history'].includes(initialTab)) initialTab = 'bio';
+
+  tabs.forEach(b => {
+    if (b.dataset.tab === initialTab) {
+      b.classList.add('active');
+      renderTabContent(initialTab, activeSub);
+    }
+  });
+
+
+  tabs.forEach(b=>b.onclick=()=>{
+    tabs.forEach(x=>x.classList.remove('active'));
+    b.classList.add('active');
+    const t=b.dataset.tab;
+    // [수정] 메인 탭 변경 시 해시를 /char/ID/TABKEY 로 변경
+    location.hash = `#/char/${c.id}/${t}`;
+    renderTabContent(t, null); // 서브 키는 초기화
+  });
 }
 
 // ... (기존 코드와 동일)
@@ -571,79 +610,79 @@ async function renderBioSub(which, c, sv){
 }
 
 async function openItemPicker(c, onSave) {
-  const inv = await getUserInventory();
-  ensureItemCss();
+  const inv = await getUserInventory();
+  ensureItemCss();
 
-  let selectedIds = [...(c.items_equipped || [])];
+  let selectedIds = [...(c.items_equipped || [])];
 
-  const back = document.createElement('div');
-  back.className = 'modal-back';
-  back.dataset.kind = 'item-picker';
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.dataset.kind = 'item-picker';
 
-  back.style.zIndex = '8000';
+  back.style.zIndex = '8000';
 
-  const renderModalContent = () => {
-    back.innerHTML = `
-      <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;">
-        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
-          <div style="font-weight:900; font-size: 18px;">아이템 장착 관리</div>
-          <button class="btn ghost" id="mClose">닫기</button>
-        </div>
-        <div class="text-dim" style="font-size:13px; margin-top:4px;">아이템을 클릭하여 상세 정보를 보고, 다시 클릭하여 장착/해제하세요. (${selectedIds.length} / 3)</div>
-        <div class="item-picker-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; overflow-y: auto; padding: 5px; margin: 12px 0; flex-grow: 1;">
-          ${inv.length === 0 ? '<div class="text-dim" style="grid-column: 1 / -1;">보유한 아이템이 없습니다.</div>' :
-            inv.map(item => {
-              const style = rarityStyle(item.rarity);
-              const isSelected = selectedIds.includes(item.id);
-              return `
-                  <div class="kv-card item-picker-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''} ${isSelected ? 'selected' : ''}" data-item-id="${item.id}" style="padding:10px; border: 2px solid ${isSelected ? '#4aa3ff' : 'transparent'}; cursor:pointer;">
+  const renderModalContent = () => {
+    back.innerHTML = `
+      <div class="modal-card" style="background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;">
+        <div style="display:flex;justify-content:space-between;align-items:center;flex-shrink:0;">
+          <div style="font-weight:900; font-size: 18px;">아이템 장착 관리</div>
+          <button class="btn ghost" id="mClose">닫기</button>
+        </div>
+        <div class="text-dim" style="font-size:13px; margin-top:4px;">아이템을 클릭하여 상세 정보를 보고, 다시 클릭하여 장착/해제하세요. (${selectedIds.length} / 3)</div>
+        <div class="item-picker-grid" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px; overflow-y: auto; padding: 5px; margin: 12px 0; flex-grow: 1;">
+          ${inv.length === 0 ? '<div class="text-dim" style="grid-column: 1 / -1;">보유한 아이템이 없습니다.</div>' :
+            inv.map(item => {
+              const style = rarityStyle(item.rarity);
+              const isSelected = selectedIds.includes(item.id);
+              return `
+                  <div class="kv-card item-picker-card ${(item.rarity||'').toLowerCase()==='aether' ? 'rarity-aether' : ''} ${isSelected ? 'selected' : ''}" data-item-id="${item.id}" style="padding:10px; border: 2px solid ${isSelected ? '#4aa3ff' : 'transparent'}; cursor:pointer;">
 
-                  <div style="font-weight:700; color: ${style.text}; pointer-events:none;">${esc(item.name)}</div>
-                  <div style="font-size:12px; opacity:.8; margin-top: 4px; height: 3em; overflow:hidden; pointer-events:none;">${esc(item.desc_soft || item.desc || item.description || (item.desc_long ? String(item.desc_long).split('\n')[0] : '-') )}</div>
-                </div>
-              `;
-            }).join('')
-          }
-        </div>
-        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:auto;flex-shrink:0;padding-top:12px;">
-          <button class="btn large" id="btnSaveItems">선택 완료</button>
-        </div>
-      </div>
-    `;
+                  <div style="font-weight:700; color: ${style.text}; pointer-events:none;">${esc(item.name)}</div>
+                  <div style="font-size:12px; opacity:.8; margin-top: 4px; height: 3em; overflow:hidden; pointer-events:none;">${esc(item.desc_soft || item.desc || item.description || (item.desc_long ? String(item.desc_long).split('\n')[0] : '-') )}</div>
+                </div>
+              `;
+            }).join('')
+          }
+        </div>
+        <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:auto;flex-shrink:0;padding-top:12px;">
+          <button class="btn large" id="btnSaveItems">선택 완료</button>
+        </div>
+      </div>
+    `;
 
-    back.querySelectorAll('.item-picker-card').forEach(card => {
-        card.addEventListener('click', () => {
-            const itemId = card.dataset.itemId;
-            const item = inv.find(it => it.id === itemId);
-            if (!item) return;
-            
-            showItemDetailModal(item, {
-                equippedIds: selectedIds,
-                onUpdate: (newSelectedIds) => {
-                    selectedIds = newSelectedIds;
-                    renderModalContent();
-                }
-            });
-        });
-    });
+    back.querySelectorAll('.item-picker-card').forEach(card => {
+        card.addEventListener('click', () => {
+            const itemId = card.dataset.itemId;
+            const item = inv.find(it => it.id === itemId);
+            if (!item) return;
+            
+            showItemDetailModal(item, {
+                equippedIds: selectedIds,
+                onUpdate: (newSelectedIds) => {
+                    selectedIds = newSelectedIds;
+                    renderModalContent();
+                }
+            });
+        });
+    });
 
-    back.querySelector('#mClose').onclick = () => back.remove();
-    back.querySelector('#btnSaveItems').onclick = async () => {
-      try {
-        await updateItemsEquipped(c.id, selectedIds);
-        showToast('아이템 장착 정보가 저장되었습니다.');
-        c.items_equipped = selectedIds;
-        onSave(selectedIds);
-        back.remove();
-      } catch (e) {
-        showToast('아이템 저장에 실패했습니다: ' + e.message);
-      }
-    };
-  };
+    back.querySelector('#mClose').onclick = () => back.remove();
+    back.querySelector('#btnSaveItems').onclick = async () => {
+      try {
+        await updateItemsEquipped(c.id, selectedIds);
+        showToast('아이템 장착 정보가 저장되었습니다.');
+        c.items_equipped = selectedIds;
+        onSave(selectedIds);
+        back.remove();
+      } catch (e) {
+        showToast('아이템 저장에 실패했습니다: ' + e.message);
+      }
+    };
+  };
 
-  renderModalContent();
-  document.body.appendChild(back);
-  back.onclick = (e) => { if (e.target === back) back.remove(); };
+  renderModalContent();
+  document.body.appendChild(back);
+  back.onclick = (e) => { if (e.target === back) back.remove(); };
 }
 
 async function renderLoadout(c, view){
@@ -858,398 +897,527 @@ function renderRich(text){
 }
 
 
-async function renderHistory(c, view) {
-  view.innerHTML = `
-    <div class="p12">
-      <h4>전적</h4>
-      <div class="grid3 mt8">
-        <button class="kv-card" id="cardBattle" style="text-align:left;cursor:pointer">
-          <div class="kv-label">배틀</div><div>${c.battle_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardEncounter" style="text-align:left;cursor:pointer">
-          <div class="kv-label">조우</div><div>${c.encounter_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardExplore" style="text-align:left;cursor:pointer">
-          <div class="kv-label">탐험</div><div>${c.explore_count||0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-        <button class="kv-card" id="cardRaid" style="text-align:left;cursor:pointer">
-          <div class="kv-label">레이드</div><div>${c.raid_count || 0}</div>
-          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
-        </button>
-      </div>
+async function renderTimeline(c, view) {
+  view.innerHTML = `
+    <div class="p12">
+      <h4>전적</h4>
+      <div class="grid3 mt8">
+        <button class="kv-card" id="cardBattle" style="text-align:left;cursor:pointer">
+          <div class="kv-label">배틀</div><div>${c.battle_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardEncounter" style="text-align:left;cursor:pointer">
+          <div class="kv-label">조우</div><div>${c.encounter_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardExplore" style="text-align:left;cursor:pointer">
+          <div class="kv-label">탐험</div><div>${c.explore_count||0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+        <button class="kv-card" id="cardRaid" style="text-align:left;cursor:pointer">
+          <div class="kv-label">레이드</div><div>${c.raid_count || 0}</div>
+          <div class="text-dim" style="font-size:12px;margin-top:4px">클릭하면 아래에 타임라인이 나와</div>
+        </button>
+      </div>
 
-      <div class="kv-card mt12">
-        <div class="kv-label" id="tlTitle">상세 타임라인</div>
-        <div id="timelineBox" class="col" style="gap:8px"></div>
-        <div id="tlSentinel" style="height:1px"></div>
-        <div id="tlEmpty" class="text-dim" style="margin-top:8px">상세 타임라인은 추후 추가될 예정이야.</div>
-      </div>
-    </div>
-  `;
+      <div class="kv-card mt12">
+        <div class="kv-label" id="tlTitle">상세 타임라인</div>
+        <div id="timelineBox" class="col" style="gap:8px"></div>
+        <div id="tlSentinel" style="height:1px"></div>
+        <div id="tlEmpty" class="text-dim" style="margin-top:8px">상세 타임라인은 추후 추가될 예정이야.</div>
+      </div>
+    </div>
+  `;
 
-  const box = view.querySelector('#timelineBox');
-  const sent = view.querySelector('#tlSentinel');
-  const empty = view.querySelector('#tlEmpty');
-  const setTitle = (m) => view.querySelector('#tlTitle').textContent =
-    (m === 'battle' ? '배틀 타임라인' : m === 'encounter' ? '조우 타임라인' : m === 'raid' ? '레이드 타임라인' : '탐험 타임라인');
+  const box = view.querySelector('#timelineBox');
+  const sent = view.querySelector('#tlSentinel');
+  const empty = view.querySelector('#tlEmpty');
+  const setTitle = (m) => view.querySelector('#tlTitle').textContent =
+    (m === 'battle' ? '배틀 타임라인' : m === 'encounter' ? '조우 타임라인' : m === 'raid' ? '레이드 타임라인' : '탐험 타임라인');
 
-  let mode = null;
-  let busy = false;
-  let done = false;
+  let mode = null;
+  let busy = false;
+  let done = false;
 
-  let nextCursor = null;
-  let lastA = null, lastD = null, doneA = false, doneD = false;
-  let lastE = null, doneE = false;
+  let nextCursor = null;
+  let lastA = null, lastD = null, doneA = false, doneD = false;
+  let lastE = null, doneE = false;
 
-  // ANCHOR: [교체] appendItems 함수
-  function appendItems(items){
-    if(items.length) empty.style.display = 'none';
-    const frag = document.createDocumentFragment();
-    items.forEach(it=>{
-      let go = '#';
-      let html = '';
-      if(mode==='battle'){
-        const isAttacker = it.attacker_char === `chars/${c.id}`;
-        const opponentSnapshot = isAttacker ? it.defender_snapshot : it.attacker_snapshot;
-        const myExp = isAttacker ? it.exp_char0 : it.exp_char1;
+  // ANCHOR: [교체] appendItems 함수
+  function appendItems(items){
+    if(items.length) empty.style.display = 'none';
+    const frag = document.createDocumentFragment();
+    items.forEach(it=>{
+      let go = '#';
+      let html = '';
+      if(mode==='battle'){
+        const isAttacker = it.attacker_char === `chars/${c.id}`;
+        const opponentSnapshot = isAttacker ? it.defender_snapshot : it.attacker_snapshot;
+        const myExp = isAttacker ? it.exp_char0 : it.exp_char1;
 
-        let resultText, resultColor;
-        
-        if (it.simulated) {
-            resultText = '모의전';
-            resultColor = '#8b5cf6';
-        } else if ((isAttacker && it.winner === 0) || (!isAttacker && it.winner === 1)) {
-            resultText = '승리'; resultColor = '#3a8bff';
-        } else if ((isAttacker && it.winner === 1) || (!isAttacker && it.winner === 0)) {
-            resultText = '패배'; resultColor = '#ff425a';
-        } else {
-            resultText = '무승부'; resultColor = '#777';
-        }
-        
-        // ANCHOR: [수정] prettyTime 함수 사용
-        const when = prettyTime(it.endedAt);
-        go = `#/battlelog/${it.id}`;
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
-            <div style="flex-shrink: 0;">
-                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
-            </div>
-            <div style="flex-grow: 1; min-width: 0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
-                    <span style="font-weight: 700;">vs ${esc(opponentSnapshot.name)}</span>
-                </div>
-                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
-                    <span>${when}</span>
-                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
-                </div>
-            </div>
-          </div>`;
-      } else if(mode==='encounter'){
-        const isA = it.a_char === `chars/${c.id}`;
-        const opponentSnapshot = isA ? it.b_snapshot : it.a_snapshot;
-        const myExp = isA ? it.exp_a : it.exp_b;
-        const when = prettyTime(it.endedAt); // ANCHOR: [수정] prettyTime 함수 사용
-        go = `#/encounter-log/${it.id}`;
+        let resultText, resultColor;
+        
+        if (it.simulated) {
+            resultText = '모의전';
+            resultColor = '#8b5cf6';
+        } else if ((isAttacker && it.winner === 0) || (!isAttacker && it.winner === 1)) {
+            resultText = '승리'; resultColor = '#3a8bff';
+        } else if ((isAttacker && it.winner === 1) || (!isAttacker && it.winner === 0)) {
+            resultText = '패배'; resultColor = '#ff425a';
+        } else {
+            resultText = '무승부'; resultColor = '#777';
+        }
+        
+        // ANCHOR: [수정] prettyTime 함수 사용
+        const when = prettyTime(it.endedAt);
+        go = `#/battlelog/${it.id}`;
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
+            <div style="flex-shrink: 0;">
+                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
+            </div>
+            <div style="flex-grow: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
+                    <span style="font-weight: 700;">vs ${esc(opponentSnapshot.name)}</span>
+                </div>
+                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
+                    <span>${when}</span>
+                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
+                </div>
+            </div>
+          </div>`;
+      } else if(mode==='encounter'){
+        const isA = it.a_char === `chars/${c.id}`;
+        const opponentSnapshot = isA ? it.b_snapshot : it.a_snapshot;
+        const myExp = isA ? it.exp_a : it.exp_b;
+        const when = prettyTime(it.endedAt); // ANCHOR: [수정] prettyTime 함수 사용
+        go = `#/encounter-log/${it.id}`;
 
-        let resultText = '조우';
-        let resultColor = '#a3e635';
-        if (it.simulated) {
-            resultText = '모의조우';
-            resultColor = '#8b5cf6';
-        }
-        
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
-            <div style="flex-shrink: 0;">
-                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
-            </div>
-            <div style="flex-grow: 1; min-width: 0;">
-                <div style="display: flex; align-items: center; gap: 8px;">
-                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
-                    <span style="font-weight: 700;">with ${esc(opponentSnapshot.name)}</span>
-                </div>
-                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
-                    <span>${when}</span>
-                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
-                </div>
-            </div>
-          </div>`;
+        let resultText = '조우';
+        let resultColor = '#a3e635';
+        if (it.simulated) {
+            resultText = '모의조우';
+            resultColor = '#8b5cf6';
+        }
+        
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
+            <div style="flex-shrink: 0;">
+                <img src="${esc(opponentSnapshot.thumb_url || '')}" onerror="this.style.display='none'" style="width: 48px; height: 48px; border-radius: 50%; object-fit: cover;">
+            </div>
+            <div style="flex-grow: 1; min-width: 0;">
+                <div style="display: flex; align-items: center; gap: 8px;">
+                    <strong style="color: ${resultColor}; font-size: 16px;">${resultText}</strong>
+                    <span style="font-weight: 700;">with ${esc(opponentSnapshot.name)}</span>
+                </div>
+                <div class="text-dim" style="font-size: 12px; margin-top: 4px;">
+                    <span>${when}</span>
+                    <span style="margin-left: 12px;">획득 EXP: <strong>+${esc(myExp)}</strong></span>
+                </div>
+            </div>
+          </div>`;
 
-      } else if(mode==='raid'){
-          const myContribution = (it.contributions || []).find(con => con.charId === c.id);
-          const when = prettyTime(it.createdAt); // ANCHOR: [수정] prettyTime 함수 사용
-          go = `#/raidlog/${it.id}`;
-          html = `
-            <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
-              <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
-              <div class="text-dim" style="font-size:12px">${when}</div>
-              <div class="text-dim" style="font-size:12px; margin-top: 4px;">
-                  기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
-              </div>
-            </div>`;
-        
-      } else { // 'explore'
-        const when = prettyTime(it.endedAt || it.startedAt); // ANCHOR: [수정] prettyTime 함수 사용
-        go = `#/explorelog/${it.id}`;
-        html = `
-          <div class="kv-card tl-go" data-go="${go}" 
-               style="display:flex;align-items:center;gap:12px;padding:10px;border-left:3px solid #4aa3ff">
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:800">
-                ${esc(it.world_name || it.world_id || '월드')} / ${esc(it.site_name || it.site_id || '지역')}
-              </div>
-              <div class="text-dim" style="font-size:12px">${when}</div>
-            </div>
-            <div class="text-dim" style="font-size:12px">턴 ${esc(it.turn || 0)}</div>
-          </div>`;
-      }
-      const wrap = document.createElement('div');
-      wrap.innerHTML = html;
-      const el = wrap.firstElementChild;
-      el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
-      frag.appendChild(el);
-    });
-    box.appendChild(frag);
-  }
+      } else if(mode==='raid'){
+          const myContribution = (it.contributions || []).find(con => con.charId === c.id);
+          const when = prettyTime(it.createdAt); // ANCHOR: [수정] prettyTime 함수 사용
+          go = `#/raidlog/${it.id}`;
+          html = `
+            <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
+              <div style="font-weight:800">레이드 참여: ${esc(it.raidName || '보스')}</div>
+              <div class="text-dim" style="font-size:12px">${when}</div>
+              <div class="text-dim" style="font-size:12px; margin-top: 4px;">
+                  기여도: <strong>${(myContribution?.contribution || 0).toLocaleString()}</strong> | 획득 EXP: <strong>+${myContribution?.exp || 0}</strong>
+              </div>
+            </div>`;
+        
+      } else { // 'explore'
+        const when = prettyTime(it.endedAt || it.startedAt); // ANCHOR: [수정] prettyTime 함수 사용
+        go = `#/explorelog/${it.id}`;
+        html = `
+          <div class="kv-card tl-go" data-go="${go}" 
+               style="display:flex;align-items:center;gap:12px;padding:10px;border-left:3px solid #4aa3ff">
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:800">
+                ${esc(it.world_name || it.world_id || '월드')} / ${esc(it.site_name || it.site_id || '지역')}
+              </div>
+              <div class="text-dim" style="font-size:12px">${when}</div>
+            </div>
+            <div class="text-dim" style="font-size:12px">턴 ${esc(it.turn || 0)}</div>
+          </div>`;
+  	  }
+  	  const wrap = document.createElement('div');
+  	  wrap.innerHTML = html;
+  	  const el = wrap.firstElementChild;
+  	  el.addEventListener('click', ()=>{ location.hash = el.getAttribute('data-go'); });
+  	  frag.appendChild(el);
+  	});
+  	box.appendChild(frag);
+  }
 
-  async function fetchNext() {
-    if (busy || done || !mode) return;
-    busy = true;
+  async function fetchNext() {
+    if (busy || done || !mode) return;
+    busy = true;
 
-    try {
-      if (mode === 'battle') {
-        const callHistory = httpsCallable(func, 'getUserBattleHistory');
-        const { data } = await callHistory({
-          charId: c.id,
-          limit: 15,
-          cursor: nextCursor
-        });
+    try {
+      if (mode === 'battle') {
+        const callHistory = httpsCallable(func, 'getUserBattleHistory');
+        const { data } = await callHistory({
+          charId: c.id,
+          limit: 15,
+          cursor: nextCursor
+        });
 
-        if (data.ok && data.logs) {
-          appendItems(data.logs);
-          nextCursor = data.nextCursor;
-          if (!nextCursor) {
-            done = true;
-          }
-        } else {
-          done = true;
-        }
-      } else {
-        const out = [];
-        if (mode === 'encounter') {
-          if(!doneA){
-            const partsA = [ fx.where('a_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
-            if(lastA) partsA.push(startAfter(lastA));
-            partsA.push(fx.limit(15));
-            const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
-            const sA = await getDocsFromServer(qA);
-            const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
-            if(arrA.length < 15) doneA = true;
-            if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
-            out.push(...arrA);
-          }
-          if(!doneD){
-            const partsB = [ fx.where('b_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
-            if(lastD) partsB.push(startAfter(lastD));
-            partsB.push(fx.limit(15));
-            const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
-            const sB = await getDocsFromServer(qB);
-            const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
-            if(arrB.length < 15) doneD = true;
-            if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
-            out.push(...arrB);
-          }
-          out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
-          if(doneA && doneD && out.length===0) done = true;
-          appendItems(out);
-        } else if (mode === 'raid') {
-          const q = fx.query(
-              fx.collection(db, 'raid_logs'),
-              fx.where('party_ids', 'array-contains', c.id),
-              fx.orderBy('createdAt', 'desc'),
-              fx.limit(15)
-          );
-          const s = await getDocsFromServer(q);
-          const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
-          appendItems(arr);
-          done = true;
-        } else if (mode === 'explore') {
-          if(!doneE){
-            const parts = [ fx.orderBy('endedAt','desc') ];
-            if(lastE) parts.push(startAfter(lastE));
-            parts.push(fx.limit(15));
-            const q = fx.query(
-              fx.collection(db,'explore_runs'),
-              fx.where('charRef','==', `chars/${c.id}`),
-              ...parts
-            );
-            const s = await getDocsFromServer(q);
-            const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
-            if(arr.length < 15) doneE = true;
-            if(s.docs.length) lastE = s.docs[s.docs.length-1];
-            appendItems(arr);
-            if(doneE && arr.length===0) done = true;
-          } else {
-            done = true;
-          }
-        }
-      }
-    } catch (e) {
-      console.error('[timeline] fetch error', e);
-      showToast('기록을 불러오는 데 실패했습니다.');
-      done = true;
-    } finally {
-      busy = false;
-    }
-  }
+        if (data.ok && data.logs) {
+          appendItems(data.logs);
+          nextCursor = data.nextCursor;
+          if (!nextCursor) {
+            done = true;
+          }
+        } else {
+          done = true;
+        }
+      } else {
+        const out = [];
+        if (mode === 'encounter') {
+          if(!doneA){
+            const partsA = [ fx.where('a_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastA) partsA.push(startAfter(lastA));
+            partsA.push(fx.limit(15));
+            const qA = fx.query(fx.collection(db,'encounter_logs'), ...partsA);
+            const sA = await getDocsFromServer(qA);
+            const arrA=[]; sA.forEach(d=>arrA.push({ id:d.id, ...d.data() }));
+            if(arrA.length < 15) doneA = true;
+            if(sA.docs.length) lastA = sA.docs[sA.docs.length-1];
+            out.push(...arrA);
+          }
+          if(!doneD){
+            const partsB = [ fx.where('b_char','==', `chars/${c.id}`), fx.orderBy('endedAt','desc') ];
+            if(lastD) partsB.push(startAfter(lastD));
+            partsB.push(fx.limit(15));
+            const qB = fx.query(fx.collection(db,'encounter_logs'), ...partsB);
+            const sB = await getDocsFromServer(qB);
+            const arrB=[]; sB.forEach(d=>arrB.push({ id:d.id, ...d.data() }));
+            if(arrB.length < 15) doneD = true;
+            if(sB.docs.length) lastD = sB.docs[sB.docs.length-1];
+            out.push(...arrB);
+          }
+          out.sort((a,b)=>((b.endedAt?.toMillis?.()??0)-(a.endedAt?.toMillis?.()??0)));
+          if(doneA && doneD && out.length===0) done = true;
+          appendItems(out);
+        } else if (mode === 'raid') {
+          const q = fx.query(
+              fx.collection(db, 'raid_logs'),
+              fx.where('party_ids', 'array-contains', c.id),
+              fx.orderBy('createdAt', 'desc'),
+              fx.limit(15)
+          );
+          const s = await getDocsFromServer(q);
+          const arr = []; s.forEach(d => arr.push({ id: d.id, ...d.data() }));
+          appendItems(arr);
+          done = true;
+        } else if (mode === 'explore') {
+          if(!doneE){
+            const parts = [ fx.orderBy('endedAt','desc') ];
+            if(lastE) parts.push(startAfter(lastE));
+            parts.push(fx.limit(15));
+            const q = fx.query(
+              fx.collection(db,'explore_runs'),
+              fx.where('charRef','==', `chars/${c.id}`),
+              ...parts
+            );
+            const s = await getDocsFromServer(q);
+            const arr=[]; s.forEach(d=>arr.push({ id:d.id, ...d.data() }));
+            if(arr.length < 15) doneE = true;
+            if(s.docs.length) lastE = s.docs[s.docs.length-1];
+            appendItems(arr);
+            if(doneE && arr.length===0) done = true;
+          } else {
+            done = true;
+          }
+        }
+      }
+    } catch (e) {
+      console.error('[timeline] fetch error', e);
+      showToast('기록을 불러오는 데 실패했습니다.');
+      done = true;
+    } finally {
+      busy = false;
+    }
+  }
 
-  function resetAndLoad(newMode) {
-    mode = newMode;
-    setTitle(mode);
-    box.innerHTML = '';
-    empty.style.display = 'block';
-    busy = false;
-    done = false;
-    
-    nextCursor = null; 
-    lastA = lastD = lastE = null;
-    doneA = doneD = doneE = false;
-    
-    fetchNext();
-  }
+  function resetAndLoad(newMode) {
+    mode = newMode;
+    setTitle(mode);
+    box.innerHTML = '';
+    empty.style.display = 'block';
+    busy = false;
+    done = false;
+    
+    nextCursor = null; 
+    lastA = lastD = lastE = null;
+    doneA = doneD = doneE = false;
+    
+    fetchNext();
+  }
 
-  const io = new IntersectionObserver((entries)=>{
-    entries.forEach((en)=>{
-      if(en.isIntersecting) fetchNext();
-    });
-  }, { root: null, rootMargin: '600px 0px', threshold: 0 });
-  io.observe(sent);
+  const io = new IntersectionObserver((entries)=>{
+    entries.forEach((en)=>{
+      if(en.isIntersecting) fetchNext();
+    });
+  }, { root: null, rootMargin: '600px 0px', threshold: 0 });
+  io.observe(sent);
 
-  view.querySelector('#cardBattle')?.addEventListener('click', ()=> resetAndLoad('battle'));
-  view.querySelector('#cardEncounter')?.addEventListener('click', ()=> resetAndLoad('encounter'));
-  view.querySelector('#cardExplore')?.addEventListener('click', ()=> resetAndLoad('explore'));
-  view.querySelector('#cardRaid')?.addEventListener('click', ()=> resetAndLoad('raid'));
+  view.querySelector('#cardBattle')?.addEventListener('click', ()=> resetAndLoad('battle'));
+  view.querySelector('#cardEncounter')?.addEventListener('click', ()=> resetAndLoad('encounter'));
+  view.querySelector('#cardExplore')?.addEventListener('click', ()=> resetAndLoad('explore'));
+  view.querySelector('#cardRaid')?.addEventListener('click', ()=> resetAndLoad('raid'));
 }
 
 
 function closeMatchOverlay(){
-  document.querySelector('.modal-wrap')?.remove();
+  document.querySelector('.modal-wrap')?.remove();
 }
 
 function setMatchIntentAndGo(charId, mode){
-  const payload = { charId, mode, ts: Date.now() };
-  sessionStorage.setItem('toh.match.intent', JSON.stringify(payload));
-  location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
+  const payload = { charId, mode, ts: Date.now() };
+  sessionStorage.setItem('toh.match.intent', JSON.stringify(payload));
+  location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
 }
 
 
 function showRelationDetailModal(myChar, otherChar, relation) {
-  ensureModalCss();
+  ensureModalCss();
 
-  const modal = document.createElement('div');
-  modal.className = 'modal-back';
-  modal.style.zIndex = '10001';
-  modal.innerHTML = `
-    <div class="modal-card" style="max-width: 600px;">
-      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
-        <div style="font-weight: 900; font-size: 18px;">관계 상세</div>
-        <button class="btn ghost" id="mClose">닫기</button>
-      </div>
-      
-      <div style="display: flex; justify-content: space-around; align-items: center; gap: 12px; margin-bottom: 16px;">
-        <a href="#/char/${myChar.id}" style="text-decoration: none; color: inherit; text-align: center;">
-          <img src="${esc(myChar.thumb_url)}" onerror="this.style.display='none'" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #4aa3ff;">
-          <div style="font-weight: 700; margin-top: 6px;">${esc(myChar.name)}</div>
-        </a>
-        <div style="font-size: 24px; color: #777;">🤝</div>
-        <a href="#/char/${otherChar.id}" style="text-decoration: none; color: inherit; text-align: center;">
-          <img src="${esc(otherChar.thumb_url)}" onerror="this.style.display='none'" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ccc;">
-           <div style="font-weight: 700; margin-top: 6px;">${esc(otherChar.name)}</div>
-        </a>
-      </div>
+  const modal = document.createElement('div');
+  modal.className = 'modal-back';
+  modal.style.zIndex = '10001';
+  modal.innerHTML = `
+    <div class="modal-card" style="max-width: 600px;">
+      <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom: 16px;">
+        <div style="font-weight: 900; font-size: 18px;">관계 상세</div>
+        <button class="btn ghost" id="mClose">닫기</button>
+      </div>
+      
+      <div style="display: flex; justify-content: space-around; align-items: center; gap: 12px; margin-bottom: 16px;">
+        <a href="#/char/${myChar.id}" style="text-decoration: none; color: inherit; text-align: center;">
+          <img src="${esc(myChar.thumb_url)}" onerror="this.style.display='none'" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #4aa3ff;">
+          <div style="font-weight: 700; margin-top: 6px;">${esc(myChar.name)}</div>
+        </a>
+        <div style="font-size: 24px; color: #777;">🤝</div>
+        <a href="#/char/${otherChar.id}" style="text-decoration: none; color: inherit; text-align: center;">
+          <img src="${esc(otherChar.thumb_url)}" onerror="this.style.display='none'" style="width: 80px; height: 80px; border-radius: 50%; object-fit: cover; border: 2px solid #ccc;">
+           <div style="font-weight: 700; margin-top: 6px;">${esc(otherChar.name)}</div>
+        </a>
+        </div>
 
-      <div class="kv-card" style="padding: 12px;">
-        <div class="kv-label">AI가 분석한 관계</div>
-        <p style="white-space: pre-wrap; line-height: 1.6;">${esc(relation.note)}</p>
-      </div>
+      <div class="kv-card" style="padding: 12px;">
+        <div class="kv-label">AI가 분석한 관계</div>
+        <p style="white-space: pre-wrap; line-height: 1.6;">${esc(relation.note)}</p>
+      </div>
 
-      ${relation.lastBattleLogId ? `
-        <a href="#/battlelog/${relation.lastBattleLogId}" class="btn" style="text-decoration: none; margin-top: 12px; text-align: center;">
-          관계가 갱신된 배틀로그 보기
-        </a>
-      ` : ''}
-    </div>
-  `;
+      ${relation.lastBattleLogId ? `
+        <a href="#/battlelog/${relation.lastBattleLogId}" class="btn" style="text-decoration: none; margin-top: 12px; text-align: center;">
+          관계가 갱신된 배틀로그 보기
+        </a>
+      ` : ''}
+    </div>
+  `;
 
-  const closeModal = () => modal.remove();
-  modal.addEventListener('click', e => { if(e.target === modal) closeModal(); });
-  modal.querySelector('#mClose').onclick = closeModal;
-  
-  modal.querySelectorAll('a').forEach(a => {
-    a.addEventListener('click', closeModal);
-  });
+  const closeModal = () => modal.remove();
+  modal.addEventListener('click', e => { if(e.target === modal) closeModal(); });
+  modal.querySelector('#mClose').onclick = closeModal;
+  
+  modal.querySelectorAll('a').forEach(a => {
+    a.addEventListener('click', closeModal);
+  });
 
-  document.body.appendChild(modal);
+  document.body.appendChild(modal);
 }
 
 async function openMyCharPickerForMock(opponentId, mode, onSelect) {
-  ensureModalCss();
-  const u = auth.currentUser;
-  if (!u) {
-    showToast('로그인이 필요합니다.');
-    return;
-  }
+  ensureModalCss();
+  const u = auth.currentUser;
+  if (!u) {
+    showToast('로그인이 필요합니다.');
+    return;
+  }
 
-  const q = fx.query(
-    fx.collection(db, 'chars'),
-    fx.where('owner_uid', '==', u.uid)
-  );
-  const snap = await fx.getDocs(q);
-  const myChars = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  const q = fx.query(
+    fx.collection(db, 'chars'),
+    fx.where('owner_uid', '==', u.uid)
+  );
+  const snap = await fx.getDocs(q);
+  const myChars = snap.docs.map(d => ({ id: d.id, ...d.data() }));
 
-  if (myChars.length === 0) {
-    showToast('모의전을 진행할 내 캐릭터가 없습니다. 먼저 캐릭터를 생성해주세요.');
-    return;
-  }
+  if (myChars.length === 0) {
+    showToast('모의전을 진행할 내 캐릭터가 없습니다. 먼저 캐릭터를 생성해주세요.');
+    return;
+  }
 
-  const back = document.createElement('div');
-  back.className = 'modal-back';
-  back.innerHTML = `
-    <div class="modal-card">
-      <div style="font-weight:900; font-size:18px; margin-bottom:12px;">모의전에 사용할 내 캐릭터 선택</div>
-      <div class="grid2" style="gap:10px; max-height: 400px; overflow-y: auto;">
-        ${myChars.map(char => `
-          <button class="kv-card" data-char-id="${char.id}" style="text-align:left; cursor:pointer;">
-            <div style="font-weight:700;">${esc(char.name)}</div>
-            <div class="text-dim" style="font-size:12px;">Elo: ${char.elo || 1000}</div>
+  const back = document.createElement('div');
+  back.className = 'modal-back';
+  back.innerHTML = `
+    <div class="modal-card">
+      <div style="font-weight:900; font-size:18px; margin-bottom:12px;">모의전에 사용할 내 캐릭터 선택</div>
+      <div class="grid2" style="gap:10px; max-height: 400px; overflow-y: auto;">
+        ${myChars.map(char => `
+          <button class="kv-card" data-char-id="${char.id}" style="text-align:left; cursor:pointer;">
+            <div style="font-weight:700;">${esc(char.name)}</div>
+            <div class="text-dim" style="font-size:12px;">Elo: ${char.elo || 1000}</div>
+          </button>
+        `).join('')}
+      </div>
+      <div style="text-align:right; margin-top:12px;">
+        <button class="btn ghost" id="mClose">닫기</button>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(back);
+
+  const closeModal = () => back.remove();
+  back.querySelector('#mClose').onclick = closeModal;
+  back.addEventListener('click', e => {
+    if (e.target === back) closeModal();
+  });
+
+  back.querySelectorAll('button[data-char-id]').forEach(btn => {
+    btn.onclick = () => {
+      const selectedCharId = btn.dataset.charId;
+      closeModal();
+      onSelect(selectedCharId, mode);
+    };
+  });
+}
+
+async function renderGrowth(c, view, activeSub='main') {
+    const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
+    const maxSkills = 8;
+    const currentSkills = c.abilities_all.length;
+    const canCreateSkill = isOwner && currentSkills < maxSkills;
+    const canUpgradeSkill = isOwner;
+
+    // Sub-route handling
+    if (activeSub === 'create') return renderSkillCreatePage(c, view);
+    if (activeSub === 'upgrade') return renderSkillUpgradePage(c, view);
+    if (activeSub === 'narrate') return renderNarratePage(c, view);
+    
+    // Default main view
+    view.innerHTML = `
+      <div class="p12">
+        <div class="kv-label">캐릭터 성장 메뉴</div>
+        <div class="grid2" style="gap:12px;">
+          
+          <button class="kv-card" id="btnGrowthCreate" style="text-align:left; padding:16px; cursor:pointer;" ${canCreateSkill ? '' : `disabled title="스킬은 최대 ${maxSkills}개입니다. (${currentSkills}/${maxSkills})"`} data-go="create">
+            <div style="font-weight:900; font-size:16px;">스킬 생성 ✨</div>
+            <div class="text-dim" style="font-size:13px; margin-top:4px;">AI가 새로운 스킬을 생성합니다.</div>
+            <div class="chip" style="margin-top:8px;">🪙 1,000 코인</div>
           </button>
-        `).join('')}
+          
+          <button class="kv-card" id="btnGrowthUpgrade" style="text-align:left; padding:16px; cursor:pointer;" ${canUpgradeSkill ? '' : 'disabled title="내 캐릭터만 가능"'} data-go="upgrade">
+            <div style="font-weight:900; font-size:16px;">스킬 성장 📈</div>
+            <div class="text-dim" style="font-size:13px; margin-top:4px;">보유 경험치를 사용하여 스킬 레벨을 올립니다.</div>
+            <div class="chip" style="margin-top:8px;">EXP 소모</div>
+          </button>
+          
+          <button class="kv-card" id="btnGrowthNarrate" style="text-align:left; padding:16px; cursor:pointer;" ${isOwner ? '' : 'disabled title="내 캐릭터만 가능"'} data-go="narrate">
+            <div style="font-weight:900; font-size:16px;">서사 진행 📝</div>
+            <div class="text-dim" style="font-size:13px; margin-top:4px;">미니 에피소드를 추가하고 서사를 발전시킵니다.</div>
+            <div class="chip" style="margin-top:8px;">자원 소모 (미구현)</div>
+          </button>
+          
+        </div>
       </div>
-      <div style="text-align:right; margin-top:12px;">
-        <button class="btn ghost" id="mClose">닫기</button>
+    `;
+    
+    if (isOwner) {
+        view.querySelectorAll('[data-go]').forEach(btn => {
+            if (btn.disabled) return;
+            btn.onclick = () => {
+                location.hash = `#/char/${c.id}/growth/${btn.dataset.go}`;
+            };
+        });
+    }
+}
+
+// [ADD] Placeholder for Skill Create Page
+function renderSkillCreatePage(c, view) {
+    view.innerHTML = `
+      <div class="p12">
+        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">스킬 생성 ✨</h4></div>
+        <div class="kv-card mt12">
+          <div class="kv-label">캐릭터: ${esc(c.name)}</div>
+          <p>AI가 현재 캐릭터의 특징과 서사에 맞는 새로운 스킬을 생성합니다.</p>
+          <p style="font-weight:bold; color:#f3c34f;">비용: 🪙 1,000 코인</p>
+          <hr style="margin:12px 0; border-color:#273247;">
+          <textarea id="skill-prompt" class="input" rows="5" placeholder="원하는 스킬 컨셉을 300자 이내로 입력하세요. (예: 그림자 속에서 순간 이동하는 능력, 강력한 방어 마법 등)"></textarea>
+          <div style="text-align:right; margin-top:8px;">
+            <button class="btn primary" id="btn-create-skill" disabled>스킬 생성 요청 (미구현)</button>
+          </div>
+        </div>
       </div>
-    </div>
-  `;
+    `;
+    view.querySelector('#btn-create-skill').disabled = !auth.currentUser;
+}
 
-  document.body.appendChild(back);
+// [ADD] Placeholder for Skill Upgrade Page
+function renderSkillUpgradePage(c, view) {
+    const skills = c.abilities_all || [];
+    
+    view.innerHTML = `
+      <div class="p12">
+        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">스킬 성장 📈</h4></div>
+        <div class="kv-card mt12">
+          <div class="kv-label">현재 보유 경험치</div>
+          <div style="font-weight:bold; font-size:16px;">Total EXP: ${c.exp_total || 0}</div>
+          <p class="text-dim" style="font-size:13px; margin-top:4px;">보유 EXP를 사용하여 스킬 레벨을 성장시킬 수 있습니다.</p>
+          <hr style="margin:12px 0; border-color:#273247;">
+          <div class="col" style="gap:12px;">
+            ${skills.map((s, i) => {
+                const skillName = s.name || `스킬 ${i + 1}`;
+                const skillKey = (skillName.toLowerCase().replace(/\s/g, '_'));
+                const skillStat = c.skills?.[skillKey] || (typeof c.skills?.[skillKey] === 'number' ? { level: c.skills[skillKey], exp: 0, nextExp: 100 } : { level: 0, exp: 0, nextExp: 100 });
+                const level = skillStat.level || 0;
+                const exp = skillStat.exp || 0;
+                const nextExp = skillStat.nextExp || 100;
+                const cost = 1000; // 임시 성장 비용
+                
+                return `
+                  <div class="kv-card" style="padding:10px;">
+                    <div style="font-weight:700; display:flex; justify-content:space-between;">
+                        ${esc(skillName)} (Lv. ${level})
+                        <button class="btn small primary" id="btn-upgrade-${i}" disabled>성장 요청 (EXP ${cost})</button>
+                    </div>
+                    <div class="text-dim" style="font-size:12px; margin-top:4px;">
+                      다음 레벨까지: ${exp} / ${nextExp} EXP
+                    </div>
+                  </div>
+                `;
+            }).join('')}
+          </div>
+        </div>
+      </div>
+    `;
+    view.querySelectorAll('button[id^="btn-upgrade-"]').forEach(btn => btn.disabled = true);
+}
 
-  const closeModal = () => back.remove();
-  back.querySelector('#mClose').onclick = closeModal;
-  back.addEventListener('click', e => {
-    if (e.target === back) closeModal();
-  });
-
-  back.querySelectorAll('button[data-char-id]').forEach(btn => {
-    btn.onclick = () => {
-      const selectedCharId = btn.dataset.charId;
-      closeModal();
-      onSelect(selectedCharId, mode);
-    };
-  });
+// [ADD] Placeholder for Narrate Page
+function renderNarratePage(c, view) {
+    view.innerHTML = `
+      <div class="p12">
+        <div class="row" style="align-items:center; gap:8px;"><button class="btn ghost" onclick="location.hash = '#/char/${c.id}/growth'">← 성장 메뉴로</button><h4 style="margin:0;">서사 진행 📝</h4></div>
+        <div class="kv-card mt12">
+          <p>캐릭터의 서사에 새로운 장을 추가합니다. AI가 입력된 키워드를 바탕으로 이야기를 발전시킵니다.</p>
+          <p style="font-weight:bold; color:#7dd3fc;">기능 준비 중</p>
+          <hr style="margin:12px 0; border-color:#273247;">
+          <textarea id="narrative-prompt" class="input" rows="5" placeholder="새로운 서사의 키워드를 입력하세요. (예: 잃어버린 유물 발견, 강력한 적과의 조우, 새로운 동료와의 만남 등)"></textarea>
+          <div style="text-align:right; margin-top:8px;">
+            <button class="btn primary" id="btn-submit-narrative" disabled>서사 추가 요청</button>
+          </div>
+        </div>
+      </div>
+    `;
 }
 
 export default showCharDetail;
