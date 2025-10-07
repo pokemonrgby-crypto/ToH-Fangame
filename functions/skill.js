@@ -1,4 +1,5 @@
 // /functions/skill.js
+
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
 const { FieldValue } = require('firebase-admin/firestore');
@@ -108,7 +109,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const newSkill = {
             name: String(aiResult.name || '알 수 없는 스킬').slice(0, 20),
-            desc_soft: String(aiResult.description || '').slice(0, 140)
+            desc_soft: String(aiResult.description || '').slice(0, 140),
+            level: 0 // [추가] 신규 스킬은 0레벨로 시작
         };
         
         // 쿨타임 기록만 먼저 처리
@@ -150,11 +152,84 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             }
 
             tx.update(userRef, { coins: FieldValue.increment(-cost) });
-            tx.update(charRef, { abilities_all: FieldValue.arrayUnion(skill) });
+            tx.update(charRef, { abilities_all: FieldValue.arrayUnion({ ...skill, level: 0 }) }); // [수정] 레벨 명시
 
             return { ok: true, addedSkill: skill };
         });
     });
 
-    return { generateNewSkill, confirmAddSkill };
+    // [신규] 스킬 성장 함수
+    const enhanceSkill = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
+        const uid = req.auth?.uid;
+        if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+        const { charId, skillIndex } = req.data;
+        if (!charId || typeof skillIndex !== 'number') {
+            throw new HttpsError('invalid-argument', '캐릭터 ID와 스킬 인덱스가 필요합니다.');
+        }
+
+        return await db.runTransaction(async (tx) => {
+            const charRef = db.doc(`chars/${charId}`);
+            const userRef = db.doc(`users/${uid}`);
+            const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
+
+            if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+            const charData = charSnap.data();
+            if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
+            
+            const userCoins = userSnap.data()?.coins || 0;
+            const totalExp = charData.exp_total || 0;
+
+            const skills = Array.isArray(charData.abilities_all) ? [...charData.abilities_all] : [];
+            const skillToEnhance = skills[skillIndex];
+            if (!skillToEnhance) throw new HttpsError('not-found', '존재하지 않는 스킬입니다.');
+            
+            const currentLevel = skillToEnhance.level || 0;
+            if (currentLevel >= 3) throw new HttpsError('failed-precondition', '이미 최고 레벨입니다.');
+
+            const targetLevel = currentLevel + 1;
+            const costs = { 1: 100, 2: 300, 3: 500 };
+            const expReqs = { 1: 1000, 2: 3000, 3: 10000 };
+            
+            const cost = costs[targetLevel];
+            const expReq = expReqs[targetLevel];
+
+            if (userCoins < cost) throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${cost})`);
+            if (totalExp < expReq) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다. (필요: ${expReq})`);
+
+            // AI 호출하여 새 설명 생성
+            const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_enhance_system || '';
+            if (!systemPrompt) throw new HttpsError('internal', '스킬 강화 프롬프트를 찾을 수 없습니다.');
+
+            const aiUserPrompt = JSON.stringify({
+                character: { name: charData.name, summary: charData.summary },
+                skill: skillToEnhance,
+                targetLevel,
+            }, null, 2);
+
+            const { primary, fallback } = pickModels();
+            let aiResult;
+            try {
+                aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, primary);
+            } catch (e) {
+                logger.warn(`Enhance skill primary model failed, trying fallback.`, { error: e.message });
+                aiResult = await callGemini(GEMINI_API_KEY.value(), systemPrompt, aiUserPrompt, fallback);
+            }
+
+            const enhancedSkill = {
+                ...skillToEnhance,
+                desc_soft: aiResult.desc_soft,
+                level: targetLevel,
+            };
+
+            skills[skillIndex] = enhancedSkill;
+            
+            tx.update(userRef, { coins: FieldValue.increment(-cost) });
+            tx.update(charRef, { abilities_all: skills });
+
+            return { ok: true, updatedSkill: enhancedSkill, cost };
+        });
+    });
+
+    return { generateNewSkill, confirmAddSkill, enhanceSkill };
 };
