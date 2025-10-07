@@ -185,50 +185,6 @@ export async function showExploreRun() {
   }
 };
 
-const handleChoice = async (index) => {
-    // Buttons are already disabled by the new bindButtons logic
-    showLoading(true, '선택지 적용 중...');
-    try {
-        const result = await serverApplyChoice(state.id, index); 
-        
-        // Always trust the server's state
-        if (result.state) {
-          state = { id: state.id, ...result.state };
-        } else {
-          // If server for some reason didn't return state, fetch it manually
-          state = await getActiveRun(runId);
-        }
-
-        if (state.pending_battle) {
-            location.hash = `#/explore-battle/${state.id}`;
-            return; 
-        }
-
-        if (state.status === 'ended') {
-            showToast('탐험이 종료되었어');
-        }
-
-        render(state); // Re-render with the fresh state
-    } catch (e) {
-        console.error('[explore] handleChoice failed', e);
-        showToast('오류가 발생했습니다. 잠시 후 상태를 다시 동기화합니다.');
-        // On error, the server state might have changed. Fetch the truth from the server.
-        try {
-          state = await getActiveRun(runId);
-          render(state);
-        } catch (fetchError) {
-          console.error('[explore] Failed to fetch state after error', fetchError);
-          showToast('상태 동기화에 실패했습니다. 탐험 선택 화면으로 돌아갑니다.');
-          location.hash = '#/adventure';
-        }
-    } finally {
-        // Only hide loading if we are not navigating away
-        if (location.hash.startsWith('#/explore-run/')) {
-            showLoading(false);
-        }
-    }
-  };
-
 
 
   const handleChoice = async (index) => {
