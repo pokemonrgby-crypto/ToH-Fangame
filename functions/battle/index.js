@@ -247,7 +247,7 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
     }
 
     // 5. 쿨타임 적용
-    const WINDOW = 300;
+    const WINDOW = 180;
     const nowSecAfter = Math.floor(Date.now() / 1000);
     const uShot = await userRef.get();
     const exist = uShot.exists ? uShot.get('cooldown_all_until') : 0;
