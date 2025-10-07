@@ -1,20 +1,18 @@
 // /public/js/tabs/char.js
+
 import { db, auth, fx, func } from '../api/firebase.js';
 import { attachSupporterFX } from '../ui/supporter_fx.js';
-// [추가] getDocFromServer와 getDocsFromServer 함수를 직접 가져옵니다.
 import { startAfter, getDocFromServer, getDocsFromServer } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
 import {
   tierOf, uploadAvatarSquare, updateAbilitiesEquipped, updateItemsEquipped,
   getCharMainImageUrl, fetchWorlds, deleteRelation 
 } from '../api/store.js';
-import { getUserInventory } from '../api/user.js'; // 사용자 인벤토리 함수 import
+import { getUserInventory } from '../api/user.js';
 import { showToast } from '../ui/toast.js';
 import { showItemDetailModal } from '../ui/item.js';
-
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
+import { prettyTime } from '../ui/utils.js'; // ANCHOR: [추가] 날짜 포맷 함수 import
 
-// ---------- utils ----------
-// [추가] esc 함수를 다른 파일에서도 쓸 수 있도록 상단으로 옮기고 export 합니다.
 export function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -22,9 +20,7 @@ export function esc(s){
 }
 
 function parseId(){
-// (기존 내용과 동일)
   const h = location.hash || '';
-  // #/char/{cid} 또는 #/char/{cid}/narrative/{nid}
   const m = h.match(/^#\/char\/([^/]+)(?:\/narrative\/([^/]+))?$/);
   return m ? { charId: m[1], narrId: m[2] || null } : { charId:null, narrId:null };
 }
@@ -44,7 +40,6 @@ function normalizeChar(c){
   return out;
 }
 
-// [수정] 다른 파일에서 재사용할 수 있도록 export 추가
 export function rarityStyle(r) {
   const map = {
     normal: { bg: '#2a2f3a', border: '#5f6673', text: '#c8d0dc', label: '일반' },
@@ -63,7 +58,6 @@ export function rarityStyle(r) {
   return map[(r || '').toLowerCase()] || map.normal;
 }
 
-// [추가] adventure.js에서 가져온 함수들
 export function isConsumableItem(it){ return !!(it?.consumable || it?.isConsumable); }
 export function getUsesLeft(it){
   if (typeof it?.uses === 'number') return it.uses;
@@ -99,16 +93,13 @@ export function ensureItemCss() {
   const st = document.createElement('style');
   st.id = 'toh-item-css';
   st.textContent = `
-  /* [추가] 모달 창을 위한 스타일 */
   .modal-back{position:fixed;inset:0;background:rgba(0,0,0,.6);backdrop-filter:blur(4px);display:flex;align-items:center;justify-content:center;z-index:9999}
   .modal-card{background:#0e1116;border:1px solid #273247;border-radius:14px;padding:16px;max-width:800px;width:94vw;max-height:90vh;display:flex;flex-direction:column;}
 
-  /* 아이템 카드 효과 */
   .shine-effect { position: relative; overflow: hidden; }
   .shine-effect::after { content: ''; position: absolute; top: -50%; left: -50%; width: 200%; height: 200%; background: linear-gradient(to right, rgba(255,255,255,0) 0%, rgba(255,255,255,0.3) 50%, rgba(255,255,255,0) 100%); transform: rotate(30deg); animation: shine 3s infinite ease-in-out; pointer-events: none; }
   @keyframes shine { 0% { transform: translateX(-75%) translateY(-25%) rotate(30deg); } 100% { transform: translateX(75%) translateY(25%) rotate(30deg); } }
   .item-card { transition: box-shadow .18s ease, transform .18s ease, filter .18s ease; will-change: transform, box-shadow; outline: none; }
-  /* 공통 아이템 카드 베이스 */
 .kv-card.item-card{
   border:1px solid #273247;
   border-radius:12px;
@@ -116,7 +107,6 @@ export function ensureItemCss() {
   padding:10px;
 }
 
-  /* === AETHER rarity: animated rainbow background === */
 .kv-card.rarity-aether,
 .item.rarity-aether {
   position: relative;
@@ -124,7 +114,6 @@ export function ensureItemCss() {
   border: 1px solid #fff;
 }
 
-/* 무지개 애니메이션 레이어 (바닥) */
 .kv-card.rarity-aether::before,
 .item.rarity-aether::before {
   content: '';
@@ -140,7 +129,6 @@ export function ensureItemCss() {
   z-index: 0;
 }
 
-/* 가독성을 위한 어둡기 오버레이 (위) */
 .kv-card.rarity-aether::after,
 .item.rarity-aether::after {
   content: '';
@@ -150,7 +138,6 @@ export function ensureItemCss() {
   z-index: 1;
 }
 
-/* 실제 내용은 제일 위 레이어 */
 .kv-card.rarity-aether > *,
 .item.rarity-aether > * {
   position: relative;
@@ -163,7 +150,6 @@ export function ensureItemCss() {
   100% { background-position:   0% 50%; }
 }
 
-/* 모션 최소화 환경 배려 */
 @media (prefers-reduced-motion: reduce){
   .kv-card.rarity-aether::before,
   .item.rarity-aether::before { animation: none; }
@@ -173,7 +159,6 @@ export function ensureItemCss() {
   document.head.appendChild(st);
 }
 
-// ---------- entry ----------
 export async function showCharDetail(){
   const { charId, narrId } = parseId();
   const root = document.getElementById('view');
@@ -184,7 +169,6 @@ export async function showCharDetail(){
   }
 
   try{
-    // [수정] fx.getDoc -> getDocFromServer: 캐시를 무시하고 항상 서버에서 최신 캐릭터 정보를 가져옵니다.
     const snap = await getDocFromServer(fx.doc(db,'chars', charId));
     if(!snap.exists()){
       root.innerHTML='<section class="container narrow"><p>캐릭터가 없네</p></section>';
@@ -202,26 +186,17 @@ export async function showCharDetail(){
   }
 }
 
-
-// ---------- render ----------
-// /public/js/tabs/char.js
-
-// (기존 코드와 동일)
-
-// ---------- render ----------
 async function render(c){
   const root = document.getElementById('view');
   const tier = tierOf(c.elo||1000);
   const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
   
-  // 1. 캐릭터 주인의 프로필에서 후원자 디자인 이름을 문자열로 가져옵니다.
   let supporterTier = '';
   if (c.owner_uid) {
     try {
       const ownerSnap = await fx.getDoc(fx.doc(db, 'users', c.owner_uid));
-      // 'supporter_tier' 필드가 존재하고 문자열이면 값을 사용합니다.
       if (ownerSnap.exists()) {
-        supporterTier = ownerSnap.data().supporter_tier; // 이 값은 undefined, null, "", "none" 또는 유효한 등급일 수 있습니다.
+        supporterTier = ownerSnap.data().supporter_tier;
       }
     } catch (e) {
       console.warn("후원자 정보 조회 실패:", e);
@@ -288,30 +263,23 @@ async function render(c){
     </div>
   </section>`;
 
-  // ANCHOR: [교체] 후원자 FX 부착 로직 수정
   const wrap = root.querySelector('.avatar-wrap');
 
-  // 2. supporterTier에 유효한 값이 있고(null, undefined, ""가 아님), 'none'이 아닐 때만 FX를 부착합니다.
   if (wrap && supporterTier && supporterTier !== 'none' && !wrap.dataset.fxAttached) {
     wrap.dataset.fxAttached = '1';
     
-    // 유효한 후원자 등급 목록
     const validTiers = ['nexus', 'flame', 'galaxy', 'forest', 'orbits'];
     
-    // supporterTier 값이 유효한 목록에 포함되어 있으면 해당 값을 사용하고,
-    // 목록에 없더라도 유효한 값이면 'orbits'를 기본값으로 사용합니다.
     const effectTheme = validTiers.includes(supporterTier) ? supporterTier : 'orbits';
     
-    // 결정된 테마로 이펙트 함수를 호출합니다.
     attachSupporterFX(wrap, effectTheme);
   }
-  // ANCHOR_END
 
   getCharMainImageUrl(c.id, {cacheFirst:true}).then(url=>{
     const img = document.getElementById('charAvatar');
     if(!url || !img) return;
     const pre = new Image();
-    pre.onload = ()=> { img.src = url; };   // 로딩 끝나면 한 번에 교체
+    pre.onload = ()=> { img.src = url; };
     pre.src = url;
   }).catch(()=>{ /* keep thumbnail */ });
 
@@ -333,7 +301,6 @@ async function render(c){
   const btnLike = root.querySelector('#btnLike');
 if (btnLike) {
   const LIKED_KEY = `toh_liked_${c.id}`;
-  // 이미 좋아요를 눌렀다면 버튼을 비활성화하고 스타일 변경
   if (localStorage.getItem(LIKED_KEY)) {
     btnLike.style.background = '#ff69b4';
     btnLike.innerHTML = '❤️';
@@ -347,7 +314,6 @@ if (btnLike) {
 
     try {
       btnLike.disabled = true;
-     // Firestore 규칙에 맞춰 3필드만 정확히 변경
       const ref = fx.doc(db, 'chars', c.id);
       await fx.updateDoc(ref, {
         likes_total:  fx.increment(1),
@@ -356,14 +322,12 @@ if (btnLike) {
       });
 
 
-      // 성공 시 로컬에 기록하여 중복 방지
       localStorage.setItem(LIKED_KEY, '1');
 
       showToast('좋아요! 이 캐릭터를 응원합니다.');
       btnLike.style.background = '#ff69b4';
       btnLike.innerHTML = '❤️';
 
-      // 화면의 좋아요 카운트도 즉시 업데이트
       const likeStat = root.querySelector('.stat-like .v');
       if (likeStat) likeStat.textContent = (parseInt(likeStat.textContent, 10) || 0) + 1;
       const weekStat = root.querySelector('.stat-week .v');
@@ -372,7 +336,7 @@ if (btnLike) {
     } catch (e) {
       console.error('[like] error', e);
       showToast(`좋아요 실패: ${e.message}`);
-      btnLike.disabled = false; // 실패 시 다시 누를 수 있도록 복구
+      btnLike.disabled = false;
     }
   });
 }
@@ -389,11 +353,8 @@ if (btnLike) {
   });
   renderBio(c, bv);
 }
-// (이하 코드 동일)
 
-// /public/js/tabs/char.js
-
-// /public/js/tabs/char.js
+// ... (기존 코드와 동일)
 
 function mountFixedActions(c, isOwner){
   document.querySelector('.fixed-actions')?.remove();
@@ -402,12 +363,10 @@ function mountFixedActions(c, isOwner){
   bar.className = 'fixed-actions';
 
   if (!auth.currentUser) {
-    // 로그인 안 되어 있으면 아무 것도 안 띄움
     return;
   }
 
   if (isOwner) {
-    // 내 캐릭터일 때: 기존과 동일
     bar.innerHTML = `
       <button class="btn large" id="fabEncounter">조우 시작</button>
       <button class="btn large primary" id="fabBattle">배틀 시작</button>
@@ -425,20 +384,17 @@ function mountFixedActions(c, isOwner){
     return;
   }
 
-  // ★ 다른 사람 캐릭터일 때: 모의 버튼 제공 (보라색 스타일 추가)
   bar.innerHTML = `
     <button class="btn large btn-mock" id="fabMockEncounter">모의조우</button>
     <button class="btn large btn-mock" id="fabMockBattle">모의전투</button>
   `;
   document.body.appendChild(bar);
 
-  // 모의전/조우 시작 함수 (선택된 내 캐릭터 ID를 받음)
   function goMock(myCharId, mode){
     if(!myCharId){
       showToast('내 캐릭터가 없어. 먼저 캐릭터를 만들어줘!');
       return;
     }
-    // targetId에 현재 보고 있는 상대 캐릭터를 고정
     sessionStorage.setItem('toh.match.intent', JSON.stringify({
       charId: myCharId,
       mode,
@@ -449,13 +405,11 @@ function mountFixedActions(c, isOwner){
     location.hash = mode === 'battle' ? '#/battle' : '#/encounter';
   }
 
-  // 모의전 버튼 클릭 시 캐릭터 선택창 열기
   bar.querySelector('#fabMockBattle').onclick = () => openMyCharPickerForMock(c.id, 'battle', goMock);
   bar.querySelector('#fabMockEncounter').onclick = () => openMyCharPickerForMock(c.id, 'encounter', goMock);
 }
 
 
-// ---------- views ----------
 function renderBio(c, view){
   view.innerHTML = `
     <div class="subtabs">
@@ -476,12 +430,6 @@ function renderBio(c, view){
   });
   renderBioSub('summary', c, sv);
 }
-
-// /public/js/tabs/char (2).js
-
-// ... (다른 함수들은 그대로 유지) ...
-
-// public/js/tabs/char.js
 
 async function renderBioSub(which, c, sv){
   if(which==='summary'){
@@ -545,7 +493,6 @@ async function renderBioSub(which, c, sv){
       snapshot.forEach(doc => rels.push({ id: doc.id, ...doc.data() }));
 
       const detailedRelPromises = rels.map(async (r) => {
-        // [수정] a_charRef 또는 b_charRef 필드가 없는 비정상 데이터를 건너뛰도록 방어 코드를 추가합니다.
         if (!r.a_charRef || !r.b_charRef) {
           console.warn('Skipping malformed relation document:', r);
           return null;
@@ -565,7 +512,6 @@ async function renderBioSub(which, c, sv){
         };
       });
       
-      // [수정] Promise.all 이후 null 값을 제거하여 안전하게 렌더링합니다.
       const detailedRels = (await Promise.all(detailedRelPromises)).filter(Boolean);
 
       if (detailedRels.length === 0) {
@@ -624,8 +570,6 @@ async function renderBioSub(which, c, sv){
   }
 }
 
-
-// 아이템 장착 모달
 async function openItemPicker(c, onSave) {
   const inv = await getUserInventory();
   ensureItemCss();
@@ -634,7 +578,7 @@ async function openItemPicker(c, onSave) {
 
   const back = document.createElement('div');
   back.className = 'modal-back';
-  back.dataset.kind = 'item-picker';  // 상세 모달과 구분!
+  back.dataset.kind = 'item-picker';
 
   back.style.zIndex = '8000';
 
@@ -667,7 +611,6 @@ async function openItemPicker(c, onSave) {
       </div>
     `;
 
-// 아이템 장착 모달
     back.querySelectorAll('.item-picker-card').forEach(card => {
         card.addEventListener('click', () => {
             const itemId = card.dataset.itemId;
@@ -678,7 +621,7 @@ async function openItemPicker(c, onSave) {
                 equippedIds: selectedIds,
                 onUpdate: (newSelectedIds) => {
                     selectedIds = newSelectedIds;
-                    renderModalContent(); // 부모 모달(피커) 새로고침
+                    renderModalContent();
                 }
             });
         });
@@ -690,7 +633,7 @@ async function openItemPicker(c, onSave) {
         await updateItemsEquipped(c.id, selectedIds);
         showToast('아이템 장착 정보가 저장되었습니다.');
         c.items_equipped = selectedIds;
-        onSave(selectedIds);  // 저장된 장착 목록을 콜백으로 넘겨줘
+        onSave(selectedIds);
         back.remove();
       } catch (e) {
         showToast('아이템 저장에 실패했습니다: ' + e.message);
@@ -703,10 +646,8 @@ async function openItemPicker(c, onSave) {
   back.onclick = (e) => { if (e.target === back) back.remove(); };
 }
 
-
-// 스킬/아이템 탭
 async function renderLoadout(c, view){
-    ensureItemCss(); // aether 무지개 CSS를 로드아웃 진입 시 바로 주입
+    ensureItemCss();
   const isOwner = auth.currentUser && auth.currentUser.uid === c.owner_uid;
 
   const abilitiesAll = Array.isArray(c.abilities_all) ? c.abilities_all : [];
@@ -714,9 +655,8 @@ async function renderLoadout(c, view){
     ? c.abilities_equipped.filter(i=>Number.isInteger(i)&&i>=0&&i<abilitiesAll.length).slice(0,2)
     : [];
   
-  const equippedItemIds = Array.isArray(c.items_equipped)? c.items_equipped.slice(0,3): [];
+  let equippedItemIds = Array.isArray(c.items_equipped)? c.items_equipped.slice(0,3): [];
   
-  // [핵심 수정] 상대방 캐릭터일 경우, 상대방의 user 문서를 읽어와 인벤토리를 가져옵니다.
   let inv = [];
   if (isOwner) {
     inv = await getUserInventory();
@@ -727,7 +667,7 @@ async function renderLoadout(c, view){
       inv = userDocSnap.exists() ? (userDocSnap.data().items_all || []) : [];
     } catch (e) {
       console.error("Failed to get opponent inventory:", e);
-      inv = []; // 실패 시 빈 배열로 처리
+      inv = [];
     }
   }
 
@@ -779,7 +719,7 @@ async function renderLoadout(c, view){
 
       const style = rarityStyle(it.rarity);
       const isAether = (it.rarity || '').toLowerCase() === 'aether';
-      const borderStyle = isAether ? '' : `border-left: 3px solid ${style.border};`; // 에테르 등급은 CSS 클래스가 테두리를 처리하므로 인라인 스타일 제거
+      const borderStyle = isAether ? '' : `border-left: 3px solid ${style.border};`;
 
       return `
         <button class="kv-card item-card ${isAether ? 'rarity-aether' : ''}" data-item-id="${it.id}"
@@ -790,7 +730,7 @@ async function renderLoadout(c, view){
         </button>`;
     }).join('');
 
-    slotBox.querySelectorAll('.item[data-item-id]').forEach(btn => {
+    slotBox.querySelectorAll('.item-card[data-item-id]').forEach(btn => {
         btn.onclick = () => {
             const itemId = btn.dataset.itemId;
             const item = inv.find(i => i.id === itemId);
@@ -806,12 +746,8 @@ async function renderLoadout(c, view){
     view.querySelector('#btnEquip')?.addEventListener('click', ()=>{
       openItemPicker(c, (newIds) => {
         if (Array.isArray(newIds)) {
-    // 로컬 상태 반영
           c.items_equipped = [...newIds];
-    // 이 함수 스코프 상단의 equippedItemIds 값을 동기화
-          equippedItemIds.length = 0;
-          equippedItemIds.push(...newIds);
-    // 슬롯 UI만 다시 그림
+          equippedItemIds = [...newIds];
           renderSlots();
           showToast('아이템 장착이 갱신됐어!');
         }
@@ -821,7 +757,6 @@ async function renderLoadout(c, view){
 }
 
 
-// 표준 narratives → {id,title,long,short} 배열, 없으면 legacy narrative_items 변환
 function normalizeNarratives(c){
   if (Array.isArray(c.narratives) && c.narratives.length){
     return c.narratives.map(n => ({
@@ -842,7 +777,6 @@ function normalizeNarratives(c){
   return [];
 }
 
-// 서사 전용 페이지: 제목 → long → short (short는 여기에서만 노출)
 function renderNarrativePage(c, narrId){
   const root = document.getElementById('view');
   const list = normalizeNarratives(c);
@@ -875,7 +809,6 @@ function renderNarrativePage(c, narrId){
 
 }
 
-// --- 인라인 강조(**굵게**, *기울임*) 처리
 function applyInlineMarks(html){
   html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, function(_, pre, inner){
@@ -884,7 +817,6 @@ function applyInlineMarks(html){
   return html;
 }
 
-// --- 간단 마크업(#, ##, ###, >, * ) + 줄바꿈(\n, \n\n) 렌더링
 function renderRich(text){
   var s = String(text||'').replace(/\r\n?/g,'\n');
   var lines = s.split('\n');
@@ -968,28 +900,12 @@ async function renderHistory(c, view) {
   let busy = false;
   let done = false;
 
-  // [수정] 페이지네이션 상태를 통합 커서 방식으로 변경
-  let nextCursor = null; // battle 모드용
-  let lastA = null, lastD = null, doneA = false, doneD = false; // encounter 모드용
-  let lastE = null, doneE = false; // explore 모드용
+  let nextCursor = null;
+  let lastA = null, lastD = null, doneA = false, doneD = false;
+  let lastE = null, doneE = false;
 
-  const t = (ts)=> {
-    try{
-      if(!ts) return '';
-      if (typeof ts.toDate === 'function') return ts.toDate(); // Firestore Timestamp 객체 처리
-      if (typeof ts.toMillis === 'function') return new Date(ts.toMillis());
-      if (typeof ts === 'number') return new Date(ts);
-      return new Date(ts);
-    }catch{ return new Date(); }
-  };
-
-  // /public/js/tabs/char.js
-// ❗️ 이 함수 전체를 복사하여 기존 appendItems 함수를 덮어쓰세요.
-// /public/js/tabs/char.js
-
-// ... (다른 함수들은 그대로 유지) ...
-
-function appendItems(items){
+  // ANCHOR: [교체] appendItems 함수
+  function appendItems(items){
     if(items.length) empty.style.display = 'none';
     const frag = document.createDocumentFragment();
     items.forEach(it=>{
@@ -1002,10 +918,9 @@ function appendItems(items){
 
         let resultText, resultColor;
         
-        // ❗️ 모의전 여부(it.simulated)를 확인하여 색상과 텍스트를 결정합니다.
         if (it.simulated) {
             resultText = '모의전';
-            resultColor = '#8b5cf6'; // 보라색
+            resultColor = '#8b5cf6';
         } else if ((isAttacker && it.winner === 0) || (!isAttacker && it.winner === 1)) {
             resultText = '승리'; resultColor = '#3a8bff';
         } else if ((isAttacker && it.winner === 1) || (!isAttacker && it.winner === 0)) {
@@ -1014,7 +929,8 @@ function appendItems(items){
             resultText = '무승부'; resultColor = '#777';
         }
         
-        const when = t(it.endedAt).toLocaleString();
+        // ANCHOR: [수정] prettyTime 함수 사용
+        const when = prettyTime(it.endedAt);
         go = `#/battlelog/${it.id}`;
         html = `
           <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid ${resultColor}; padding: 10px; display: flex; align-items: center; gap: 12px;">
@@ -1036,15 +952,14 @@ function appendItems(items){
         const isA = it.a_char === `chars/${c.id}`;
         const opponentSnapshot = isA ? it.b_snapshot : it.a_snapshot;
         const myExp = isA ? it.exp_a : it.exp_b;
-        const when = t(it.endedAt).toLocaleString();
+        const when = prettyTime(it.endedAt); // ANCHOR: [수정] prettyTime 함수 사용
         go = `#/encounter-log/${it.id}`;
 
-        // ❗️ 모의조우 여부(it.simulated)를 확인하여 색상과 텍스트를 결정합니다.
         let resultText = '조우';
-        let resultColor = '#a3e635'; // 기본 녹색
+        let resultColor = '#a3e635';
         if (it.simulated) {
             resultText = '모의조우';
-            resultColor = '#8b5cf6'; // 보라색
+            resultColor = '#8b5cf6';
         }
         
         html = `
@@ -1066,7 +981,7 @@ function appendItems(items){
 
       } else if(mode==='raid'){
           const myContribution = (it.contributions || []).find(con => con.charId === c.id);
-          const when = t(it.createdAt).toLocaleString();
+          const when = prettyTime(it.createdAt); // ANCHOR: [수정] prettyTime 함수 사용
           go = `#/raidlog/${it.id}`;
           html = `
             <div class="kv-card tl-go" data-go="${go}" style="border-left:3px solid #8b5cf6; padding: 10px;">
@@ -1078,7 +993,7 @@ function appendItems(items){
             </div>`;
         
       } else { // 'explore'
-        const when = t(it.endedAt || it.startedAt).toLocaleString();
+        const when = prettyTime(it.endedAt || it.startedAt); // ANCHOR: [수정] prettyTime 함수 사용
         go = `#/explorelog/${it.id}`;
         html = `
           <div class="kv-card tl-go" data-go="${go}" 
@@ -1099,7 +1014,7 @@ function appendItems(items){
       frag.appendChild(el);
     });
     box.appendChild(frag);
-}
+  }
 
   async function fetchNext() {
     if (busy || done || !mode) return;
@@ -1111,20 +1026,19 @@ function appendItems(items){
         const { data } = await callHistory({
           charId: c.id,
           limit: 15,
-          cursor: nextCursor // 다음 페이지 요청 시 커서 사용
+          cursor: nextCursor
         });
 
         if (data.ok && data.logs) {
           appendItems(data.logs);
-          nextCursor = data.nextCursor; // 다음 페이지 커서 저장
+          nextCursor = data.nextCursor;
           if (!nextCursor) {
-            done = true; // 다음 페이지가 없으면 종료
+            done = true;
           }
         } else {
           done = true;
         }
       } else {
-        // [기존 로직 유지] 조우, 탐험 등 다른 탭은 기존 방식을 그대로 사용합니다.
         const out = [];
         if (mode === 'encounter') {
           if(!doneA){
@@ -1201,7 +1115,6 @@ function appendItems(items){
     busy = false;
     done = false;
     
-    // [수정] 페이지네이션 상태 초기화
     nextCursor = null; 
     lastA = lastD = lastE = null;
     doneA = doneD = doneE = false;
@@ -1209,7 +1122,6 @@ function appendItems(items){
     fetchNext();
   }
 
-  // ... (IntersectionObserver 및 이벤트 리스너 코드는 기존과 동일)
   const io = new IntersectionObserver((entries)=>{
     entries.forEach((en)=>{
       if(en.isIntersecting) fetchNext();
@@ -1236,7 +1148,7 @@ function setMatchIntentAndGo(charId, mode){
 
 
 function showRelationDetailModal(myChar, otherChar, relation) {
-  ensureModalCss(); // 모달 CSS가 없으면 주입 (adventure.js 등에서 가져옴)
+  ensureModalCss();
 
   const modal = document.createElement('div');
   modal.className = 'modal-back';
@@ -1277,7 +1189,6 @@ function showRelationDetailModal(myChar, otherChar, relation) {
   modal.addEventListener('click', e => { if(e.target === modal) closeModal(); });
   modal.querySelector('#mClose').onclick = closeModal;
   
-  // 모달 내 캐릭터 링크 클릭 시 모달이 닫히도록 설정
   modal.querySelectorAll('a').forEach(a => {
     a.addEventListener('click', closeModal);
   });
@@ -1285,9 +1196,6 @@ function showRelationDetailModal(myChar, otherChar, relation) {
   document.body.appendChild(modal);
 }
 
-// /public/js/tabs/char.js
-
-// 모의전을 위한 내 캐릭터 선택 모달
 async function openMyCharPickerForMock(opponentId, mode, onSelect) {
   ensureModalCss();
   const u = auth.currentUser;
@@ -1344,8 +1252,4 @@ async function openMyCharPickerForMock(opponentId, mode, onSelect) {
   });
 }
 
-
-// 라우터 호환
 export default showCharDetail;
-
-
