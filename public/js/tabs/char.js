@@ -371,7 +371,7 @@ function renderGrowth(c, view) {
         <a href="#/char-enhance-skill?id=${c.id}" class="kv-card" style="text-decoration: none; color: inherit; text-align: center;">
           <div style="font-size: 24px;">🚀</div>
           <div style="font-weight: 800; margin-top: 8px;">스킬 성장</div>
-          <div class="text-dim" style="font-size: 12px; margin-top: 4px;">기존 스킬을 강화합니다. (미구현)</div>
+          <div class="text-dim" style="font-size: 12px; margin-top: 4px;">기존 스킬을 강화합니다.</div>
         </a>
         <a href="#/char-progress-narrative?id=${c.id}" class="kv-card" style="text-decoration: none; color: inherit; text-align: center;">
           <div style="font-size: 24px;">📜</div>
