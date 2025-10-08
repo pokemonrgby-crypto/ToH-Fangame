@@ -8,83 +8,85 @@ import { fetchMyChars } from '../api/store.js';
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // [신규] 레이드 설명용 리치 텍스트 렌더러
+// [수정] 리치 텍스트 렌더러 (기존 함수 교체)
 function renderRaidRichText(text) {
     if (!text) return '';
     return esc(text)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **굵게** 처리
-        .replace(/\n/g, '<br>'); // 줄바꿈 처리
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **굵게**
+        .replace(/\n/g, '<br>'); // 줄바꿈
 }
 
+// ANCHOR: [전체 교체] openBossDetailModal
+async function openBossDetailModal(raidBoss) {
+    ensureRaidModalCss();
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    back.style.zIndex = 10000;
 
-function ensureRaidModalCss() {
-  if (document.getElementById('toh-raid-modal-css')) return;
-  const st = document.createElement('style');
-  st.id = 'toh-raid-modal-css';
-  st.textContent = `
-    .modal-back{
-      position:fixed; inset:0; z-index:9990;
-      display:flex; align-items:center; justify-content:center;
-      background:rgba(0,0,0,.6); backdrop-filter:blur(4px);
-    }
-    .modal-card{
-      background:#0e1116; border:1px solid #273247; border-radius:14px;
-      padding:16px; width:92vw; max-width:560px; max-height:90vh; overflow-y:auto;
-    }
-    /* --- 공용 레이아웃 --- */
-    .col{ display:flex; flex-direction:column; }
-    .row{ display:flex; align-items:center; }
-    .text-dim{ color: var(--muted, #7a828e); }
-
-    /* --- 파티 구성 모달용 스타일 --- */
-    .manage-col { display: flex; flex-direction: column; gap: 12px; }
-    .manage-label { font-size:13px; color:var(--muted); margin-bottom: 4px; display: block; }
-    .manage-select {
-        flex: 1;
-        background: var(--bg, #0c0f14);
-        color: var(--text, #eef1f6);
-        border: 1px solid var(--bd, #212a36);
-        border-radius: 10px;
-        padding: 10px;
-        font-size: 14px;
-        width: 100%;
+    // 보스 설명 텍스트를 페이즈별로 분리하는 정규식 (더 유연하게 수정)
+    const descText = raidBoss.description || '';
+    const phaseRegex = /\[페이즈 (\d+):\s*([^\]]+)\]\n?([\s\S]*?)(?=\[페이즈 \d+:|$)/g;
+    
+    const generalDesc = descText.split('[페이즈 1:')[0].trim();
+    
+    const phases = [];
+    let match;
+    while ((match = phaseRegex.exec(descText)) !== null) {
+        phases.push({
+            number: match[1],
+            title: match[2].trim(),
+            description: match[3].trim()
+        });
     }
 
-    /* --- 보스 정보 모달용 스타일 --- */
-    .kv-card {
-        background: var(--panel-quote, #181e29);
-        border: 1px solid var(--bd, #212a36);
-        border-radius: 10px;
-        padding: 12px;
-        color: var(--text, #eef1f6);
-    }
-    .kv-label {
-        color: var(--muted, #7a828e);
-        font-size: 13px;
-        margin-bottom: 8px;
-        font-weight: 500;
-    }
-    .boss-skill-card {
-      padding: 10px;
-      background: var(--panel, #11151c);
-    }
-    .boss-phase-card {
-      padding: 12px;
-      border-left: 3px solid var(--bd, #212a36);
-    }
-    .boss-phase-card[data-phase="1"] { border-color: #f59e0b; }
-    .boss-phase-card[data-phase="2"] { border-color: #ef4444; }
-    .boss-phase-card[data-phase="3"] { border-color: #8b5cf6; }
+    const skillsHtml = (raidBoss.skills || []).map(skill => `
+        <div class="kv-card boss-skill-card">
+            <div style="font-weight: 700;">${esc(skill.name)}</div>
+            <div class="text-dim" style="font-size: 12px; margin-top: 4px; line-height: 1.6;">${renderRaidRichText(skill.description)}</div>
+        </div>
+    `).join('');
 
-    /* [추가] 메인 카드 설명 3줄 요약 스타일 */
-    .description-truncate {
-        display: -webkit-box;
-        -webkit-line-clamp: 3;
-        -webkit-box-orient: vertical;
-        overflow: hidden;
-        text-overflow: ellipsis;
-    }
-  `;
-  document.head.appendChild(st);
+    const phasesHtml = phases.map(phase => `
+        <div class="kv-card boss-phase-card" data-phase="${phase.number}">
+            <div style="font-weight: 700;">페이즈 ${phase.number}: ${esc(phase.title)}</div>
+            <p class="text-dim" style="font-size: 13px; line-height: 1.6; margin: 6px 0 0;">
+                ${renderRaidRichText(phase.description)}
+            </p>
+        </div>
+    `).join('');
+
+    back.innerHTML = `
+        <div class="modal-card">
+            <div class="col" style="gap: 16px;">
+                <div class="col" style="align-items: center; gap: 12px; text-align: center;">
+                    <img src="${esc(raidBoss.imageUrl || '')}" onerror="this.style.display='none'" 
+                         style="width: 150px; height: 150px; border-radius: 50%; object-fit: cover; border: 2px solid #ff5b66;">
+                    <div style="font-weight:900; font-size:22px;">${esc(raidBoss.name)}</div>
+                    <p class="text-dim" style="margin: 0; line-height: 1.6;">${renderRaidRichText(generalDesc)}</p>
+                </div>
+                
+                <div>
+                    <div class="kv-label">핵심 스킬</div>
+                    <div class="col" style="gap: 8px;">${skillsHtml}</div>
+                </div>
+
+                ${phasesHtml ? `
+                <div>
+                    <div class="kv-label">페이즈 정보</div>
+                    <div class="col" style="gap: 12px;">
+                        ${phasesHtml}
+                    </div>
+                </div>
+                ` : ''}
+            </div>
+            <button class="btn ghost" id="modal-close" style="margin-top: 24px;">닫기</button>
+        </div>
+    `;
+
+    document.body.appendChild(back);
+    const closeModal = () => back.remove();
+    back.querySelector('#modal-close').onclick = closeModal;
+    back.addEventListener('click', e => { if (e.target === back) closeModal(); });
 }
 
 function showLoading(show = true, text = '처리 중...') {
