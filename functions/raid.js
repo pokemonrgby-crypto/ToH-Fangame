@@ -14,15 +14,22 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
     // --- Helper Functions ---
 
+    // ANCHOR: [추가] 모델 풀 및 선택 함수
+    const MODEL_POOL = ['gemini-2.5-flash-lite', 'gemini-2.5-flash', 'gemini-2.5-pro'];
 
-    async function callGemini(systemText, userText) {
+    function pickModels() {
+      const shuffled = [...MODEL_POOL].sort(() => 0.5 - Math.random());
+      return { primary: shuffled[0], fallback: shuffled[1] || shuffled[0] };
+    }
+
+    // ANCHOR: [수정] callGemini 함수가 modelName을 파라미터로 받도록 변경
+    async function callGemini(systemText, userText, modelName) {
         const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-        const model = 'gemini-2.5-flash';
         const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) {
             throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
         }
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${modelName}:generateContent?key=${apiKey}`;
         const body = {
           systemInstruction: { role: 'system', parts: [{ text: systemText }] },
           contents: [{ role: 'user', parts: [{ text: userText }] }],
@@ -53,14 +60,12 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
               }
             }
           },
-          // ANCHOR: [수정된 부분] 안전 설정을 추가하여 응답 잘림 현상을 방지합니다.
           safetySettings: [
             { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HARASSMENT", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_HATE_SPEECH", threshold: "BLOCK_NONE" },
             { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" }
           ]
-          // ANCHOR_END
         };
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
         if (!res.ok) {
@@ -235,8 +240,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '나의 캐릭터 1명과 파티원 3명의 ID가 필요합니다.');
         }
 
-        // ▼▼▼ [수정된 부분] ▼▼▼
-        // 1. 쿨타임 확인 및 설정을 트랜잭션으로 원자화하여 AI 호출 전에 실행
         const userRef = db.doc(`users/${uid}`);
         try {
             await db.runTransaction(async (tx) => {
@@ -249,14 +252,11 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                     throw new HttpsError('failed-precondition', `레이드 쿨타임이 ${remaining}초 남았습니다.`);
                 }
                 
-                // 쿨타임 통과 시, 즉시 다음 쿨타임 설정
                 tx.set(userRef, { cooldown_raid_until: Timestamp.fromMillis(Date.now() + RAID_COOLDOWN_MS) }, { merge: true });
             });
         } catch(e) {
-            // 트랜잭션 실패 시(쿨타임 등) 에러를 그대로 전달
             throw e;
         }
-        // ▲▲▲ [수정된 부분] ▲▲▲
 
         const allCharIds = [myCharId, ...partyCharIds];
         let raidBoss;
@@ -338,7 +338,17 @@ ${JSON.stringify({ name: raidBoss.name, description: raidBoss.description, skill
 ${JSON.stringify(partyForAI, null, 2)}
         `;
 
-        const aiResult = await callGemini(systemPrompt, userPrompt);
+        // ANCHOR: [수정] 모델 선택 및 fallback 로직 추가
+        const { primary, fallback } = pickModels();
+        let aiResult;
+        try {
+            logger.info(`Attempting raid AI call with primary model: ${primary}`);
+            aiResult = await callGemini(systemPrompt, userPrompt, primary);
+        } catch (e) {
+            logger.warn(`Primary model ${primary} failed, trying fallback ${fallback}.`, { error: e.message });
+            aiResult = await callGemini(systemPrompt, userPrompt, fallback);
+        }
+
         let totalDamage = 1;
 
         {
@@ -407,9 +417,6 @@ ${JSON.stringify(partyForAI, null, 2)}
                     }, { merge: true });
                 }
             }
-
-            // [삭제] 쿨타임 설정 로직은 이미 위에서 처리했으므로 여기서는 제거합니다.
-            // tx.set(db.doc(`users/${uid}`), { cooldown_raid_until: Timestamp.fromMillis(Date.now() + RAID_COOLDOWN_MS) }, { merge: true });
         });
 
         return { ok: true, logId: logRef.id };
