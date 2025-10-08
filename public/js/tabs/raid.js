@@ -4,16 +4,115 @@ import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
+import { ensureModalCss } from '../ui/modal.js'; // ◀◀◀ 이 줄을 추가하세요.
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 // [신규] 레이드 설명용 리치 텍스트 렌더러
-// [수정] 리치 텍스트 렌더러 (기존 함수 교체)
 function renderRaidRichText(text) {
     if (!text) return '';
     return esc(text)
-        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **굵게**
-        .replace(/\n/g, '<br>'); // 줄바꿈
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') // **굵게** 처리
+        .replace(/\n/g, '<br>'); // 줄바꿈 처리
+}
+
+
+function ensureRaidModalCss() {
+  if (document.getElementById('toh-raid-modal-css')) return;
+  const st = document.createElement('style');
+  st.id = 'toh-raid-modal-css';
+  st.textContent = `
+    .modal-back{
+      position:fixed; inset:0; z-index:9990;
+      display:flex; align-items:center; justify-content:center;
+      background:rgba(0,0,0,.6); backdrop-filter:blur(4px);
+    }
+    .modal-card{
+      background:#0e1116; border:1px solid #273247; border-radius:14px;
+      padding:16px; width:92vw; max-width:560px; max-height:90vh; overflow-y:auto;
+    }
+    /* --- 공용 레이아웃 --- */
+    .col{ display:flex; flex-direction:column; }
+    .row{ display:flex; align-items:center; }
+    .text-dim{ color: var(--muted, #7a828e); }
+
+    /* --- 파티 구성 모달용 스타일 --- */
+    .manage-col { display: flex; flex-direction: column; gap: 12px; }
+    .manage-label { font-size:13px; color:var(--muted); margin-bottom: 4px; display: block; }
+    .manage-select {
+        flex: 1;
+        background: var(--bg, #0c0f14);
+        color: var(--text, #eef1f6);
+        border: 1px solid var(--bd, #212a36);
+        border-radius: 10px;
+        padding: 10px;
+        font-size: 14px;
+        width: 100%;
+    }
+
+    /* --- 보스 정보 모달용 스타일 --- */
+    .kv-card {
+        background: var(--panel-quote, #181e29);
+        border: 1px solid var(--bd, #212a36);
+        border-radius: 10px;
+        padding: 12px;
+        color: var(--text, #eef1f6);
+    }
+    .kv-label {
+        color: var(--muted, #7a828e);
+        font-size: 13px;
+        margin-bottom: 8px;
+        font-weight: 500;
+    }
+    .boss-skill-card {
+      padding: 10px;
+      background: var(--panel, #11151c);
+    }
+    .boss-phase-card {
+      padding: 12px;
+      border-left: 3px solid var(--bd, #212a36);
+    }
+    .boss-phase-card[data-phase="1"] { border-color: #f59e0b; }
+    .boss-phase-card[data-phase="2"] { border-color: #ef4444; }
+    .boss-phase-card[data-phase="3"] { border-color: #8b5cf6; }
+
+    /* [추가] 메인 카드 설명 3줄 요약 스타일 */
+    .description-truncate {
+        display: -webkit-box;
+        -webkit-line-clamp: 3;
+        -webkit-box-orient: vertical;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+  `;
+  document.head.appendChild(st);
+}
+
+function showLoading(show = true, text = '처리 중...') {
+    let overlay = document.getElementById('toh-loading-overlay');
+    if (show) {
+        if (!overlay) {
+            overlay = document.createElement('div');
+            overlay.id = 'toh-loading-overlay';
+            overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;color:white;`;
+            document.body.appendChild(overlay);
+        }
+        overlay.innerHTML = `<div>${text}</div>`;
+        overlay.style.display = 'flex';
+    } else {
+        if (overlay) overlay.style.display = 'none';
+    }
+}
+
+async function getActiveRaidBoss() {
+    try {
+        const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
+        const result = await getRaidBoss();
+        return result.data;
+    } catch (e) {
+        console.error("Error fetching raid boss:", e);
+        return null;
+    }
 }
 
 // ANCHOR: [전체 교체] openBossDetailModal
@@ -22,7 +121,7 @@ async function openBossDetailModal(raidBoss) {
     const back = document.createElement('div');
     back.className = 'modal-back';
     back.style.zIndex = 10000;
-
+    
     // 보스 설명 텍스트를 페이즈별로 분리하는 정규식 (더 유연하게 수정)
     const descText = raidBoss.description || '';
     const phaseRegex = /\[페이즈 (\d+):\s*([^\]]+)\]\n?([\s\S]*?)(?=\[페이즈 \d+:|$)/g;
@@ -88,33 +187,8 @@ async function openBossDetailModal(raidBoss) {
     back.querySelector('#modal-close').onclick = closeModal;
     back.addEventListener('click', e => { if (e.target === back) closeModal(); });
 }
+// ANCHOR_END
 
-function showLoading(show = true, text = '처리 중...') {
-    let overlay = document.getElementById('toh-loading-overlay');
-    if (show) {
-        if (!overlay) {
-            overlay = document.createElement('div');
-            overlay.id = 'toh-loading-overlay';
-            overlay.style.cssText = `position:fixed;inset:0;background:rgba(0,0,0,.7);display:flex;align-items:center;justify-content:center;z-index:9999;color:white;`;
-            document.body.appendChild(overlay);
-        }
-        overlay.innerHTML = `<div>${text}</div>`;
-        overlay.style.display = 'flex';
-    } else {
-        if (overlay) overlay.style.display = 'none';
-    }
-}
-
-async function getActiveRaidBoss() {
-    try {
-        const getRaidBoss = httpsCallable(func, 'getActiveRaidBoss');
-        const result = await getRaidBoss();
-        return result.data;
-    } catch (e) {
-        console.error("Error fetching raid boss:", e);
-        return null;
-    }
-}
 
 export async function showRaid() {
     const root = document.getElementById('view');
