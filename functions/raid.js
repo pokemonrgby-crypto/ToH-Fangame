@@ -235,13 +235,33 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '나의 캐릭터 1명과 파티원 3명의 ID가 필요합니다.');
         }
 
-        const allCharIds = [myCharId, ...partyCharIds];
-        let raidBoss, userSnap;
+        // ▼▼▼ [수정된 부분] ▼▼▼
+        // 1. 쿨타임 확인 및 설정을 트랜잭션으로 원자화하여 AI 호출 전에 실행
+        const userRef = db.doc(`users/${uid}`);
         try {
-            [raidBoss, userSnap] = await Promise.all([
-                getActiveRaid(),
-                db.doc(`users/${uid}`).get()
-            ]);
+            await db.runTransaction(async (tx) => {
+                const userSnap = await tx.get(userRef);
+                const userData = userSnap.data() || {};
+                const lastRaidTime = userData.cooldown_raid_until?.toMillis() || 0;
+                
+                if (Date.now() < lastRaidTime) {
+                    const remaining = Math.ceil((lastRaidTime - Date.now()) / 1000);
+                    throw new HttpsError('failed-precondition', `레이드 쿨타임이 ${remaining}초 남았습니다.`);
+                }
+                
+                // 쿨타임 통과 시, 즉시 다음 쿨타임 설정
+                tx.set(userRef, { cooldown_raid_until: Timestamp.fromMillis(Date.now() + RAID_COOLDOWN_MS) }, { merge: true });
+            });
+        } catch(e) {
+            // 트랜잭션 실패 시(쿨타임 등) 에러를 그대로 전달
+            throw e;
+        }
+        // ▲▲▲ [수정된 부분] ▲▲▲
+
+        const allCharIds = [myCharId, ...partyCharIds];
+        let raidBoss;
+        try {
+            raidBoss = await getActiveRaid();
         } catch (e) {
             throw new HttpsError('internal', '데이터 조회 중 오류 발생');
         }
@@ -251,13 +271,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         if (raidBoss.currentHp <= 0) {
             throw new HttpsError('failed-precondition', '레이드 보스가 이미 처치되었습니다.');
-        }
-
-        const userData = userSnap.data() || {};
-        const lastRaidTime = userData.cooldown_raid_until?.toMillis() || 0;
-        if (Date.now() < lastRaidTime) {
-            const remaining = Math.ceil((lastRaidTime - Date.now()) / 1000);
-            throw new HttpsError('failed-precondition', `레이드 쿨타임이 ${remaining}초 남았습니다.`);
         }
         
         const myCharSnap = await db.doc(`chars/${myCharId}`).get();
@@ -395,7 +408,8 @@ ${JSON.stringify(partyForAI, null, 2)}
                 }
             }
 
-            tx.set(db.doc(`users/${uid}`), { cooldown_raid_until: Timestamp.fromMillis(Date.now() + RAID_COOLDOWN_MS) }, { merge: true });
+            // [삭제] 쿨타임 설정 로직은 이미 위에서 처리했으므로 여기서는 제거합니다.
+            // tx.set(db.doc(`users/${uid}`), { cooldown_raid_until: Timestamp.fromMillis(Date.now() + RAID_COOLDOWN_MS) }, { merge: true });
         });
 
         return { ok: true, logId: logRef.id };
