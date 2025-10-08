@@ -1,4 +1,5 @@
-// public/js/tabs/raidlog.js
+// /public/js/tabs/raidlog.js
+
 import { db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 
@@ -21,68 +22,55 @@ const rarityColors = {
 
 
 /* ------------------------------
- * 로그 텍스트 → 리치 HTML 변환 (수정된 최종본)
+ * ANCHOR: [전체 교체] 리치 텍스트 렌더러 (battlelog.js와 동일하게)
  * ------------------------------ */
 function renderRichLog(logText = '', party = []) {
     if (typeof logText !== 'string') logText = String(logText ?? '');
 
-  // [추가] 0) 줄바꿈/엔티티 정규화 (AI가 '\n'을 문자로 주는 케이스 방지)
-let txt = String(logText ?? '');
-// CRLF -> LF
-txt = txt.replace(/\r\n?/g, '\n');
-// 리터럴 '\n'을 실제 줄바꿈으로
-if (txt.includes('\\n')) txt = txt.replace(/\\n/g, '\n');
-// 안전한 범위의 HTML 엔티티만 복원 (이후 esc()로 다시 이스케이프됨)
-txt = txt
-  .replace(/&quot;/g, '"')
-  .replace(/&#39;/g, "'")
-  .replace(/&lt;/g, '<')
-  .replace(/&gt;/g, '>')
-  .replace(/&amp;/g, '&');
+    let txt = String(logText ?? '');
+    txt = txt.replace(/\r\n?/g, '\n');
+    if (txt.includes('\\n')) txt = txt.replace(/\\n/g, '\n');
 
+    txt = txt
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&amp;/g, '&');
 
     const lines = txt.split('\n');
-while (lines.length && !lines[0].trim()) lines.shift();
+    while (lines.length && !lines[0].trim()) lines.shift();
 
     let titleLine = (lines.shift() || '레이드 기록').replace(/^배틀로그:\s*|\[AI가 생성한 제목\]\s*/i, '').trim();
     let body = lines.join('\n').trim();
-
-    // 1. 대화 블록을 고유한 플레이스홀더로 먼저 분리합니다.
+    
     const dialogues = [];
     body = body.replace(/\[대화:([^\]]+)\]「([^」]*)」/g, (match, name, line) => {
-        dialogues.push({ name, line });
+        dialogues.push({ name: name.trim(), line });
         return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
     });
 
-    // 2. 나머지 텍스트에 대해 HTML 이스케이프를 먼저 적용합니다.
     let narrativeBody = esc(body)
-        // 3. 이제 안전하게 이스케이프된 특수 태그들을 HTML 태그로 되돌립니다.
-        //    - 주의: 정규식에서 이스케이프된 문자를 찾아야 합니다. (예: &lbrack;)
         .replace(/\[CUT\]/g, '<div class="cut-scene" aria-hidden="true"></div>')
-.replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
-.replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
-.replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
-.replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
-.replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
-// HEART: 숫자만 뽑고, 입력에 이미 BPM이 있으면 중복 방지
-.replace(/\[HEART x\s*([0-9]{2,3})(?:\s*BPM)?\]/g, (_m, bpm) => `<span class="heart">${bpm} BPM</span>`)
-.replace(/\[BREATH:([^\]]+)\]/g, (_m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
-.replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (_m, r, n) => {
-
+        .replace(/\[SLOW\]([\s\S]*?)\[RESUME\]/g, '<span class="slow-motion">$1</span>')
+        .replace(/\[SFX\]([\s\S]*?)\[\/SFX\]/g, '<span class="sfx">$1</span>')
+        .replace(/\[VFX\]([\s\S]*?)\[\/VFX\]/g, '<span class="vfx">$1</span>')
+        .replace(/\[HUD\]([\s\S]*?)\[\/HUD\]/g, '<span class="hud">$1</span>')
+        .replace(/\[T\+(.*?)\]/g, '<span class="timestamp">$1</span>')
+        .replace(/\[HEART x\s*([0-9]{2,3})(?:\s*BPM)?\]/g, (_m, bpm) => `<span class="heart">${bpm} BPM</span>`)
+        .replace(/\[BREATH:([^\]]+)\]/g, (_m, state) => `<i class="breath" data-state="${esc(state)}"></i>`)
+        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether|alpha|omega)\]([\s\S]*?)\[\/ITEM\]/g, (_m, r, n) => {
             const color = rarityColors[r.toLowerCase()] || '#fff';
             return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
         });
 
-    // 4. 분리해두었던 대화 블록을 다시 HTML 말풍선으로 만들어 삽입합니다.
     dialogues.forEach((dialogue, index) => {
-        const charIndex = party.findIndex(p => p.name === dialogue.name.trim());
-        const side = (charIndex % 2 === 0) ? 'left' : 'right';
-        const character = party[charIndex] || { name: dialogue.name.trim(), thumb_url: '' };
+        const charIndex = party.findIndex(p => p.name === dialogue.name);
+        const side = (charIndex !== -1 && charIndex % 2 === 0) ? 'left' : 'right';
+        const character = party[charIndex] || { name: dialogue.name, thumb_url: '' };
         
-        // 대화 내용은 여기서 별도로 이스케이프하고 서식을 적용합니다.
         const processedLine = esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
-      const strippedLine = processedLine.replace(/^「|」$/g, ''); // 양끝 일본 괄호 제거
-
+        const strippedLine = processedLine.replace(/^「|」$/g, '');
 
         const bubbleHtml = `
           <div class="dialogue-bubble-wrap" data-side="${side}">
@@ -90,27 +78,24 @@ while (lines.length && !lines[0].trim()) lines.shift();
             <div class="dialogue-bubble">
               <div class="dialogue-name">${esc(character.name)}</div>
               <div class="dialogue-text">${strippedLine}</div>
-
             </div>
           </div>
         `;
         narrativeBody = narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`, bubbleHtml);
     });
 
-    // 5. 최종적으로 완성된 HTML을 단락으로 나누어 반환합니다.
     const paragraphs = narrativeBody.split(/\n{2,}/)
       .map(p => p.trim())
       .filter(p => p)
       .map(p => {
-          if (p.startsWith('<div class="dialogue-bubble-wrap"')) {
-              return p;
-          }
+          if (p.startsWith('<div class="dialogue-bubble-wrap"')) return p;
           return `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`;
       })
       .join('');
           
       return { title: esc(titleLine), body: paragraphs };
 }
+// ANCHOR_END
 
 /**
  * 스크롤 애니메이션을 설정합니다.
@@ -163,7 +148,7 @@ export async function showRaidLog() {
                 .raidlog-subtitle { font-size: 1rem; color: #94a3b8; }
 
                 /* 기여도 카드 디자인 */
-                .contribution-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 1rem; }
+                .contribution-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 1rem; }
                 @media (max-width: 640px) { .contribution-grid { grid-template-columns: 1fr; } }
                 
                 .contrib-card {
@@ -186,50 +171,24 @@ export async function showRaidLog() {
                     transition: opacity 0.6s ease-out, transform 0.6s ease-out;
                 }
                 .log-paragraph.is-visible, .dialogue-bubble-wrap.is-visible { opacity: 1; transform: translateY(0); }
-                
-                .log-paragraph { margin-bottom: 1.5rem; line-height: 1.8; }
+                .log-paragraph { margin-bottom: 1.5rem; line-height: 1.8; word-break: keep-all; }
 
                 /* 말풍선 스타일 */
                 .dialogue-bubble-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 1.5rem 0; max-width: 85%; }
                 .dialogue-bubble-wrap[data-side="right"] { margin-left: auto; flex-direction: row-reverse; }
                 .dialogue-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
-                .dialogue-bubble {
-                  background: #232a3b;
-                  padding: 12px 16px;
-                  border-radius: 18px;
-                  position: relative;
-                  max-width: min(560px, 90vw); /* 너무 좁아지지 않도록 상한 설정 */
-                }
-
+                .dialogue-bubble { background: #232a3b; padding: 12px 16px; border-radius: 18px; position: relative; max-width: min(560px, 90vw); }
                 .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble { border-top-left-radius: 6px; }
                 .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble { border-top-right-radius: 6px; background: #3b3a61; }
                 .dialogue-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; }
-                .dialogue-text { line-height: 1.7; }
-                /* CJK(한글) 줄 양쪽정렬로 글자 벌어지는 문제 방지 */
-                .log-paragraph,
-                .dialogue-text {
-                  text-align: start !important;    /* 상위의 justify를 덮어쓴다 */
-                  text-justify: auto !important;   /* distribute 등 강제 분배 방지 */
-                  letter-spacing: normal !important;
-                  word-spacing: normal !important;
-                  white-space: normal !important;
-                  word-break: keep-all;            /* 한글 단어 단위로 줄바꿈 */
-                  overflow-wrap: anywhere;         /* 긴 토큰(아이템명 등)만 적당히 줄바꿈 */
-                }
+                .dialogue-text { line-height: 1.7; word-break: keep-all; }
 
-                
-                /* 말풍선 꼬리 */
-                .dialogue-bubble::before {
-                    content: ''; position: absolute; top: 10px; width: 0; height: 0;
-                    border-top: 8px solid transparent; border-bottom: 8px solid transparent;
-                }
-                .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble::before { left: -8px; border-right: 10px solid #232a3b; }
-                .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble::before { right: -8px; border-left: 10px solid #3b3a61; }
-
-                /* 리치 텍스트 스타일 */
-                strong { color: #facc15; font-weight: 700; }
-                .vfx { font-style: italic; color: #7dd3fc; text-shadow: 0 0 8px #7dd3fc80; }
+                /* ANCHOR: [추가] 리치 텍스트 스타일 */
+                .cut-scene { border: none; border-top: 1px dashed rgba(255,255,255,0.2); margin: 2em 0; }
+                .slow-motion { font-style: italic; color: #a5b4fc; }
                 .sfx { font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+                .vfx { font-style: italic; color: #7dd3fc; text-shadow: 0 0 8px #7dd3fc80; }
+                .hud { font-family: monospace; background: rgba(239, 68, 68, 0.2); color: #fca5a5; padding: 2px 6px; border-radius: 4px; }
             </style>
 
             <section class="container narrow raidlog-container">
