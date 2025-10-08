@@ -1,4 +1,4 @@
-// /functions/skill.js
+// /functions/skill.js (수정 완료)
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { logger } = require('firebase-functions');
@@ -63,7 +63,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
 
-        if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+        // [수정] .exists() -> .exists
+        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
         const charData = charSnap.data();
         if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
 
@@ -72,7 +73,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             throw new HttpsError('failed-precondition', '스킬은 최대 8개까지 보유할 수 있습니다.');
         }
         
-        const lastCreatedAt = userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0;
+        // [수정] .exists() -> .exists
+        const lastCreatedAt = userSnap.exists ? userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0 : 0;
         if (Date.now() - lastCreatedAt < CREATE_COOLDOWN_MS) {
             const remaining = Math.ceil((CREATE_COOLDOWN_MS - (Date.now() - lastCreatedAt)) / 1000);
             throw new HttpsError('resource-exhausted', `스킬 생성/성장 쿨타임이 ${remaining}초 남았습니다.`);
@@ -80,12 +82,13 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         
         const additionalSkills = Math.max(0, skills.length - 4);
         const cost = 500 + (additionalSkills * 500);
-        const userCoins = userSnap.data()?.coins || 0;
+        const userCoins = userSnap.exists ? userSnap.data()?.coins || 0 : 0;
         if (userCoins < cost) {
             throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${cost})`);
         }
 
-        const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_create_system || '';
+        const promptsSnap = await db.doc('configs/prompts').get();
+        const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.skill_create_system || '' : '';
         if (!systemPrompt) throw new HttpsError('internal', '시스템 프롬프트를 찾을 수 없습니다.');
 
         const aiUserPrompt = JSON.stringify({
@@ -129,6 +132,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             const userRef = db.doc(`users/${uid}`);
 
             const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
+            // [수정] .exists() -> .exists
             if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
             
             const charData = charSnap.data();
@@ -141,7 +145,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
             const additionalSkills = Math.max(0, skills.length - 4);
             const cost = 500 + (additionalSkills * 500);
-            const userCoins = userSnap.data()?.coins || 0;
+            const userCoins = userSnap.exists ? userSnap.data()?.coins || 0 : 0;
             if (userCoins < cost) {
                 throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${cost})`);
             }
@@ -167,11 +171,13 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
         const [charSnap, userSnap] = await Promise.all([charRef.get(), userRef.get()]);
 
-        if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+        // [수정] .exists() -> .exists
+        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
         const charData = charSnap.data();
         if (charData.owner_uid !== uid) throw new HttpsError('permission-denied', '자신의 캐릭터가 아닙니다.');
         
-        const lastCreatedAt = userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0;
+        // [수정] .exists() -> .exists
+        const lastCreatedAt = userSnap.exists ? userSnap.data()?.lastSkillCreatedAt?.toMillis() || 0 : 0;
         if (Date.now() - lastCreatedAt < CREATE_COOLDOWN_MS) {
             const remaining = Math.ceil((CREATE_COOLDOWN_MS - (Date.now() - lastCreatedAt)) / 1000);
             throw new HttpsError('resource-exhausted', `스킬 생성/성장 쿨타임이 ${remaining}초 남았습니다.`);
@@ -188,10 +194,11 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const costs = { 1: 100, 2: 300, 3: 500 };
         const expReqs = { 1: 1000, 2: 3000, 3: 10000 };
         
-        if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
+        if ((userSnap.exists ? userSnap.data()?.coins || 0 : 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
         if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
-
-        const systemPrompt = (await db.doc('configs/prompts').get()).data()?.skill_enhance_system || '';
+        
+        const promptsSnap = await db.doc('configs/prompts').get();
+        const systemPrompt = promptsSnap.exists ? promptsSnap.data()?.skill_enhance_system || '' : '';
         if (!systemPrompt) throw new HttpsError('internal', '스킬 강화 프롬프트를 찾을 수 없습니다.');
 
         const aiUserPrompt = JSON.stringify({
@@ -236,6 +243,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             const userRef = db.doc(`users/${uid}`);
 
             const [charSnap, userSnap] = await Promise.all([tx.get(charRef), tx.get(userRef)]);
+            // [수정] .exists() -> .exists
             if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
             
             const charData = charSnap.data();
@@ -250,8 +258,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             
             const costs = { 1: 100, 2: 300, 3: 500 };
             const expReqs = { 1: 1000, 2: 3000, 3: 10000 };
-
-            if ((userSnap.data()?.coins || 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
+            
+            if ((userSnap.exists ? userSnap.data()?.coins || 0 : 0) < costs[targetLevel]) throw new HttpsError('failed-precondition', `코인이 부족합니다.`);
             if ((charData.exp_total || 0) < expReqs[targetLevel]) throw new HttpsError('failed-precondition', `총 경험치가 부족합니다.`);
 
             const limits = { 1: 250, 2: 400, 3: 600 };
