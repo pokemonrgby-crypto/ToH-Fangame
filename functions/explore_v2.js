@@ -54,7 +54,7 @@ const RARITY_TABLES_BY_DIFFICULTY = {
     impossible: [
     { upto: 500, rarity: 'epic' },
     { upto: 750, rarity: 'legend' },
-    { upto: 900, rarity: 'myth' },
+    { upto: 970, rarity: 'myth' },
     { upto: 998, rarity: 'aether' },
     { upto: 999, rarity: 'alpha' },
     { upto: 1000, rarity: 'omega' },
