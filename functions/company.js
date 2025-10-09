@@ -1,5 +1,5 @@
 // /functions/company.js (전체 수정)
-const { onCall, HttpsError } = require('firebase-functions/v2/');
+const functions = require('firebase-functions');
 const admin = require('firebase-admin');
 
 // ... (loadAsset, isAdmin 등 헬퍼 함수는 그대로 둡니다)
