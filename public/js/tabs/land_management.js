@@ -21,77 +21,114 @@ function parseLandPlotInfo() {
   };
 }
 
-// [신규 추가] 건물 건설 옵션을 입력받는 모달
-async function openConstructionModal(availableArea) {
+// [NEW] 다단계 커스텀 건축 모달 UI
+async function openCustomConstructionModal(characters, userItems, availableArea, materialsAsset) {
     ensureModalCss();
     return new Promise(resolve => {
         const back = document.createElement('div');
         back.className = 'modal-back';
         
-        const styles = ['고딕', '로마네스크', '바로크', '브루탈리즘', '아르데코', '커튼 월', '아르누보', '하이테크', '해체주의', '권위주의'];
-        const scales = ['소형', '중형', '대형', '초대형'];
-
-        back.innerHTML = `
-            <div class="modal-card col" style="gap: 12px;">
-                <h3 style="margin: 0;">새 건물 건설</h3>
-                
-                <div class="col" style="gap: 4px;">
-                    <label for="buildingName" class="text-dim" style="font-size: 13px;">건물 이름</label>
-                    <input id="buildingName" class="input" type="text" placeholder="예: 중앙 연구소" value="나의 첫 건물">
-                </div>
-
-                <div class="col" style="gap: 4px;">
-                    <label for="buildingType" class="text-dim" style="font-size: 13px;">건물 유형</label>
-                    <input id="buildingType" class="input" type="text" placeholder="예: 연구시설, 주거공간" value="주거공간">
-                </div>
-
-                <div class="grid2" style="gap: 12px;">
-                    <div class="col" style="gap: 4px;">
-                        <label for="architecturalStyle" class="text-dim" style="font-size: 13px;">건축 양식</label>
-                        <select id="architecturalStyle" class="input">${styles.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
-                    </div>
-                    <div class="col" style="gap: 4px;">
-                        <label for="scale" class="text-dim" style="font-size: 13px;">규모</label>
-                        <select id="scale" class="input">${scales.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
-                    </div>
-                </div>
-
-                <div class="col" style="gap: 4px;">
-                    <label for="height" class="text-dim" style="font-size: 13px;">높이 (5m ~ 1000m)</label>
-                    <input id="height" class="input" type="number" min="5" max="1000" step="1" value="10">
-                </div>
-
-                <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">
-                    <button class="btn ghost" id="construct-cancel">취소</button>
-                    <button class="btn primary" id="construct-ok">건설 시작</button>
-                </div>
-            </div>
-        `;
-        document.body.appendChild(back);
-
-        const close = (val) => { back.remove(); resolve(val); };
-
-        back.addEventListener('click', e => { if (e.target === back) close(null); });
-        back.querySelector('#construct-cancel').onclick = () => close(null);
-        back.querySelector('#construct-ok').onclick = () => {
-            const data = {
-                buildingName: back.querySelector('#buildingName').value.trim(),
-                buildingType: back.querySelector('#buildingType').value.trim(),
-                architecturalStyle: back.querySelector('#architecturalStyle').value,
-                scale: back.querySelector('#scale').value,
-                height: parseInt(back.querySelector('#height').value, 10),
-            };
-
-            if (!data.buildingName || !data.buildingType) {
-                showToast('건물 이름과 유형을 입력해주세요.');
-                return;
-            }
-            if (isNaN(data.height) || data.height < 5 || data.height > 1000) {
-                showToast('높이는 5m에서 1000m 사이여야 합니다.');
-                return;
-            }
-            close(data);
+        let state = {
+            step: 1,
+            design: {
+                name: "나의 건물",
+                totalArea: Math.min(100, availableArea),
+                zones: [{ id: Date.now(), name: "구역 1", area: Math.min(100, availableArea), purpose: "주거" }],
+                materials: { main: null, secondary: null, special: [] }
+            },
+            contractor: { type: 'character', id: null },
+            allowMaterialBuyout: false,
         };
+
+        const materialOptions = (filter = () => true) => Object.entries(materialsAsset)
+            .filter(([id, data]) => filter(data))
+            .map(([id, data]) => `<option value="${id}">${data.name}</option>`).join('');
+
+        const render = () => {
+            const { step, design } = state;
+            let contentHtml = '';
+
+            // 각 단계별 HTML 렌더링
+            if (step === 1) { // 기본 정보
+                contentHtml = `
+                    <h3>Step 1: 기본 설계</h3>
+                    <div class="col" style="gap: 4px;">
+                        <label>건물 이름</label>
+                        <input id="buildingName" class="input" value="${esc(design.name)}">
+                    </div>
+                    <div class="col" style="gap: 4px; margin-top: 12px;">
+                        <label>총 면적 (최대: ${availableArea}m²)</label>
+                        <input id="totalArea" class="input" type="number" value="${design.totalArea}" max="${availableArea}">
+                    </div>
+                `;
+            } else if (step === 2) { // 구역 설정
+                const zonesHtml = design.zones.map(z => `
+                    <div class="row kv-card" style="gap:8px; padding: 8px;" data-zone-id="${z.id}">
+                        <input class="input zone-name" value="${esc(z.name)}" placeholder="구역 이름">
+                        <input class="input zone-area" type="number" value="${z.area}" style="width: 80px;">
+                        <select class="input zone-purpose" style="flex:1;"><option>주거</option><option>상업</option><option>연구</option></select>
+                        <button class="btn ghost small remove-zone">X</button>
+                    </div>`).join('');
+                const currentTotal = design.zones.reduce((sum, z) => sum + z.area, 0);
+                contentHtml = `
+                    <h3>Step 2: 구역 설정 (할당: ${currentTotal} / ${design.totalArea} m²)</h3>
+                    <div class="col" style="gap: 8px;" id="zone-list">${zonesHtml}</div>
+                    <button class="btn" id="add-zone" style="margin-top: 8px;">+ 구역 추가</button>
+                `;
+            } else if (step === 3) { // 재료 선택
+                contentHtml = `
+                    <h3>Step 3: 건축 재료 선택</h3>
+                    <div class="col" style="gap: 4px;">
+                        <label>주재료</label><select id="main-mat" class="input">${materialOptions()}</select>
+                    </div>
+                    <div class="col" style="gap: 4px; margin-top: 12px;">
+                        <label>부재료</label><select id="sec-mat" class="input">${materialOptions()}</select>
+                    </div>
+                     <div class="col" style="gap: 4px; margin-top: 12px;">
+                        <label>특별 재료 (다중 선택 가능)</label>
+                        <select id="spec-mat" class="input" multiple style="min-height: 120px;">
+                            ${materialOptions(m => m.aesthetic_modifier)}
+                        </select>
+                    </div>
+                `;
+            } else if (step === 4) { // 건축가 선택
+                const charOptions = characters.map(c => `<option value="${c.id}">${c.name} (건설 Lv.${c.skills?.construction?.level || 1})</option>`).join('');
+                contentHtml = `
+                    <h3>Step 4: 노동력 할당</h3>
+                    <div class="tabs" style="display:flex; gap: 8px; margin-bottom: 12px;">
+                        <button class="btn tab ${state.contractor.type === 'character' ? 'active' : ''}" data-type="character">내 캐릭터</button>
+                        <button class="btn tab ${state.contractor.type === 'npc' ? 'active' : ''}" data-type="npc">NPC 고용</button>
+                    </div>
+                    <div id="contractor-options"></div>
+                `;
+            } else if (step === 5) { // 최종 확인
+                 // 이 단계에서 calculateCustomRequirements와 유사한 로직으로 예상 견적을 프론트에서 보여줌
+                contentHtml = `<h3>Step 5: 최종 확인</h3><div id="summary">계산 중...</div>`;
+            }
+
+            back.innerHTML = `
+                <div class="modal-card col" style="gap: 16px; min-width: 500px;">
+                    ${contentHtml}
+                    <div class="row" style="justify-content: space-between; margin-top: 16px;">
+                        <button class="btn ghost" id="prev-step" ${step === 1 ? 'disabled' : ''}>이전</button>
+                        <div>
+                            <button class="btn ghost" id="cancel-build">취소</button>
+                            <button class="btn primary" id="next-step">${step === 5 ? '건설 시작' : '다음'}</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            attachModalEvents();
+        };
+
+        const updateStateAndRender = (newState) => {
+            state = { ...state, ...newState };
+            render();
+        };
+        
+        const attachModalEvents = () => { /* 이벤트 핸들러 로직 */ };
+        
+        render(); // 초기 렌더링
     });
 }
 
@@ -204,25 +241,20 @@ async function openCharacterPickerModal(characters) {
 }
 
 function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
-    // [수정] '새 건물 건설' 버튼 이벤트
     root.querySelector('#btn-new-building').onclick = async () => {
-        const constructionData = await openConstructionModal(availableArea);
-        if (!constructionData) return;
+        const userData = (await fx.getDoc(fx.doc(db, 'users', auth.currentUser.uid))).data();
+        const userItems = userData.items_all || [];
+        const materialsAsset = await fetch('/assets/building_materials.json').then(res => res.json());
 
-        // 시공사는 일단 현재 사용자로 고정
-        const payload = {
-            ...constructionData,
-            plotId: plotDocId,
-            contractor: auth.currentUser.uid, 
-        };
-
+        const result = await openCustomConstructionModal(characters, userItems, availableArea, materialsAsset);
+        if (!result) return;
+        
         try {
-            const result = await startConstruction(payload);
-            showToast(result.message || '건설을 시작합니다.');
-            // onSnapshot이 자동으로 UI를 업데이트합니다.
+            const apiResult = await startConstruction({ plotId: plotDocId, ...result });
+            showToast(apiResult.message || '건설을 시작합니다.');
         } catch (e) {
             console.error(e);
-            showToast(`건설 시작 실패: ${e.message}`);
+            showToast(`건설 시작 실패: ${e.message}`, 'error');
         }
     };
     
