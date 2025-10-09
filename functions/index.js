@@ -21,7 +21,7 @@ const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, log
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const landFns = require('./land')(admin);
 const farmFns = require('./farm')(admin, { onCall, HttpsError, logger });
-const charFns = require('./character')(admin); // [추가] character.js 로드
+const charFns = require('./character')(admin, { GEMINI_API_KEY }); // [수정] GEMINI_API_KEY 전달
 const skillFns = require('./skill')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); 
 const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
 const historyFns = require('./history')(admin, { onCall, HttpsError });
@@ -780,6 +780,7 @@ Object.assign(exports, farmFns);
 
 Object.assign(exports, skillFns);
 
+exports.createChar = charFns.createChar;
 exports.getUserCharacters = charFns.getUserCharacters; // [추가]
 
 // === BEGIN: admin tools (search) ===
