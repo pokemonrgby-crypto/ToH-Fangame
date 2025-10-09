@@ -1,18 +1,15 @@
 // public/js/ui/item.js
+// [전체 교체]
 
-// (기존 import)
 import { db, fx } from '../api/firebase.js';
-// [수정] esc, rarityStyle, useBadgeHtml 외에 ensureItemCss를 추가로 import합니다.
 import { esc, rarityStyle, useBadgeHtml, ensureItemCss } from './utils.js';
-import { ensureModalCss, promptModal, confirmModal } from './modal.js'; // confirmModal import 추가
+import { ensureModalCss, promptModal, confirmModal } from './modal.js';
 import { showToast } from './toast.js';
 import { appraiseItem, usePromptItem } from '../api/user.js';
 
 
-
 function normalizeRarity(r) {
   const s = String(r || '').trim().toLowerCase();
-  // 한글/동의어 매핑
   if (s === '오메가' || s === 'ω' || s === 'omega') return 'omega';
   if (s === '알파'  || s === 'α' || s === 'alpha') return 'alpha';
   if (s === '에테르' || s === 'aether') return 'aether';
@@ -40,19 +37,16 @@ async function getAllItemsData() {
     }
 }
 
-// ▼▼▼ [수정된 부분] ▼▼▼
 const itemDataCache = new Map();
 async function getItemDisplayData(itemId) {
     if (itemDataCache.has(itemId)) return itemDataCache.get(itemId);
 
-    // 1. Check static items first
     const allStaticItems = await getAllItemsData();
     if (allStaticItems[itemId]) {
         itemDataCache.set(itemId, allStaticItems[itemId]);
         return allStaticItems[itemId];
     }
     
-    // 2. Fallback to Firestore custom_items
     try {
         const docRef = fx.doc(db, 'custom_items', itemId);
         const docSnap = await fx.getDoc(docRef);
@@ -65,7 +59,6 @@ async function getItemDisplayData(itemId) {
         console.error(`Failed to fetch custom item ${itemId}`, e);
     }
 
-    // 3. If not found anywhere, return a placeholder
     const placeholder = { name: itemId };
     itemDataCache.set(itemId, placeholder);
     return placeholder;
@@ -109,7 +102,6 @@ async function getSeedInfoHtml(it) {
         </div>
     `;
 }
-// ▲▲▲ [수정된 부분] ▲▲▲
 
 export async function showItemDetailModal(item, context = {}) {
     ensureModalCss();
@@ -117,16 +109,14 @@ export async function showItemDetailModal(item, context = {}) {
     if (document.querySelector('.modal-back[data-kind="item-detail"]')) return;
     const { equippedIds, onUpdate } = context;
     const isEquipped = Array.isArray(equippedIds) && equippedIds.includes(item.id);
-    // 표시용 데이터(이름/설명 등) 비어 있으면 카탈로그/커스텀에서 보강
     try {
       const fromCatalog = await getItemDisplayData(item.id);
-      item = { ...fromCatalog, ...item }; // item 우선, 빈 칸만 채움
+      item = { ...fromCatalog, ...item };
     } catch (_) { /* no-op */ }
 
     const style = rarityStyle(item.rarity);
     const getItemDesc = (it) => (it?.description || it?.desc_long || it?.desc_soft || it?.desc || '').replace(/\n/g, '<br>');
 
-    // [수정] 생략되었던 함수 본문 전체를 복구합니다.
     const getEffectsHtml = (it) => {
         const eff = it?.effects;
         if (!eff) return '';
@@ -183,7 +173,6 @@ export async function showItemDetailModal(item, context = {}) {
                   style="background:${style.border}; color:${style.bg}; font-weight:900; border:1px solid currentColor; text-shadow:0 0 6px rgba(255,255,255,.18);">
               ${esc(style.label)}
             </span>
-
             ${useBadgeHtml(item)}
           </div>
         </div>
@@ -203,31 +192,31 @@ export async function showItemDetailModal(item, context = {}) {
     back.querySelector('#mCloseDetail').onclick = closeModal;
 
     const actionsContainer = back.querySelector('#itemActions');
-  // ▼ [추가] 외부에서 버튼 주입(맥락별 액션)
-if (Array.isArray(context.actions)) {
-  context.actions.forEach(({ label, className = 'btn', onClick, closeOnClick = true }) => {
-    const b = document.createElement('button');
-    b.className = className.includes('btn') ? className : `btn ${className}`;
-    b.textContent = label;
-    b.onclick = async () => {
-      try { await onClick?.(item, context); }
-      finally { if (closeOnClick) closeModal(); }
-    };
-    actionsContainer.appendChild(b);
-  });
-}
+    if (Array.isArray(context.actions)) {
+        context.actions.forEach(({ label, className = 'btn', onClick, closeOnClick = true }) => {
+            const b = document.createElement('button');
+            b.className = className.includes('btn') ? className : `btn ${className}`;
+            b.textContent = label;
+            b.onclick = async () => {
+                try { await onClick?.(item, context); }
+                finally { if (closeOnClick) closeModal(); }
+            };
+            actionsContainer.appendChild(b);
+        });
+    }
 
-    
     if (item.isPromptUse === true) {
         const btnUse = document.createElement('button');
         btnUse.className = 'btn primary';
         btnUse.textContent = '✨ 사용하기';
         btnUse.onclick = async () => {
+            const currentZIndex = parseInt(back.style.zIndex || 9990, 10);
             const userPrompt = await promptModal({
                 title: '커스텀 씨앗 생성',
                 hint: 'AI가 당신의 아이디어를 기반으로 새로운 씨앗을 창조합니다.',
                 placeholder: '예: 밤하늘의 별똥별을 닮은, 먹으면 행운을 가져다주는 과일나무 씨앗',
-                okText: '생성 요청'
+                okText: '생성 요청',
+                zIndex: currentZIndex + 1
             });
 
             if (userPrompt === null) return;
@@ -258,8 +247,9 @@ if (Array.isArray(context.actions)) {
         btnAppraise.className = 'btn primary';
         btnAppraise.textContent = '🔍 감정하기';
         btnAppraise.onclick = async () => {
-
-
+            // ▼▼▼ [수정된 부분] ▼▼▼
+            // 현재 모달(back)의 z-index를 가져와서 1을 더한 값을 zIndex 옵션으로 전달합니다.
+            const currentZIndex = parseInt(back.style.zIndex || 9990, 10);
             const confirmed = await confirmModal({
                 title: '아이템 감정 확인',
                 lines: [
@@ -267,12 +257,13 @@ if (Array.isArray(context.actions)) {
                     '감정을 통해 부여되는 특수 효과는 배틀 등에 영향을 줄 수 있으며, 이 작업은 되돌릴 수 없습니다.'
                 ],
                 okText: '감정하기',
-                cancelText: '취소'
+                cancelText: '취소',
+                zIndex: currentZIndex + 1
             });
+            // ▲▲▲ [수정된 부분] ▲▲▲
 
             if (!confirmed) return;
-
-          
+        
             btnAppraise.disabled = true;
             btnAppraise.textContent = '감정 중...';
             try {
