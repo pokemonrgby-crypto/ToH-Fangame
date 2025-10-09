@@ -61,7 +61,6 @@ function normalizeAiOutput(parsed, userInput = '') {
 
 
 module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
-// ▲▲▲ [수정된 부분] ▲▲▲
     const db = admin.firestore();
 
     const createChar = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
@@ -75,7 +74,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
         // 프롬프트 로드
         const promptsSnap = await db.doc('configs/prompts').get();
-        const systemPromptRaw = promptsSnap.exists() ? promptsSnap.data()?.char_create_system || '' : '';
+        // ANCHOR: [오류 수정] .exists() -> .exists 로 변경
+        const systemPromptRaw = promptsSnap.exists ? promptsSnap.data()?.char_create_system || '' : '';
         if (!systemPromptRaw) throw new HttpsError('internal', '캐릭터 생성 시스템 프롬프트를 찾을 수 없습니다.');
         
         // 프롬프트 변수 채우기
