@@ -1,12 +1,11 @@
 // /functions/jobs.js
-const { onCall, HttpsError } = require('firebase-functions/v2/on-call');
+const { onCall, HttpsError } = require('firebase-functions/v2/https'); // ◀◀◀ [수정] 올바른 경로로 변경
 const { logger } = require('firebase-functions');
 const fs = require('fs').promises;
 const path = require('path');
 
 async function _callGemini(apiKey, model, systemText, userText) {
     const fetch = (...args) => import('node-fetch').then(({default: fetch}) => fetch(...args));
-    // [수정] API 주소 오타 수정 (generativelace -> generativelanguage)
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
     const body = {
       systemInstruction: { role: 'system', parts: [{ text: systemText }] },
@@ -24,7 +23,6 @@ async function _callGemini(apiKey, model, systemText, userText) {
     const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
     if (!text) throw new HttpsError('internal', 'Gemini response was empty.');
     try {
-        // [수정] AI 응답에서 JSON 객체만 정확히 추출하도록 파싱 로직 강화
         const jsonMatch = text.match(/\{[\s\S]*\}/);
         if (!jsonMatch) {
             throw new Error('No valid JSON object found in the response.');
@@ -39,7 +37,7 @@ async function _callGemini(apiKey, model, systemText, userText) {
 let _jobsCache = null;
 async function _loadJobs() {
     if (_jobsCache) return _jobsCache;
-    // NOTE: 'functions' 폴더 내에 'assets' 폴더가 있어야 합니다.
+    // functions 폴더 내의 assets 폴더를 보도록 경로 수정
     const p = path.join(__dirname, 'assets/jobs.json');
     const raw = await fs.readFile(p, 'utf8');
     _jobsCache = JSON.parse(raw);
