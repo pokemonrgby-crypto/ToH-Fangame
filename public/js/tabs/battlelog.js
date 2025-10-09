@@ -1,4 +1,4 @@
-// /public/js/tabs/battlelog.js
+// /public/js/tabs/battlelog.js (전체 교체)
 import { db, auth, fx } from '../api/firebase.js';
 import { createOrUpdateRelation, getRelationBetween, getBattleLog } from '../api/store.js';
 import { showToast } from '../ui/toast.js';
@@ -30,8 +30,9 @@ function renderRichLog(logText = '', party = []) {
     if (txt.includes('\\n')) txt = txt.replace(/\\n/g, '\n');
 
     const dialogues = [];
-    // [대사:0]「대사」[/대사] 형식을 먼저 플레이스홀더로 분리
-    txt = txt.replace(/\[대사:(\d)\]「([^」]*)」\[\/대사\]/g, (match, charIndex, line) => {
+    // [대사:0]「대사」[/대사] 또는 [대사:0]"대사"[/대사] 형식을 먼저 플레이스홀더로 분리
+    txt = txt.replace(/\[대사:(\d)\](?:「([^」]*)」|"([^"]*)")\[\/대사\]/g, (match, charIndex, line1, line2) => {
+        const line = line1 || line2;
         dialogues.push({ charIndex: parseInt(charIndex, 10), line });
         return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
     });
