@@ -86,7 +86,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             .replace(/{user_input}/g, userInput ?? '');
         
         // AI 호출
-        const aiResult = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash', systemFilled, userInput);
+        const aiResult = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash-lite', systemFilled, userInput);
         const normalized = normalizeAiOutput(aiResult, userInput);
 
         // Firestore에 저장할 최종 데이터 생성
