@@ -806,6 +806,7 @@ function normalizeNarratives(c){
   return [];
 }
 
+// renderNarrativePage 함수를 아래와 같이 수정합니다.
 function renderNarrativePage(c, narrId){
   const root = document.getElementById('view');
   const list = normalizeNarratives(c);
@@ -824,8 +825,7 @@ function renderNarrativePage(c, narrId){
       <div class="bookview" id="nView">
         <div class="kv-card">
           <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(n.title || '서사')}</div>
-          <div id="nLong" style="margin-bottom:10px"></div>
-
+          <div id="nLong" style="margin-bottom:10px; line-height: 1.7;"></div>
           <div class="kv-label">요약</div>
           <div>${esc(n.short || '(요약이 아직 없어요)')}</div>
         </div>
@@ -834,57 +834,14 @@ function renderNarrativePage(c, narrId){
   </section>`;
 
   const nLongNode = document.getElementById('nLong');
-  if (nLongNode) nLongNode.innerHTML = renderRich(n.long || '-');
-
-}
-
-function applyInlineMarks(html){
-  html = html.replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-  html = html.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, function(_, pre, inner){
-    return pre + '<i>' + inner + '</i>';
-  });
-  return html;
-}
-
-function renderRich(text){
-  var s = String(text||'').replace(/\r\n?/g,'\n');
-  var lines = s.split('\n');
-  var out = [];
-  var inList = false;
-
-  function flushList(){ if(inList){ out.push('</ul>'); inList=false; } }
-
-  for(var i=0;i<lines.length;i++){
-    var raw = lines[i];
-    var empty = /^\s*$/.test(raw);
-    var escd  = esc(raw);
-
-    if(empty){ flushList(); continue; }
-
-    if(/^###\s+/.test(raw)){ flushList(); out.push('<h4 style="font-weight:800;font-size:15px;margin:10px 0 4px;">'+ escd.replace(/^###\s+/, '') +'</h4>'); continue; }
-    if(/^##\s+/.test(raw)){  flushList(); out.push('<h3 style="font-weight:850;font-size:16px;margin:12px 0 6px;">'+ escd.replace(/^##\s+/, '') +'</h3>'); continue; }
-    if(/^#\s+/.test(raw)){   flushList(); out.push('<h2 style="font-weight:900;font-size:18px;margin:14px 0 8px;">'+ escd.replace(/^#\s+/, '') +'</h2>'); continue; }
-
-    if(/^>\s+/.test(raw)){
-      flushList();
-      var q = applyInlineMarks(escd.replace(/^>\s+/, ''));
-      out.push('<blockquote style="margin:8px 0;padding:8px 10px;border-left:3px solid rgba(122,155,255,.7);background:rgba(122,155,255,.06);border-radius:8px;">'+ q +'</blockquote>');
-      continue;
-    }
-
-    if(/^\*\s+/.test(raw)){
-      if(!inList){ out.push('<ul style="margin:6px 0 8px 18px;list-style:disc;">'); inList=true; }
-      var li = applyInlineMarks(escd.replace(/^\*\s+/, ''));
-      out.push('<li>'+ li +'</li>');
-      continue;
-    }
-
-    flushList();
-    out.push('<p style="margin:6px 0 6px;">'+ applyInlineMarks(escd) +'</p>');
+  if (nLongNode) {
+    // ◀◀◀ 이 부분이 수정되었습니다.
+    // 이제 renderRich 함수는 party 배열을 필요로 하지 않으므로, 텍스트만 넘깁니다.
+    nLongNode.innerHTML = renderRich(n.long || '-');
   }
-  flushList();
-  return out.join('');
 }
+
+
 
 
 async function renderHistory(c, view) {
