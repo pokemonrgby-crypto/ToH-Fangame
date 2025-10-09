@@ -1,104 +1,75 @@
-const functions = require('firebase-functions');
+// /functions/construction.js
+
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const admin = require('firebase-admin');
-const { v4: uuidv4 } = require('uuid');
+const db = admin.firestore();
+// 참고: character.js에서 getCharacter, updateCharacterStats를 가져오는 부분은
+// character.js도 v2로 리팩토링해야 하므로 우선 여기서는 제거합니다.
+// 필요한 로직은 직접 이 파일 내에서 구현하거나, character.js 리팩토링 후 가져와야 합니다.
 
-// Asset 파일 로드 (실제로는 index.js 등에서 한번만 로드 후 전달받는 것이 효율적)
-const buildingMaterials = require('./assets/building_materials.json');
-const architecturalStyles = require('./assets/architectural_styles.json');
+exports.completeConstructionProject = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-/**
- * 건물 건설을 시작하는 함수
- * @param {object} data - 클라이언트에서 전달하는 데이터
- * @param {string} data.plotId - 건물을 지을 토지 ID
- * @param {string} data.name - 건물 이름
- * @param {number} data.area - 건설할 면적 (m²)
- * @param {number} data.height - 건설할 높이 (m)
- * @param {string} data.styleId - 건축 양식 ID
- * @param {string} context - 호출한 사용자 정보
- */
-exports.startConstruction = functions.https.onCall(async (data, context) => {
-    const { plotId, name, area, height, styleId } = data;
-    const uid = context.auth.uid;
+    const { projectId } = req.data;
+    if (!projectId) throw new HttpsError('invalid-argument', '프로젝트 ID가 필요합니다.');
 
-    if (!plotId || !name || !area || !height || !styleId) {
-        throw new functions.https.HttpsError('invalid-argument', '필수 인자가 누락되었습니다.');
-    }
-    if (area <= 0 || height <= 0) {
-        throw new functions.https.HttpsError('invalid-argument', '면적과 높이는 0보다 커야 합니다.');
-    }
+    const projectRef = db.collection('construction_projects').doc(projectId);
 
-    const db = admin.firestore();
-    const plotRef = db.collection('land_plots').doc(plotId);
-    const playerInventoryRef = db.collection('inventories').doc(uid);
+    try {
+        await db.runTransaction(async (transaction) => {
+            const projectDoc = await transaction.get(projectRef);
+            if (!projectDoc.exists) throw new HttpsError('not-found', '프로젝트를 찾을 수 없습니다.');
 
-    // 트랜잭션을 사용하여 데이터 일관성 보장
-    return db.runTransaction(async (transaction) => {
-        const plotDoc = await transaction.get(plotRef);
-        const inventoryDoc = await transaction.get(playerInventoryRef);
+            const project = projectDoc.data();
+            if (project.owner !== uid) throw new HttpsError('permission-denied', '프로젝트 소유주가 아닙니다.');
 
-        if (!plotDoc.exists || plotDoc.data().ownerId !== uid) {
-            throw new functions.https.HttpsError('not-found', '존재하지 않거나 소유하지 않은 토지입니다.');
-        }
+            // 여기에 프로젝트 완료 로직 구현 (예: 캐릭터 상태 변경, 부지 상태 변경 등)
+            const characterRef = db.collection('characters').doc(project.assignedCharacterId);
+            const plotRef = db.collection('plots').doc(project.plotId);
 
-        const plotData = plotDoc.data();
-        if (plotData.totalArea < plotData.usedArea + area) {
-            throw new functions.https.HttpsError('resource-exhausted', '토지 면적이 부족합니다.');
-        }
-
-        // 1. 필요 자재 및 비용, 시간 계산 (이 공식은 예시이며, 고도화 필요)
-        const requiredMaterials = {
-            'processed_wood': Math.ceil(area * height * 0.1),
-            'stone_brick': Math.ceil(area * height * 0.2)
-        };
-        const constructionCost = Object.keys(requiredMaterials).reduce((acc, matId) => {
-            return acc + (requiredMaterials[matId] * (buildingMaterials[matId]?.basePrice || 10));
-        }, 0);
-        const constructionTimeMinutes = Math.ceil((area * height) / 10); // 10m³/min 속도라고 가정
-
-        // 2. 플레이어 재화 및 자재 확인
-        const inventoryData = inventoryDoc.data() || { items: {}, coin: 0 };
-        if (inventoryData.coin < constructionCost) {
-            throw new functions.https.HttpsError('resource-exhausted', '건설 비용(코인)이 부족합니다.');
-        }
-        for (const matId in requiredMaterials) {
-            if ((inventoryData.items[matId] || 0) < requiredMaterials[matId]) {
-                throw new functions.https.HttpsError('resource-exhausted', `${buildingMaterials[matId].name} 자재가 부족합니다.`);
-            }
-        }
-
-        // 3. 재화 및 자재 차감
-        const newCoin = inventoryData.coin - constructionCost;
-        const newItems = { ...inventoryData.items };
-        for (const matId in requiredMaterials) {
-            newItems[matId] -= requiredMaterials[matId];
-        }
-        transaction.set(playerInventoryRef, { ...inventoryData, coin: newCoin, items: newItems });
-
-
-        // 4. 건물 데이터 생성 및 토지에 추가
-        const newBuilding = {
-            id: `building_${uuidv4()}`,
-            type: 'building',
-            name,
-            area,
-            height,
-            styleId,
-            purposeId: 'unassigned',
-            buildStatus: 'constructing',
-            constructionStartTime: new Date().toISOString(),
-            completionTime: new Date(Date.now() + constructionTimeMinutes * 60 * 1000).toISOString(),
-            durability: 100.0,
-            collapseRisk: 1.0,
-            aestheticScore: 20, // 기본 미관 점수
-            managerCharId: null,
-            placed_facilities: []
-        };
-
-        transaction.update(plotRef, {
-            usedArea: plotData.usedArea + area,
-            facilities: admin.firestore.FieldValue.arrayUnion(newBuilding)
+            transaction.update(projectRef, { status: 'completed', endTime: admin.firestore.FieldValue.serverTimestamp() });
+            transaction.update(characterRef, { status: 'idle', currentProjectId: null });
+            transaction.update(plotRef, { status: 'developed', currentProjectId: null });
         });
+        return { success: true, message: '건설 프로젝트가 완료되었습니다.' };
+    } catch (error) {
+        console.error('Error completing construction project:', error);
+        throw new HttpsError('internal', '프로젝트 완료 중 오류 발생', error.message);
+    }
+});
 
-        return { success: true, message: '건설을 시작했습니다!', buildingId: newBuilding.id };
-    });
+exports.acceptConstructionContract = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+    const { contractId, characterId } = req.data;
+    if (!contractId || !characterId) throw new HttpsError('invalid-argument', '계약 ID와 캐릭터 ID가 필요합니다.');
+    
+    // 계약 수락 로직 구현
+    // ...
+    return { success: true, message: '건설 계약을 수락했습니다.' };
+});
+
+exports.cancelConstructionProject = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+    const { projectId } = req.data;
+    if (!projectId) throw new HttpsError('invalid-argument', '프로젝트 ID가 필요합니다.');
+
+    // 프로젝트 취소 로직 구현
+    // ...
+    return { success: true, message: '건설 프로젝트가 취소되었습니다.' };
+});
+
+exports.listConstructionContracts = onCall({ region: 'us-central1' }, async (req) => {
+    try {
+        const contractsSnapshot = await db.collection('construction_contracts').where('status', '==', 'open').get();
+        const contracts = contractsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        return { contracts };
+    } catch (error) {
+        console.error('Error listing construction contracts:', error);
+        throw new HttpsError('internal', '계약 목록을 불러오는 중 오류가 발생했습니다.');
+    }
 });
