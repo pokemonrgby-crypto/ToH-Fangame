@@ -791,9 +791,8 @@ exports.getUserCharacters = charFns.getUserCharacters; // [추가]
 
 Object.assign(exports, jobFns);
 
-exports.createBuildingShell = companyFunctions.createBuildingShell;
-exports.installFacility = companyFunctions.installFacility;
-exports.resetBuildingPurpose = companyFunctions.resetBuildingPurpose;
+exports.startConstructionProject = companyFunctions.startConstructionProject;
+exports.postConstructionContract = companyFunctions.postConstructionContract;
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
