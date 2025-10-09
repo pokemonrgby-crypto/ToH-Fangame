@@ -1,0 +1,9 @@
+{
+  "recipe_processed_wood": {
+    "name": "가공된 목재",
+    "output": { "itemId": "processed_wood", "quantity": 1 },
+    "required_facility": { "id": "basic_workshop", "min_grade": 1 },
+    "required_materials": [{ "itemId": "wood", "quantity": 2 }],
+    "required_stats": { "crafting": 1 }
+  }
+}
