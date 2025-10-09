@@ -1,0 +1,21 @@
+{
+  "b_000_construction_office": {
+    "name": "건설 사무소", "purpose": "management", "area": 10, "is_admin_only": true,
+    "grades": [{ "grade": 1, "name": "건설 사무소", "construction_cost": [{ "materialId": "processed_wood", "quantity": 10 }], "aesthetic_score": 100 }]
+  },
+  "b_001_hut": {
+    "name": "작은 오두막", "purpose": "residential", "area": 20,
+    "grades": [
+      { "grade": 1, "name": "허름한 오두막", "construction_cost": [{ "materialId": "processed_wood", "quantity": 50 }], "aesthetic_score": 100 },
+      { "grade": 2, "name": "아늑한 오두막", "upgrade_cost": [{ "materialId": "stone_brick", "quantity": 30 }], "aesthetic_score": 250 }
+    ]
+  },
+  "b_002_workshop_building": {
+    "name": "공방 건물", "purpose": "crafting", "area": 50,
+    "grades": [{ "grade": 1, "name": "기초 공방", "construction_cost": [{ "materialId": "processed_wood", "quantity": 100 }, { "materialId": "stone_brick", "quantity": 50 }], "allowed_facilities": ["basic_workshop"], "aesthetic_score": 500 }]
+  },
+  "b_003_research_building": {
+    "name": "연구소 건물", "purpose": "research", "area": 50,
+    "grades": [{ "grade": 1, "name": "기초 연구동", "construction_cost": [{ "materialId": "stone_brick", "quantity": 150 }], "allowed_facilities": ["research_lab_basic"], "aesthetic_score": 600 }]
+  }
+}

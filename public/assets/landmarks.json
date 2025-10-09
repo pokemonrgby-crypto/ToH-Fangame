@@ -1,0 +1,20 @@
+[
+  {
+    "id": "eternal_tower",
+    "name": "영원의 탑",
+    "description": "하늘을 찌를 듯이 솟아오른 고대의 탑입니다. 도시 전체에 신비로운 기운을 불어넣습니다.",
+    "effects": [
+      { "type": "stat_boost", "stat": "research", "value": 10, "scope": "global" },
+      { "type": "exp_boost", "category": "all", "value": 1.05, "scope": "global" }
+    ]
+  },
+  {
+    "id": "grand_archive",
+    "name": "대도서관",
+    "description": "세상의 모든 지식이 모여있다고 전해지는 곳입니다. 연구와 학습에 무한한 영감을 줍니다.",
+    "effects": [
+        { "type": "research_speed_boost", "value": 1.20, "scope": "global" },
+        { "type": "skill_exp_boost", "skill": "intelligence", "value": 1.10, "scope": "global" }
+    ]
+  }
+]
