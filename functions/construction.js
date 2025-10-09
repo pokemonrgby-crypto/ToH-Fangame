@@ -189,4 +189,77 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
         throw new HttpsError('internal', '건물 완공 처리에 실패했습니다.');
     }
 });
-// ... manageBuilding 함수는 다음 단계에서 ...
+
+/**
+ * 기존 건물을 관리(조사, 보수, 증축 등)하는 함수
+ */
+exports.manageBuilding = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+    const { plotId, buildingId, action } = req.data;
+    if (!plotId || !buildingId || !action) {
+        throw new HttpsError('invalid-argument', '필수 정보(plotId, buildingId, action)가 누락되었습니다.');
+    }
+    
+    const plotRef = db.collection('land_plots').doc(plotId);
+    let resultMessage = '';
+
+    try {
+        await db.runTransaction(async (transaction) => {
+            const plotDoc = await transaction.get(plotRef);
+            if (!plotDoc.exists) throw new HttpsError('not-found', '부지 정보를 찾을 수 없습니다.');
+
+            const plotData = plotDoc.data();
+            const facilities = plotData.facilities || [];
+            const buildingIndex = facilities.findIndex(f => f.id === buildingId);
+
+            if (buildingIndex === -1) throw new HttpsError('not-found', '해당 건물을 찾을 수 없습니다.');
+            
+            const building = facilities[buildingIndex];
+
+            // 액션에 따른 로직 분기
+            switch (action) {
+                case 'inspect_collapse': // 붕괴도 조사
+                    // 간단한 확률 모델: 시간이 지날수록, 높고 클수록 붕괴도가 높아질 확률 증가
+                    building.collapseChance += Math.random() * (building.height / 100); // 0~10% 사이 랜덤 증가
+                    if (building.collapseChance > 100) building.collapseChance = 100;
+                    
+                    if (building.collapseChance > 90) building.safetyLevel = '붕괴 직전';
+                    else if (building.collapseChance > 70) building.safetyLevel = '위급';
+                    else if (building.collapseChance > 40) building.safetyLevel = '위험';
+                    else if (building.collapseChance > 15) building.safetyLevel = '불안';
+                    else building.safetyLevel = '안전';
+                    
+                    building.lastInspection = new Date();
+                    resultMessage = `[${building.name}] 붕괴도 조사 완료. 현재 안전도: ${building.safetyLevel} (${building.collapseChance.toFixed(2)}%)`;
+                    break;
+
+                case 'repair': // 보수 작업
+                    if (!['불안', '위험', '위급'].includes(building.safetyLevel)) {
+                        throw new HttpsError('failed-precondition', '보수 작업은 안전도가 \'불안\', \'위험\', \'위급\'일 때만 가능합니다.');
+                    }
+                    // TODO: 보수에 필요한 자원 및 비용 계산 및 차감 로직 추가
+                    building.collapseChance -= 25.0; // 25%p 감소
+                    if (building.collapseChance < 1) building.collapseChance = 1.0;
+                    // 보수 후 안전도 재평가
+                    // (inspect_collapse 로직 재사용)
+                    resultMessage = `[${building.name}] 보수 작업 완료. 붕괴도가 개선되었습니다.`;
+                    break;
+                
+                // TODO: 재건축, 수익성 조사, 증축, 미관도 조사 로직 추가
+                default:
+                    throw new HttpsError('invalid-argument', '알 수 없는 관리 명령입니다.');
+            }
+
+            facilities[buildingIndex] = building; // 수정된 건물 정보로 교체
+            transaction.update(plotRef, { facilities: facilities });
+        });
+        
+        return { success: true, message: resultMessage };
+
+    } catch (error) {
+        console.error(`Building management failed (Action: ${action}):`, error);
+        throw new HttpsError('internal', error.message || '건물 관리 명령 수행에 실패했습니다.');
+    }
+});
