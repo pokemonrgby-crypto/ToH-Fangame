@@ -28,6 +28,7 @@ const historyFns = require('./history')(admin, { onCall, HttpsError });
 const realEstateFns = require('./real_estate')(admin);
 const jobFns = require('./jobs')(admin, { GEMINI_API_KEY });
 const companyFunctions = require('./company')({ firestore: db, auth: admin.auth() });
+const constructionFunctions = require('./construction');
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -793,6 +794,8 @@ Object.assign(exports, jobFns);
 
 exports.startConstructionProject = companyFunctions.startConstructionProject;
 exports.postConstructionContract = companyFunctions.postConstructionContract;
+
+exports.startConstruction = constructionFunctions.startConstruction;
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
