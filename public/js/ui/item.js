@@ -1,10 +1,13 @@
+// public/js/ui/item.js
+
 // (기존 import)
 import { db, fx } from '../api/firebase.js';
 // [수정] esc, rarityStyle, useBadgeHtml 외에 ensureItemCss를 추가로 import합니다.
 import { esc, rarityStyle, useBadgeHtml, ensureItemCss } from './utils.js';
-import { ensureModalCss, promptModal } from './modal.js';
+import { ensureModalCss, promptModal, confirmModal } from './modal.js'; // confirmModal import 추가
 import { showToast } from './toast.js';
 import { appraiseItem, usePromptItem } from '../api/user.js';
+
 
 
 function normalizeRarity(r) {
@@ -255,6 +258,21 @@ if (Array.isArray(context.actions)) {
         btnAppraise.className = 'btn primary';
         btnAppraise.textContent = '🔍 감정하기';
         btnAppraise.onclick = async () => {
+
+
+            const confirmed = await confirmModal({
+                title: '아이템 감정 확인',
+                lines: [
+                    '아이템을 감정하시겠습니까?',
+                    '감정을 통해 부여되는 특수 효과는 배틀 등에 영향을 줄 수 있으며, 이 작업은 되돌릴 수 없습니다.'
+                ],
+                okText: '감정하기',
+                cancelText: '취소'
+            });
+
+            if (!confirmed) return;
+
+          
             btnAppraise.disabled = true;
             btnAppraise.textContent = '감정 중...';
             try {
