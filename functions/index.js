@@ -25,6 +25,7 @@ const charFns = require('./character')(admin, { onCall, HttpsError, logger, GEMI
 const skillFns = require('./skill')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); 
 const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
 const historyFns = require('./history')(admin, { onCall, HttpsError });
+const realEstateFns = require('./real_estate')(admin);
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -779,6 +780,8 @@ Object.assign(exports, landFns);
 Object.assign(exports, farmFns);
 
 Object.assign(exports, skillFns);
+
+Object.assign(exports, realEstateFns);
 
 exports.createChar = charFns.createChar;
 exports.getUserCharacters = charFns.getUserCharacters; // [추가]
