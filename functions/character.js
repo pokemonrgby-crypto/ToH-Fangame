@@ -110,7 +110,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             abilities_all: normalized.skills.map(s => ({ name: s.name, desc_soft: s.effect, level: 0 })),
             abilities_equipped: [0, 1],
             items_equipped: [],
-            skills: { gardening: 0, art: 0, construction: 0, speech: 0, mining: 0, cooking: 0, processing: 0, crafting: 0, research: 0 },
+            skills: { 
+                gardening: 0, art: 0, construction: 0, speech: 0, mining: 0, 
+                cooking: 0, processing: 0, crafting: 0, research: 0,
+                strength: 0, charisma: 0 // 이 두 줄을 추가합니다.
+            },
             image_url: '',
             elo: 1000,
             likes_weekly: 0,
