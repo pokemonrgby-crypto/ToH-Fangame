@@ -263,8 +263,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const startExploreV2 = onCall({ secrets: [GEMINI_API_KEY] }, async (req) => {
       const uid = req.auth?.uid;
       if(!uid) throw new HttpsError('unauthenticated', '로그인이 필요해');
-      // ANCHOR: [수정] 클라이언트에서 보낸 staminaStart 값을 받도록 수정
-      const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart } = req.data||{};
+      // ANCHOR: [수정] 클라이언트에서 보낸 staminaStart 값을 명확하게 받습니다.
+      const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart: staminaFromClient } = req.data||{};
       if(!charId || !worldId || !siteId) throw new HttpsError('invalid-argument','필수값 누락');
 
       const qs = await db.collection('explore_runs')
@@ -276,9 +276,20 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       const charSnap = await db.doc(`chars/${charId}`).get();
       if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+      const charData = charSnap.data();
       
-      // ANCHOR: [수정] 서버에서 스태미나를 다시 계산하는 로직을 제거하고, 클라이언트 값을 사용
-      const finalStaminaStart = Number(staminaStart) || STAMINA_BASE;
+      // ANCHOR: [수정] 길드 보너스(클라이언트 값)와 직업 보너스(서버 값)를 모두 합산합니다.
+      // 1. 클라이언트에서 받은 스태미나(길드 보너스 포함)를 기본값으로 설정
+      let finalStaminaStart = Number(staminaFromClient) || STAMINA_BASE;
+
+      // 2. 여기에 직업 보너스가 있다면 추가로 계산
+      if (charData.job) {
+          const allJobs = await _loadJobs();
+          const jobData = allJobs.find(j => j.name === charData.job);
+          if (jobData?.abilities?.stamina_buff) {
+              finalStaminaStart = Math.floor(finalStaminaStart * (1 + jobData.abilities.stamina_buff));
+          }
+      }
 
       const payload = {
         charRef: `chars/${charId}`,
@@ -287,7 +298,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         site_id: siteId,   site_name: siteName||siteId,
         difficulty,
         startedAt: Timestamp.now(),
-        stamina_start: finalStaminaStart,
+        stamina_start: finalStaminaStart, // 최종 합산된 스태미나 적용
         stamina: finalStaminaStart,
         combat_hp: finalStaminaStart,
         turn: 0,
@@ -302,6 +313,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       await db.collection('chars').doc(charId).update({ last_explore_startedAt: Timestamp.now() }).catch(()=>{});
       return { ok:true, runId: ref.id };
   });
+
 
   const advPrepareNextV2 = onCall({ secrets:[GEMINI_API_KEY] }, async (req)=>{
     const uid = req.auth?.uid;
