@@ -13,9 +13,6 @@ export const getFarmPlotDetail = (data) => call('getFarmPlotDetail')(data);
 // 특정 타일에 씨앗 심기
 export const plantSeedOnTile = (data) => call('plantSeedOnTile')(data);
 
-// 토지에 캐릭터 할당
-export const assignCharacterToFarm = (data) => call('assignCharacterToFarm')(data);
-
 // [추가] 수확 함수
 export const harvestTiles = (data) => call('harvestTiles')(data);
 
