@@ -1,0 +1,592 @@
+{
+  "categories": {
+    "science": { "categoryName": "기초 과학", "tiers": [{ "tier": 1, "projectIds": ["basic_mathematics", "basic_physics", "basic_chemistry", "basic_biology"] }, { "tier": 2, "projectIds": ["advanced_mathematics", "material_science", "thermodynamics", "genetics"] }] },
+    "agriculture": { "categoryName": "농업", "tiers": [{ "tier": 1, "projectIds": ["crop_cultivation", "soil_analysis"] }, { "tier": 2, "projectIds": ["fertilizer_production", "selective_breeding", "irrigation_systems"] }, { "tier": 3, "projectIds": ["pest_control", "hydroponics", "magical_infusion_farming"] }, { "tier": 4, "projectIds": ["mechanized_farming", "genetic_modification_crops"] }] },
+    "mining": { "categoryName": "채굴", "tiers": [{ "tier": 1, "projectIds": ["basic_geology", "ore_prospecting"] }, { "tier": 2, "projectIds": ["smelting_techniques", "quarrying_efficiency", "mine_safety"] }, { "tier": 3, "projectIds": ["alloy_creation", "explosive_mining", "gemology"] }, { "tier": 4, "projectIds": ["deep_earth_drilling", "magma_refining"] }] },
+    "construction": { "categoryName": "건축", "tiers": [{ "tier": 1, "projectIds": ["woodworking", "stonemasonry"] }, { "tier": 2, "projectIds": ["structural_engineering", "brick_and_mortar", "scaffolding"] }, { "tier": 3, "projectIds": ["concrete_production", "architectural_design", "arcane_reinforcement"] }, { "tier": 4, "projectIds": ["steel_frame_construction", "skyscrapers"] }] },
+    "crafting": { "categoryName": "제작", "tiers": [{ "tier": 1, "projectIds": ["textile_weaving", "leatherworking", "pottery"] }, { "tier": 2, "projectIds": ["glassblowing", "joinery", "basic_mechanisms"] }, { "tier": 3, "projectIds": ["precision_engineering", "synthetic_materials", "enchanting_basics"] }, { "tier": 4, "projectIds": ["automatons", "ergonomic_design"] }] },
+    "magic": { "categoryName": "마법", "tiers": [{ "tier": 1, "projectIds": ["mana_theory", "elemental_studies_fire", "elemental_studies_water"] }, { "tier": 2, "projectIds": ["enchanting_runes", "alchemy_basics", "divination"] }, { "tier": 3, "projectIds": ["golem_construction", "transmutation", "dimensional_pockets"] }, { "tier": 4, "projectIds": ["spell_weaving", "aetherial_syphoning"] }] },
+    "combat": { "categoryName": "전투", "tiers": [{ "tier": 1, "projectIds": ["basic_metallurgy", "fletching"] }, { "tier": 2, "projectIds": ["plate_armor_crafting", "sword_smithing", "crossbow_mechanics"] }, { "tier": 3, "projectIds": ["gunpowder_synthesis", "siege_weaponry", "magical_weaponry"] }, { "tier": 4, "projectIds": ["repeating_firearms", "aetherium_armor"] }] },
+    "medicine": { "categoryName": "의학", "tiers": [{ "tier": 1, "projectIds": ["herbalism", "basic_anatomy"] }, { "tier": 2, "projectIds": ["sterilization", "potion_brewing", "surgery"] }, { "tier": 3, "projectIds": ["antibiotics", "cellular_regeneration", "magical_healing"] }, { "tier": 4, "projectIds": ["gene_therapy", "life_extension"] }] },
+    "livestock": { "categoryName": "축산", "tiers": [{ "tier": 1, "projectIds": ["animal_taming", "animal_husbandry"] }, { "tier": 2, "projectIds": ["selective_breeding_livestock", "feed_production"] }, { "tier": 3, "projectIds": ["monster_domestication", "genetic_modification_livestock"] }] },
+    "final_frontier": { "categoryName": "최종 연구", "tiers": [{ "tier": 1, "projectIds": ["rocketry", "quantum_mechanics"] }, { "tier": 2, "projectIds": ["space_exploration", "dimensional_theory"] }, { "tier": 3, "projectIds": ["starship_propulsion", "warp_gate_construction"] }] }
+  },
+  "projects": {
+    "basic_mathematics": {
+      "name": "기초 수학", "tags": ["기초과학"], "description": "모든 과학의 언어인 수학의 기본 원리를 정립합니다.",
+      "prerequisites": [], "requiredStats": { "research": 1 }, "requiredFacility": "서재",
+      "stages": [{ "description": "산술 연구", "time": 30, "successRate": 0.95, "expPerMinute": 2 }],
+      "successRateBonus": 0.02, "criticalChanceBonus": 0.01,
+      "criticalSuccess": { "bonusExp": 50, "description": "새로운 계산법을 발견하여 연구자들의 사기가 올랐습니다!" },
+      "results": { "knowledge": ["knowledge_mathematics_1"] }
+    },
+    "basic_physics": {
+      "name": "기초 물리학", "tags": ["기초과학"], "description": "힘, 운동, 에너지의 기본 법칙을 탐구합니다.",
+      "prerequisites": ["basic_mathematics"], "requiredStats": { "research": 3 }, "requiredFacility": "기초 연구소",
+      "requiredMaterials": [{ "itemId": "wood", "quantity": 10 }, { "itemId": "stone", "quantity": 10 }],
+      "stages": [{ "description": "역학 실험", "time": 60, "successRate": 0.8, "expPerMinute": 3 }],
+      "successRateBonus": 0.015, "criticalChanceBonus": 0.01,
+      "criticalSuccess": { "bonusItems": [{ "itemId": "iron_gear", "quantity": 1 }], "description": "실험 중 우연히 간단한 기계장치의 원리를 발견했습니다." },
+      "results": { "knowledge": ["knowledge_physics_1"] }
+    },
+    "basic_chemistry": {
+        "name": "기초 화학", "tags": ["기초과학"], "description": "물질의 구성과 반응을 연구합니다. 연금술의 기초가 됩니다.",
+        "prerequisites": ["basic_mathematics"], "requiredStats": { "research": 3 }, "requiredFacility": "기초 연구소",
+        "requiredMaterials": [{ "itemId": "charcoal", "quantity": 10 }, {"itemId": "sulfur", "quantity": 5}],
+        "stages": [
+            { "description": "물질 반응 실험", "time": 90, "successRate": 0.75, "expPerMinute": 4 }
+        ],
+        "successRateBonus": 0.01, "criticalChanceBonus": 0.005,
+        "criticalSuccess": { "timeReduction": 0.2, "description": "예상보다 훨씬 안정적인 반응을 발견하여 다음 실험 시간을 단축했습니다." },
+        "results": { "knowledge": ["knowledge_chemistry_1"] }
+    },
+    "basic_biology": {
+        "name": "기초 생물학", "tags": ["기초과학"], "description": "생명체의 기본 구조와 기능을 연구합니다.",
+        "prerequisites": [], "requiredStats": { "research": 2, "gardening": 1 }, "requiredFacility": "기초 연구소",
+        "requiredMaterials": [{ "itemId": "strange_flower", "quantity": 5 }],
+        "stages": [
+            { "description": "세포 관찰", "time": 120, "successRate": 0.8, "expPerMinute": 3 }
+        ],
+        "successRateBonus": 0.015, "criticalChanceBonus": 0.01,
+        "results": { "knowledge": ["knowledge_biology_1"] }
+    },
+    "advanced_mathematics": {
+      "name": "고등 수학", "tags": ["기초과학"], "description": "미적분학과 기하학을 정립하여 더 복잡한 계산을 가능하게 합니다.",
+      "prerequisites": ["basic_mathematics"], "requiredStats": { "research": 10 }, "requiredFacility": "연구소",
+      "stages": [{ "description": "미적분학 정립", "time": 240, "successRate": 0.7, "expPerMinute": 10 }],
+      "successRateBonus": 0.01, "criticalChanceBonus": 0.005,
+      "results": { "knowledge": ["knowledge_mathematics_2"] }
+    },
+    "material_science": {
+      "name": "재료 과학", "tags": ["응용과학"], "description": "다양한 재료의 특성을 분석하고 새로운 재료를 개발합니다.",
+      "prerequisites": ["basic_physics", "basic_chemistry"], "requiredStats": { "research": 8, "crafting": 5 }, "requiredFacility": "연구소",
+      "requiredMaterials": [{ "itemId": "iron_ingot", "quantity": 20 }, { "itemId": "copper_ingot", "quantity": 20 }, { "itemId": "coal", "quantity": 50 }],
+      "stages": [{ "description": "금속 특성 분석", "time": 180, "successRate": 0.75, "expPerMinute": 8 }],
+      "successRateBonus": 0.01, "criticalChanceBonus": 0.01,
+      "results": { "knowledge": ["knowledge_material_science_1"], "unlockedRecipes": ["recipe_bronze_ingot"] }
+    },
+    "thermodynamics": {
+      "name": "열역학", "tags": ["응용과학"], "description": "열과 에너지의 변환을 연구하여 증기 기관의 이론적 기반을 마련합니다.",
+      "prerequisites": ["basic_physics", "advanced_mathematics"], "requiredStats": { "research": 12 }, "requiredFacility": "연구소",
+      "stages": [{ "description": "열에너지 변환 연구", "time": 300, "successRate": 0.65, "expPerMinute": 15 }],
+      "successRateBonus": 0.01, "criticalChanceBonus": 0.005,
+      "results": { "knowledge": ["knowledge_thermodynamics_1"] }
+    },
+    "genetics": {
+      "name": "유전학", "tags": ["기초과학"], "description": "생물의 형질이 유전되는 원리를 밝혀냅니다. 품종 개량의 핵심이 됩니다.",
+      "prerequisites": ["basic_biology", "advanced_mathematics"], "requiredStats": { "research": 15, "gardening": 10 }, "requiredFacility": "생물학 연구소",
+      "stages": [{ "description": "유전 법칙 발견", "time": 480, "successRate": 0.6, "expPerMinute": 20 }],
+      "successRateBonus": 0.01, "criticalChanceBonus": 0.01,
+      "results": { "knowledge": ["knowledge_genetics_1"] }
+    },
+    "crop_cultivation": {
+        "name": "작물 재배법", "tags": ["농업"], "description": "씨앗을 심고 수확하는 기본적인 방법을 체계화합니다.",
+        "prerequisites": ["basic_biology"], "requiredStats": { "research": 2, "gardening": 3 }, "requiredFacility": "농장",
+        "stages": [{ "description": "파종 및 수확 주기 연구", "time": 60, "successRate": 0.9, "expPerMinute": 3 }],
+        "results": { "knowledge": ["knowledge_farming_1"] }
+    },
+    "soil_analysis": {
+        "name": "토양 분석", "tags": ["농업"], "description": "토양의 성분을 분석하여 작물 성장에 미치는 영향을 연구합니다.",
+        "prerequisites": ["basic_chemistry"], "requiredStats": { "research": 4, "gardening": 2 }, "requiredFacility": "기초 연구소",
+        "requiredMaterials": [{ "itemId": "soil_sample", "quantity": 10 }],
+        "stages": [{ "description": "토양 샘플 분석", "time": 120, "successRate": 0.8, "expPerMinute": 5 }],
+        "results": { "knowledge": ["knowledge_soil_analysis_1"] }
+    },
+    "fertilizer_production": {
+      "name": "비료 생산", "tags": ["농업", "화학"], "description": "토양에 양분을 공급하여 작물 생산량을 증대시키는 비료를 개발합니다.",
+      "prerequisites": ["soil_analysis"], "requiredStats": { "research": 8, "gardening": 5 }, "requiredFacility": "화학 실험실",
+      "requiredMaterials": [{ "itemId": "nitrate", "quantity": 10 }, { "itemId": "phosphate", "quantity": 10 }],
+      "stages": [{ "description": "화학 비료 합성", "time": 240, "successRate": 0.7, "expPerMinute": 10 }],
+      "results": { "unlockedRecipes": ["recipe_basic_fertilizer"] }
+    },
+    "selective_breeding": {
+      "name": "선택적 교배 (작물)", "tags": ["농업", "유전학"], "description": "우수한 형질을 가진 작물을 교배하여 더 나은 품종을 만들어냅니다.",
+      "prerequisites": ["crop_cultivation", "genetics"], "requiredStats": { "research": 18, "gardening": 15 }, "requiredFacility": "생물학 연구소",
+      "requiredMaterials": [{ "itemId": "golden_seed", "quantity": 1 }],
+      "stages": [{ "description": "품종 교배 실험", "time": 600, "successRate": 0.5, "expPerMinute": 25 }],
+      "results": { "knowledge": ["knowledge_selective_breeding_1"] }
+    },
+    "irrigation_systems": {
+        "name": "관개 시설", "tags": ["농업", "건축"], "description": "수로를 건설하여 안정적으로 물을 공급하고, 건조한 땅에서도 농사를 가능하게 합니다.",
+        "prerequisites": ["structural_engineering"], "requiredStats": { "research": 10, "construction": 8 }, "requiredFacility": "설계실",
+        "stages": [{ "description": "수로 설계 및 건설", "time": 360, "successRate": 0.7, "expPerMinute": 12 }],
+        "results": { "unlockedBuildings": ["building_irrigation_canal"] }
+    },
+    "pest_control": {
+      "name": "해충 구제", "tags": ["농업", "화학"], "description": "작물을 갉아먹는 해충을 퇴치하는 방법을 연구합니다.",
+      "prerequisites": ["basic_chemistry", "basic_biology"], "requiredStats": { "research": 12, "gardening": 8 }, "requiredFacility": "화학 실험실",
+      "stages": [{ "description": "천연 살충제 개발", "time": 300, "successRate": 0.65, "expPerMinute": 14 }],
+      "results": { "unlockedRecipes": ["recipe_pesticide"] }
+    },
+    "hydroponics": {
+      "name": "수경 재배", "tags": ["농업", "첨단기술"], "description": "흙 없이 양분이 녹아있는 물에서 작물을 재배하는 기술입니다.",
+      "prerequisites": ["fertilizer_production", "glassblowing"], "requiredStats": { "research": 20, "gardening": 12 }, "requiredFacility": "생물학 연구소",
+      "stages": [{ "description": "영양액 배합 및 순환 시스템 구축", "time": 720, "successRate": 0.55, "expPerMinute": 30 }],
+      "results": { "unlockedBuildings": ["building_hydroponics_farm"] }
+    },
+    "magical_infusion_farming": {
+        "name": "마력 주입 농법", "tags": ["농업", "마법"], "description": "마나를 작물에 주입하여 성장 속도를 가속하거나 특별한 효과를 부여합니다.",
+        "prerequisites": ["mana_theory", "crop_cultivation"], "requiredStats": { "research": 15, "art": 10 },
+        "requiredFacility": "마법 연구소",
+        "stages": [{ "description": "작물 마나 감응 연구", "time": 500, "successRate": 0.6, "expPerMinute": 22 }],
+        "results": { "knowledge": ["knowledge_magical_farming_1"] }
+    },
+    "mechanized_farming": {
+      "name": "기계화 농업", "tags": ["농업", "공학"], "description": "트랙터와 같은 농기계를 도입하여 농업 생산성을 극대화합니다.",
+      "prerequisites": ["thermodynamics", "steel_frame_construction"], "requiredStats": { "research": 30, "crafting": 25 }, "requiredFacility": "공학 연구소",
+      "stages": [{ "description": "증기 트랙터 개발", "time": 1440, "successRate": 0.4, "expPerMinute": 50 }],
+      "results": { "unlockedRecipes": ["recipe_tractor"] }
+    },
+    "genetic_modification_crops": {
+      "name": "유전자 변형 작물", "tags": ["농업", "유전학", "첨단기술"], "description": "유전자를 직접 조작하여 가뭄이나 질병에 강한 새로운 품종을 만들어냅니다.",
+      "prerequisites": ["genetics", "selective_breeding"], "requiredStats": { "research": 40, "gardening": 30 }, "requiredFacility": "유전공학 연구소",
+      "stages": [{ "description": "유전자 재조합 실험", "time": 2880, "successRate": 0.3, "expPerMinute": 80 }],
+      "results": { "knowledge": ["knowledge_gmo_1"] }
+    },
+    "basic_geology": {
+        "name": "기초 지질학", "tags": ["채굴", "기초과학"], "description": "암석과 광물의 종류, 지층의 구조를 연구합니다.",
+        "prerequisites": [], "requiredStats": { "research": 3, "mining": 2 }, "requiredFacility": "기초 연구소",
+        "stages": [{ "description": "암석 샘플 분류", "time": 90, "successRate": 0.85, "expPerMinute": 4 }],
+        "results": { "knowledge": ["knowledge_geology_1"] }
+    },
+    "ore_prospecting": {
+        "name": "광맥 탐사", "tags": ["채굴"], "description": "지표면을 조사하여 유용한 광물이 묻혀있는 위치를 찾는 기술을 개발합니다.",
+        "prerequisites": ["basic_geology"], "requiredStats": { "research": 5, "mining": 5 }, "requiredFacility": "야외",
+        "stages": [{ "description": "탐사 기술 훈련", "time": 150, "successRate": 0.8, "expPerMinute": 6 }],
+        "results": { "knowledge": ["knowledge_prospecting_1"] }
+    },
+    "smelting_techniques": {
+        "name": "제련 기술", "tags": ["채굴", "제작"], "description": "광석에서 순수한 금속을 추출하는 방법을 개선합니다.",
+        "prerequisites": ["basic_chemistry"], "requiredStats": { "research": 6, "crafting": 4 }, "requiredFacility": "용광로",
+        "requiredMaterials": [{ "itemId": "copper_ore", "quantity": 30 }, { "itemId": "coal", "quantity": 10 }],
+        "stages": [{ "description": "고효율 용광로 설계", "time": 180, "successRate": 0.75, "expPerMinute": 7 }],
+        "results": { "knowledge": ["knowledge_smelting_1"], "unlockedRecipes": ["recipe_copper_ingot", "recipe_tin_ingot"] }
+    },
+    "quarrying_efficiency": {
+        "name": "채석 효율 증대", "tags": ["채굴"], "description": "더 적은 노력으로 더 많은 석재를 얻는 방법을 연구합니다.",
+        "prerequisites": ["basic_physics"], "requiredStats": { "research": 7, "mining": 6 }, "requiredFacility": "채석장",
+        "stages": [{ "description": "쐐기 및 지렛대 활용법 연구", "time": 200, "successRate": 0.8, "expPerMinute": 8 }],
+        "results": { "knowledge": ["knowledge_quarrying_1"] }
+    },
+    "mine_safety": {
+        "name": "광산 안전", "tags": ["채굴", "건축"], "description": "갱도가 무너지지 않도록 지지대를 설치하는 등 광부의 안전을 확보하는 기술을 연구합니다.",
+        "prerequisites": ["woodworking", "structural_engineering"], "requiredStats": { "research": 9, "construction": 7 }, "requiredFacility": "설계실",
+        "stages": [{ "description": "목재 지지대 설계", "time": 240, "successRate": 0.85, "expPerMinute": 9 }],
+        "results": { "unlockedBuildings": ["building_mine_support"] }
+    },
+    "alloy_creation": {
+        "name": "합금술", "tags": ["채굴", "제작", "응용과학"], "description": "여러 금속을 섞어 강철, 청동과 같이 더 유용한 특성을 가진 새로운 금속을 만듭니다.",
+        "prerequisites": ["material_science", "smelting_techniques"], "requiredStats": { "research": 15, "crafting": 10 }, "requiredFacility": "제철소",
+        "stages": [{ "description": "강철 제련법 연구", "time": 400, "successRate": 0.65, "expPerMinute": 18 }],
+        "results": { "knowledge": ["knowledge_alloy_1"], "unlockedRecipes": ["recipe_steel_ingot", "recipe_bronze_ingot"] }
+    },
+    "explosive_mining": {
+        "name": "폭발물 채굴", "tags": ["채굴", "화학"], "description": "화약을 사용하여 단단한 암반을 뚫고 채굴 속도를 비약적으로 향상시킵니다.",
+        "prerequisites": ["gunpowder_synthesis"], "requiredStats": { "research": 22, "mining": 15 }, "requiredFacility": "화학 실험실",
+        "stages": [{ "description": "다이너마이트 개발", "time": 600, "successRate": 0.5, "expPerMinute": 28 }],
+        "results": { "unlockedRecipes": ["recipe_dynamite"] }
+    },
+    "gemology": {
+        "name": "보석학", "tags": ["채굴", "제작"], "description": "보석의 가치를 감정하고 세공하는 기술을 연구합니다.",
+        "prerequisites": ["basic_geology"], "requiredStats": { "research": 14, "crafting": 12 }, "requiredFacility": "세공 작업실",
+        "stages": [{ "description": "보석 커팅 기술 연구", "time": 360, "successRate": 0.7, "expPerMinute": 16 }],
+        "results": { "knowledge": ["knowledge_gemology_1"], "unlockedRecipes": ["recipe_cut_diamond"] }
+    },
+    "deep_earth_drilling": {
+      "name": "심층 시추", "tags": ["채굴", "공학"], "description": "땅 깊은 곳에 있는 희귀한 광물을 채굴하기 위한 거대한 드릴을 개발합니다.",
+      "prerequisites": ["mechanized_farming", "alloy_creation"], "requiredStats": { "research": 35, "mining": 28 }, "requiredFacility": "공학 연구소",
+      "stages": [{ "description": "증기 동력 드릴 설계", "time": 1800, "successRate": 0.35, "expPerMinute": 60 }],
+      "results": { "unlockedBuildings": ["building_deep_drill"] }
+    },
+    "magma_refining": {
+      "name": "마그마 제련", "tags": ["채굴", "마법"], "description": "마그마의 초고열을 이용하여 가장 단단한 금속도 녹이고 정제하는 궁극의 기술입니다.",
+      "prerequisites": ["elemental_studies_fire", "deep_earth_drilling"], "requiredStats": { "research": 45, "art": 35 }, "requiredFacility": "흑요석 용광로",
+      "stages": [{ "description": "내열 마법 부여 및 제련소 건설", "time": 3600, "successRate": 0.25, "expPerMinute": 100 }],
+      "results": { "unlockedRecipes": ["recipe_aetherium_ingot"] }
+    },
+    "woodworking": {
+        "name": "목공", "tags": ["건축", "제작"], "description": "나무를 다듬어 가구나 간단한 건축 자재를 만드는 기술을 연구합니다.",
+        "prerequisites": [], "requiredStats": { "research": 2, "crafting": 2 }, "requiredFacility": "작업장",
+        "stages": [{ "description": "기본적인 목재 가공", "time": 45, "successRate": 0.9, "expPerMinute": 2 }],
+        "results": { "unlockedRecipes": ["recipe_plank", "recipe_wooden_chair"] }
+    },
+    "stonemasonry": {
+        "name": "석조", "tags": ["건축"], "description": "돌을 깎고 다듬어 견고한 건축물을 짓는 기술을 연구합니다.",
+        "prerequisites": ["quarrying_efficiency"], "requiredStats": { "research": 4, "construction": 4 }, "requiredFacility": "석재 작업장",
+        "stages": [{ "description": "벽돌 쌓기 기술", "time": 120, "successRate": 0.85, "expPerMinute": 5 }],
+        "results": { "unlockedRecipes": ["recipe_stone_brick"] }
+    },
+    "structural_engineering": {
+        "name": "구조 공학", "tags": ["건축", "물리학"], "description": "건축물이 자체 무게와 외부 압력을 견디도록 설계하는 방법을 연구합니다.",
+        "prerequisites": ["basic_physics", "woodworking"], "requiredStats": { "research": 8, "construction": 6 }, "requiredFacility": "설계실",
+        "stages": [{ "description": "아치와 트러스 구조 연구", "time": 240, "successRate": 0.8, "expPerMinute": 9 }],
+        "results": { "knowledge": ["knowledge_structural_engineering_1"] }
+    },
+    "brick_and_mortar": {
+        "name": "벽돌과 모르타르", "tags": ["건축"], "description": "흙을 구워 벽돌을 만들고, 석회와 모래를 섞어 접착제인 모르타르를 만드는 기술입니다.",
+        "prerequisites": ["pottery", "basic_chemistry"], "requiredStats": { "research": 7, "construction": 5 }, "requiredFacility": "가마",
+        "stages": [{ "description": "벽돌 생산 및 모르타르 배합", "time": 180, "successRate": 0.75, "expPerMinute": 7 }],
+        "results": { "unlockedRecipes": ["recipe_clay_brick", "recipe_mortar"] }
+    },
+    "scaffolding": {
+        "name": "비계", "tags": ["건축"], "description": "높은 건물을 지을 때 작업자들이 안전하게 일할 수 있는 발판을 설치하는 기술입니다.",
+        "prerequisites": ["woodworking"], "requiredStats": { "research": 6, "construction": 8 }, "requiredFacility": "작업장",
+        "stages": [{ "description": "안전한 비계 구조 설계", "time": 150, "successRate": 0.9, "expPerMinute": 6 }],
+        "results": { "unlockedRecipes": ["recipe_scaffolding"] }
+    },
+    "concrete_production": {
+        "name": "콘크리트 생산", "tags": ["건축", "화학"], "description": "시멘트, 모래, 자갈을 물과 섞어 어떤 모양으로든 굳힐 수 있는 혁신적인 건축 자재를 만듭니다.",
+        "prerequisites": ["advanced_chemistry", "quarrying_efficiency"], "requiredStats": { "research": 18, "construction": 15 }, "requiredFacility": "화학 실험실",
+        "stages": [{ "description": "시멘트 개발", "time": 500, "successRate": 0.6, "expPerMinute": 20 }],
+        "results": { "unlockedRecipes": ["recipe_concrete_mix"] }
+    },
+    "architectural_design": {
+        "name": "건축 설계", "tags": ["건축", "예술"], "description": "기능적이면서도 아름다운 건물을 설계하는 방법을 연구합니다.",
+        "prerequisites": ["structural_engineering", "advanced_mathematics"], "requiredStats": { "research": 16, "art": 10 }, "requiredFacility": "설계실",
+        "stages": [{ "description": "다양한 건축 양식 연구", "time": 420, "successRate": 0.7, "expPerMinute": 18 }],
+        "results": { "knowledge": ["knowledge_architectural_design_1"] }
+    },
+    "arcane_reinforcement": {
+        "name": "비전 강화", "tags": ["건축", "마법"], "description": "건축물에 룬을 새겨 넣어 물리적, 마법적 방어력을 높입니다.",
+        "prerequisites": ["enchanting_runes", "stonemasonry"], "requiredStats": { "research": 20, "art": 18 }, "requiredFacility": "마법 연구소",
+        "stages": [{ "description": "방어 룬과 건축 재료의 결합", "time": 600, "successRate": 0.55, "expPerMinute": 25 }],
+        "results": { "knowledge": ["knowledge_arcane_reinforcement_1"] }
+    },
+    "steel_frame_construction": {
+        "name": "철골 구조 건축", "tags": ["건축", "공학"], "description": "강철 빔을 뼈대로 사용하여 이전보다 훨씬 높고 튼튼한 건물을 짓습니다.",
+        "prerequisites": ["alloy_creation", "structural_engineering"], "requiredStats": { "research": 28, "construction": 25 }, "requiredFacility": "공학 연구소",
+        "stages": [{ "description": "철골 구조 설계 및 조립", "time": 1200, "successRate": 0.45, "expPerMinute": 45 }],
+        "results": { "knowledge": ["knowledge_steel_frame_1"] }
+    },
+    "skyscrapers": {
+        "name": "마천루", "tags": ["건축", "공학"], "description": "하늘에 닿을 듯한 초고층 빌딩을 건설하는 모든 기술의 집약체입니다.",
+        "prerequisites": ["steel_frame_construction", "concrete_production", "precision_engineering"], "requiredStats": { "research": 50, "construction": 50, "crafting": 40 }, "requiredFacility": "도시 계획 연구소",
+        "stages": [{ "description": "초고층 빌딩 설계", "time": 7200, "successRate": 0.2, "expPerMinute": 150 }],
+        "results": { "unlockedBuildings": ["building_skyscraper"] }
+    },
+    "textile_weaving": {
+        "name": "직물", "tags": ["제작"], "description": "식물 섬유나 동물 털로 실을 만들고 옷감을 짜는 기술입니다.",
+        "prerequisites": [], "requiredStats": { "research": 1, "crafting": 2 }, "requiredFacility": "작업장",
+        "stages": [{ "description": "베틀 연구", "time": 40, "successRate": 0.95, "expPerMinute": 2 }],
+        "results": { "unlockedRecipes": ["recipe_cloth"] }
+    },
+    "leatherworking": {
+        "name": "가죽 세공", "tags": ["제작"], "description": "동물 가죽을 무두질하여 질긴 가죽을 만드는 기술입니다.",
+        "prerequisites": [], "requiredStats": { "research": 2, "crafting": 3 }, "requiredFacility": "무두질 작업장",
+        "stages": [{ "description": "무두질 기술 연구", "time": 60, "successRate": 0.9, "expPerMinute": 3 }],
+        "results": { "unlockedRecipes": ["recipe_leather"] }
+    },
+    "pottery": {
+        "name": "도예", "tags": ["제작"], "description": "진흙을 빚어 불에 구워 그릇이나 항아리를 만듭니다.",
+        "prerequisites": [], "requiredStats": { "research": 2, "crafting": 2, "art": 1 }, "requiredFacility": "가마",
+        "stages": [{ "description": "도자기 굽기", "time": 90, "successRate": 0.85, "expPerMinute": 4 }],
+        "results": { "unlockedRecipes": ["recipe_clay_pot"] }
+    },
+    "glassblowing": {
+        "name": "유리 공예", "tags": ["제작", "화학"], "description": "모래를 녹여 투명한 유리를 만들고, 입으로 불어 다양한 형태의 유리병을 만듭니다.",
+        "prerequisites": ["basic_chemistry"], "requiredStats": { "research": 10, "crafting": 8, "art": 5 }, "requiredFacility": "유리 공방",
+        "stages": [{ "description": "유리 용해 및 성형", "time": 240, "successRate": 0.7, "expPerMinute": 10 }],
+        "results": { "unlockedRecipes": ["recipe_glass_bottle"] }
+    },
+    "joinery": {
+        "name": "가구 제작", "tags": ["제작", "건축"], "description": "못을 사용하지 않고 나무 부재들을 정교하게 결합하여 튼튼하고 아름다운 가구를 만듭니다.",
+        "prerequisites": ["woodworking"], "requiredStats": { "research": 9, "crafting": 10 }, "requiredFacility": "목공 작업실",
+        "stages": [{ "description": "장부맞춤 연구", "time": 200, "successRate": 0.8, "expPerMinute": 9 }],
+        "results": { "unlockedRecipes": ["recipe_wooden_table", "recipe_wooden_chest"] }
+    },
+    "basic_mechanisms": {
+        "name": "기초 기계 장치", "tags": ["제작", "공학"], "description": "기어, 축, 도르래와 같은 간단한 기계 부품의 원리를 연구합니다.",
+        "prerequisites": ["basic_physics", "woodworking"], "requiredStats": { "research": 12, "crafting": 9 }, "requiredFacility": "작업장",
+        "stages": [{ "description": "기어 및 도르래 제작", "time": 300, "successRate": 0.75, "expPerMinute": 12 }],
+        "results": { "knowledge": ["knowledge_mechanisms_1"], "unlockedRecipes": ["recipe_iron_gear"] }
+    },
+    "precision_engineering": {
+        "name": "정밀 공학", "tags": ["제작", "공학"], "description": "시계나 자동인형과 같은 복잡하고 정교한 기계를 만드는 데 필요한 기술입니다.",
+        "prerequisites": ["basic_mechanisms", "advanced_mathematics"], "requiredStats": { "research": 25, "crafting": 22 }, "requiredFacility": "공학 연구소",
+        "stages": [{ "description": "소형 부품 가공", "time": 800, "successRate": 0.5, "expPerMinute": 35 }],
+        "results": { "unlockedRecipes": ["recipe_clockwork_parts"] }
+    },
+    "synthetic_materials": {
+        "name": "합성 재료", "tags": ["제작", "화학"], "description": "석유나 식물에서 플라스틱이나 나일론과 같은 자연에 존재하지 않는 새로운 물질을 만들어냅니다.",
+        "prerequisites": ["advanced_chemistry"], "requiredStats": { "research": 24, "crafting": 18 }, "requiredFacility": "화학 실험실",
+        "stages": [{ "description": "고분자 화합물 합성", "time": 720, "successRate": 0.55, "expPerMinute": 30 }],
+        "results": { "unlockedRecipes": ["recipe_plastic"] }
+    },
+    "enchanting_basics": {
+      "name": "기초 부여마법", "tags": ["제작", "마법"], "description": "아이템에 마법적인 속성을 부여하는 기본적인 방법을 연구합니다.",
+      "prerequisites": ["enchanting_runes"], "requiredStats": { "research": 18, "art": 15 }, "requiredFacility": "마법 부여 제단",
+      "stages": [{ "description": "마력 전도 매개체 연구", "time": 540, "successRate": 0.6, "expPerMinute": 24 }],
+      "results": { "knowledge": ["knowledge_enchanting_1"] }
+    },
+    "automatons": {
+        "name": "자동인형", "tags": ["제작", "공학", "마법"], "description": "마나나 태엽의 힘으로 스스로 움직이는 인형을 만듭니다.",
+        "prerequisites": ["precision_engineering", "golem_construction"], "requiredStats": { "research": 40, "crafting": 38, "art": 30 }, "requiredFacility": "공학 연구소",
+        "stages": [{ "description": "인공지능 회로 설계", "time": 3000, "successRate": 0.3, "expPerMinute": 90 }],
+        "results": { "unlockedRecipes": ["recipe_automaton_core"] }
+    },
+    "ergonomic_design": {
+        "name": "인간공학적 설계", "tags": ["제작", "의학"], "description": "도구나 가구를 사용자의 몸에 맞게 설계하여 피로를 줄이고 효율을 높입니다.",
+        "prerequisites": ["basic_anatomy", "joinery"], "requiredStats": { "research": 20, "crafting": 25 }, "requiredFacility": "설계실",
+        "stages": [{ "description": "사용자 편의성 연구", "time": 600, "successRate": 0.65, "expPerMinute": 28 }],
+        "results": { "knowledge": ["knowledge_ergonomics_1"] }
+    },
+    "mana_theory": {
+        "name": "마나 이론", "tags": ["마법", "기초과학"], "description": "세상에 존재하는 마법 에너지의 근원과 흐름을 이론적으로 정립합니다.",
+        "prerequisites": ["basic_physics"], "requiredStats": { "research": 5, "art": 3 }, "requiredFacility": "도서관",
+        "stages": [{ "description": "마나 유동 관찰", "time": 150, "successRate": 0.8, "expPerMinute": 6 }],
+        "results": { "knowledge": ["knowledge_mana_theory_1"] }
+    },
+    "elemental_studies_fire": {
+        "name": "원소 연구: 불", "tags": ["마법"], "description": "불의 원소와 그 힘을 제어하는 방법을 연구합니다.",
+        "prerequisites": ["mana_theory"], "requiredStats": { "research": 8, "art": 6 }, "requiredFacility": "마법 연구소",
+        "stages": [{ "description": "화염 소환 및 제어", "time": 200, "successRate": 0.75, "expPerMinute": 8 }],
+        "results": { "knowledge": ["knowledge_elemental_fire_1"] }
+    },
+    "elemental_studies_water": {
+        "name": "원소 연구: 물", "tags": ["마법"], "description": "물의 원소와 그 힘을 제어하는 방법을 연구합니다.",
+        "prerequisites": ["mana_theory"], "requiredStats": { "research": 8, "art": 6 }, "requiredFacility": "마법 연구소",
+        "stages": [{ "description": "물 생성 및 형태 변환", "time": 200, "successRate": 0.75, "expPerMinute": 8 }],
+        "results": { "knowledge": ["knowledge_elemental_water_1"] }
+    },
+    "enchanting_runes": {
+        "name": "룬 문자 마법", "tags": ["마법"], "description": "고대의 룬 문자에 담긴 힘을 해독하고 사용하여 마법 효과를 발휘합니다.",
+        "prerequisites": ["mana_theory"], "requiredStats": { "research": 10, "art": 8 }, "requiredFacility": "도서관",
+        "stages": [{ "description": "고대 석판 해독", "time": 300, "successRate": 0.7, "expPerMinute": 11 }],
+        "results": { "knowledge": ["knowledge_runes_1"] }
+    },
+    "alchemy_basics": {
+        "name": "기초 연금술", "tags": ["마법", "화학"], "description": "물질을 변환하고 신비한 효능을 가진 포션을 만드는 기술의 기초입니다.",
+        "prerequisites": ["basic_chemistry", "herbalism"], "requiredStats": { "research": 12, "art": 9 }, "requiredFacility": "연금술 실험실",
+        "stages": [{ "description": "현자의 돌 이론 연구", "time": 360, "successRate": 0.65, "expPerMinute": 15 }],
+        "results": { "knowledge": ["knowledge_alchemy_1"], "unlockedRecipes": ["recipe_healing_potion_minor"] }
+    },
+    "divination": {
+        "name": "점술", "tags": ["마법"], "description": "별의 움직임이나 수정을 통해 미래의 단편을 엿보는 방법을 연구합니다.",
+        "prerequisites": ["mana_theory"], "requiredStats": { "research": 14, "art": 12 }, "requiredFacility": "점성술사의 탑",
+        "stages": [{ "description": "수정구 응시", "time": 480, "successRate": 0.6, "expPerMinute": 18 }],
+        "results": { "knowledge": ["knowledge_divination_1"] }
+    },
+    "golem_construction": {
+        "name": "골렘 제작", "tags": ["마법", "건축"], "description": "생명이 없는 흙이나 돌에 마력을 불어넣어 움직이는 하인을 만듭니다.",
+        "prerequisites": ["enchanting_runes", "stonemasonry"], "requiredStats": { "research": 25, "art": 20, "construction": 15 }, "requiredFacility": "골렘 작업장",
+        "stages": [{ "description": "생명의 룬 활성화", "time": 1000, "successRate": 0.45, "expPerMinute": 40 }],
+        "results": { "unlockedRecipes": ["recipe_stone_golem_heart"] }
+    },
+    "transmutation": {
+        "name": "변성술", "tags": ["마법", "화학"], "description": "연금술의 정수. 납을 금으로 바꾸는 등 한 물질을 다른 물질로 완전히 변환시킵니다.",
+        "prerequisites": ["alchemy_basics", "advanced_chemistry"], "requiredStats": { "research": 30, "art": 25 }, "requiredFacility": "연금술 실험실",
+        "stages": [{ "description": "물질 구조 변환 실험", "time": 1500, "successRate": 0.35, "expPerMinute": 60 }],
+        "results": { "knowledge": ["knowledge_transmutation_1"] }
+    },
+    "dimensional_pockets": {
+        "name": "차원 주머니", "tags": ["마법"], "description": "공간을 왜곡하여 실제 크기보다 훨씬 많은 물건을 담을 수 있는 가방을 만듭니다.",
+        "prerequisites": ["advanced_mathematics", "enchanting_runes"], "requiredStats": { "research": 28, "art": 22 }, "requiredFacility": "마법 연구소",
+        "stages": [{ "description": "공간 왜곡 마법 연구", "time": 1200, "successRate": 0.4, "expPerMinute": 50 }],
+        "results": { "unlockedRecipes": ["recipe_bag_of_holding"] }
+    },
+    "spell_weaving": {
+        "name": "주문 직조", "tags": ["마법"], "description": "여러 속성의 마나를 엮어 기존에 없던 새로운 마법을 창조합니다.",
+        "prerequisites": ["elemental_studies_fire", "elemental_studies_water", "mana_theory"], "requiredStats": { "research": 40, "art": 40 }, "requiredFacility": "대마법사의 탑",
+        "stages": [{ "description": "복합 마법진 설계", "time": 3600, "successRate": 0.25, "expPerMinute": 120 }],
+        "results": { "knowledge": ["knowledge_spell_weaving_1"] }
+    },
+    "aetherial_syphoning": {
+        "name": "에테르 추출", "tags": ["마법", "첨단기술"], "description": "차원의 경계에 존재하는 순수한 마력 에너지, 에테르를 현실 세계로 끌어와 사용하는 기술입니다.",
+        "prerequisites": ["dimensional_pockets", "thermodynamics"], "requiredStats": { "research": 55, "art": 50 }, "requiredFacility": "차원 안정화 장치",
+        "stages": [{ "description": "에테르 집속 장치 건설", "time": 9000, "successRate": 0.15, "expPerMinute": 200 }],
+        "results": { "unlockedBuildings": ["building_aether_reactor"] }
+    },
+    "basic_metallurgy": {
+        "name": "기초 야금학", "tags": ["전투", "제작"], "description": "금속을 다루어 무기와 도구를 만드는 기본적인 기술을 연구합니다.",
+        "prerequisites": ["smelting_techniques"], "requiredStats": { "research": 5, "crafting": 5 }, "requiredFacility": "대장간",
+        "stages": [{ "description": "단조 기술 연마", "time": 150, "successRate": 0.8, "expPerMinute": 6 }],
+        "results": { "unlockedRecipes": ["recipe_iron_sword", "recipe_iron_pickaxe"] }
+    },
+    "fletching": {
+        "name": "화살 제작", "tags": ["전투", "제작"], "description": "곧은 나뭇가지와 깃털, 날카로운 돌이나 금속 촉으로 화살을 만듭니다.",
+        "prerequisites": ["woodworking"], "requiredStats": { "research": 3, "crafting": 4 }, "requiredFacility": "작업장",
+        "stages": [{ "description": "화살 깃 균형 연구", "time": 90, "successRate": 0.9, "expPerMinute": 4 }],
+        "results": { "unlockedRecipes": ["recipe_arrow_flint", "recipe_arrow_iron"] }
+    },
+    "plate_armor_crafting": {
+        "name": "판금 갑옷 제작", "tags": ["전투", "제작"], "description": "강철판을 두드려 전신을 보호하는 견고한 갑옷을 만듭니다.",
+        "prerequisites": ["alloy_creation", "basic_metallurgy"], "requiredStats": { "research": 18, "crafting": 20 }, "requiredFacility": "대장간",
+        "stages": [{ "description": "인체 관절에 맞는 판금 설계", "time": 600, "successRate": 0.6, "expPerMinute": 25 }],
+        "results": { "unlockedRecipes": ["recipe_steel_plate_armor"] }
+    },
+    "sword_smithing": {
+        "name": "검 제작술", "tags": ["전투", "제작"], "description": "강철을 접고 두드려 예리하고 균형 잡힌 명검을 만드는 장인의 기술입니다.",
+        "prerequisites": ["alloy_creation"], "requiredStats": { "research": 20, "crafting": 22, "art": 10 }, "requiredFacility": "명인의 대장간",
+        "stages": [{ "description": "다마스쿠스 강철 기법 연구", "time": 720, "successRate": 0.55, "expPerMinute": 30 }],
+        "results": { "unlockedRecipes": ["recipe_masterwork_sword"] }
+    },
+    "crossbow_mechanics": {
+        "name": "쇠뇌 역학", "tags": ["전투", "공학"], "description": "기계장치를 이용하여 활보다 훨씬 강력한 장력을 가진 쇠뇌를 만듭니다.",
+        "prerequisites": ["basic_mechanisms", "fletching"], "requiredStats": { "research": 16, "crafting": 18 }, "requiredFacility": "공방",
+        "stages": [{ "description": "방아쇠 및 장전 장치 설계", "time": 480, "successRate": 0.65, "expPerMinute": 22 }],
+        "results": { "unlockedRecipes": ["recipe_crossbow"] }
+    },
+    "gunpowder_synthesis": {
+        "name": "화약 합성", "tags": ["전투", "화학"], "description": "숯, 유황, 초석을 특정 비율로 섞어 폭발적인 힘을 내는 검은 가루를 만듭니다.",
+        "prerequisites": ["advanced_chemistry"], "requiredStats": { "research": 20, "crafting": 15 }, "requiredFacility": "화학 실험실",
+        "stages": [{ "description": "최적의 화약 배합 비율 연구", "time": 600, "successRate": 0.6, "expPerMinute": 28 }],
+        "results": { "unlockedRecipes": ["recipe_gunpowder"] }
+    },
+    "siege_weaponry": {
+        "name": "공성 병기", "tags": ["전투", "공학", "건축"], "description": "견고한 성벽을 부수기 위한 투석기나 공성탑을 설계하고 제작합니다.",
+        "prerequisites": ["structural_engineering", "basic_mechanisms"], "requiredStats": { "research": 22, "construction": 25, "crafting": 20 }, "requiredFacility": "공성 무기 제작소",
+        "stages": [{ "description": "투석기 장력 연구", "time": 900, "successRate": 0.5, "expPerMinute": 38 }],
+        "results": { "unlockedBuildings": ["building_catapult"] }
+    },
+    "magical_weaponry": {
+        "name": "마법 무기", "tags": ["전투", "마법"], "description": "무기에 마법을 부여하여 불꽃이나 번개의 힘을 휘두를 수 있게 합니다.",
+        "prerequisites": ["enchanting_basics", "sword_smithing"], "requiredStats": { "research": 30, "art": 28, "crafting": 25 }, "requiredFacility": "마법 부여 제단",
+        "stages": [{ "description": "화염의 룬 검에 각인", "time": 1440, "successRate": 0.4, "expPerMinute": 55 }],
+        "results": { "unlockedRecipes": ["recipe_flaming_sword"] }
+    },
+    "repeating_firearms": {
+        "name": "연발 총기", "tags": ["전투", "공학"], "description": "한 번에 여러 발의 총알을 장전하고 연속으로 발사할 수 있는 복잡한 구조의 총을 개발합니다.",
+        "prerequisites": ["gunpowder_synthesis", "precision_engineering"], "requiredStats": { "research": 38, "crafting": 40 }, "requiredFacility": "정밀기계 공작소",
+        "stages": [{ "description": "탄창 및 노리쇠 연동 설계", "time": 2400, "successRate": 0.3, "expPerMinute": 85 }],
+        "results": { "unlockedRecipes": ["recipe_repeating_rifle"] }
+    },
+    "aetherium_armor": {
+        "name": "에테리움 갑옷", "tags": ["전투", "마법", "첨단기술"], "description": "에테르를 동력원으로 하는 마법 갑옷으로, 착용자의 힘을 증폭시키고 스스로 회복합니다.",
+        "prerequisites": ["aetherial_syphoning", "plate_armor_crafting", "automatons"], "requiredStats": { "research": 60, "crafting": 55, "art": 50 }, "requiredFacility": "차원 대장간",
+        "stages": [{ "description": "에테르 동력 회로 갑옷 내장", "time": 12000, "successRate": 0.1, "expPerMinute": 250 }],
+        "results": { "unlockedRecipes": ["recipe_aetherium_plate_armor"] }
+    },
+    "herbalism": {
+        "name": "약초학", "tags": ["의학"], "description": "다양한 식물의 약효를 연구하고 분류합니다.",
+        "prerequisites": ["basic_biology"], "requiredStats": { "research": 4, "gardening": 3 }, "requiredFacility": "약초꾼의 오두막",
+        "stages": [{ "description": "야생 약초 채집 및 효능 실험", "time": 120, "successRate": 0.85, "expPerMinute": 5 }],
+        "results": { "knowledge": ["knowledge_herbalism_1"] }
+    },
+    "basic_anatomy": {
+        "name": "기초 해부학", "tags": ["의학"], "description": "인체의 구조와 장기의 기능을 연구하여 질병 치료의 기초를 마련합니다.",
+        "prerequisites": ["basic_biology"], "requiredStats": { "research": 6 }, "requiredFacility": "의무실",
+        "stages": [{ "description": "인체 골격 및 근육 구조 연구", "time": 180, "successRate": 0.8, "expPerMinute": 7 }],
+        "results": { "knowledge": ["knowledge_anatomy_1"] }
+    },
+    "sterilization": {
+        "name": "소독", "tags": ["의학"], "description": "상처나 의료 도구를 깨끗하게 하여 감염을 예방하는 방법을 연구합니다.",
+        "prerequisites": ["basic_chemistry"], "requiredStats": { "research": 10 }, "requiredFacility": "의무실",
+        "stages": [{ "description": "알코올 증류 및 소독 효과 검증", "time": 240, "successRate": 0.9, "expPerMinute": 9 }],
+        "results": { "unlockedRecipes": ["recipe_disinfectant"] }
+    },
+    "potion_brewing": {
+        "name": "포션 조제", "tags": ["의학", "연금술"], "description": "약초와 마법 재료를 섞어 상처를 빠르게 회복시키는 포션을 만듭니다.",
+        "prerequisites": ["alchemy_basics", "herbalism"], "requiredStats": { "research": 15, "art": 10 }, "requiredFacility": "연금술 실험실",
+        "stages": [{ "description": "치유 포션 레시피 개발", "time": 400, "successRate": 0.7, "expPerMinute": 16 }],
+        "results": { "unlockedRecipes": ["recipe_healing_potion_standard"] }
+    },
+    "surgery": {
+        "name": "외과 수술", "tags": ["의학"], "description": "몸을 절개하여 손상된 부위를 직접 치료하는 고도의 의료 기술입니다.",
+        "prerequisites": ["basic_anatomy", "sterilization"], "requiredStats": { "research": 20, "crafting": 15 }, "requiredFacility": "수술실",
+        "stages": [{ "description": "봉합 및 지혈 기술 훈련", "time": 600, "successRate": 0.6, "expPerMinute": 25 }],
+        "results": { "knowledge": ["knowledge_surgery_1"] }
+    },
+    "antibiotics": {
+        "name": "항생제", "tags": ["의학", "화학"], "description": "세균 감염을 치료하는 획기적인 약물을 곰팡이에서 발견하고 배양합니다.",
+        "prerequisites": ["advanced_chemistry", "basic_biology"], "requiredStats": { "research": 28 }, "requiredFacility": "미생물 연구실",
+        "stages": [{ "description": "페니실린 배양 및 정제", "time": 1200, "successRate": 0.5, "expPerMinute": 45 }],
+        "results": { "unlockedRecipes": ["recipe_antibiotics"] }
+    },
+    "cellular_regeneration": {
+        "name": "세포 재생", "tags": ["의학", "생물학"], "description": "손상된 세포가 스스로 복구하고 재생하는 원리를 연구하여 회복력을 극대화합니다.",
+        "prerequisites": ["genetics", "surgery"], "requiredStats": { "research": 35 }, "requiredFacility": "유전공학 연구소",
+        "stages": [{ "description": "재생 촉진 인자 연구", "time": 2000, "successRate": 0.4, "expPerMinute": 70 }],
+        "results": { "knowledge": ["knowledge_regeneration_1"] }
+    },
+    "magical_healing": {
+        "name": "치유 마법", "tags": ["의학", "마법"], "description": "마나를 사용하여 상처를 즉시 아물게 하는 기적과 같은 마법입니다.",
+        "prerequisites": ["mana_theory", "basic_anatomy"], "requiredStats": { "research": 25, "art": 25 }, "requiredFacility": "성소",
+        "stages": [{ "description": "생명 에너지와 마나의 공명 연구", "time": 1500, "successRate": 0.45, "expPerMinute": 60 }],
+        "results": { "knowledge": ["knowledge_healing_magic_1"] }
+    },
+    "gene_therapy": {
+        "name": "유전자 치료", "tags": ["의학", "유전학", "첨단기술"], "description": "결함이 있는 유전자를 교체하거나 복구하여 유전병을 근본적으로 치료합니다.",
+        "prerequisites": ["genetic_modification_crops", "cellular_regeneration"], "requiredStats": { "research": 50 }, "requiredFacility": "유전공학 연구소",
+        "stages": [{ "description": "유전자 편집 기술 개발", "time": 5000, "successRate": 0.2, "expPerMinute": 150 }],
+        "results": { "knowledge": ["knowledge_gene_therapy_1"] }
+    },
+    "life_extension": {
+        "name": "수명 연장", "tags": ["의학", "연금술", "첨단기술"], "description": "노화의 비밀을 파헤쳐 생명의 한계를 극복하는 방법을 연구합니다.",
+        "prerequisites": ["gene_therapy", "transmutation"], "requiredStats": { "research": 70, "art": 60 }, "requiredFacility": "불로장생 연구소",
+        "stages": [{ "description": "텔로미어 단축 억제 연구", "time": 15000, "successRate": 0.05, "expPerMinute": 300 }],
+        "results": { "knowledge": ["knowledge_immortality_1"] }
+    },
+    "animal_taming": {
+        "name": "동물 조련", "tags": ["축산"], "description": "야생 동물을 길들여 인간의 일을 돕게 만드는 방법을 연구합니다.",
+        "prerequisites": [], "requiredStats": { "charisma": 5 }, "requiredFacility": "야외",
+        "stages": [{ "description": "야생 동물과 교감 훈련", "time": 180, "successRate": 0.7, "expPerMinute": 8 }],
+        "results": { "knowledge": ["knowledge_taming_1"] }
+    },
+    "animal_husbandry": {
+        "name": "가축 사육", "tags": ["축산"], "description": "가축을 건강하게 기르고 번식시켜 고기, 우유, 털 등을 안정적으로 얻는 방법을 체계화합니다.",
+        "prerequisites": ["animal_taming"], "requiredStats": { "gardening": 5 }, "requiredFacility": "목장",
+        "stages": [{ "description": "사육 환경 개선", "time": 240, "successRate": 0.8, "expPerMinute": 10 }],
+        "results": { "unlockedBuildings": ["building_barn"] }
+    },
+    "selective_breeding_livestock": {
+        "name": "선택적 교배 (가축)", "tags": ["축산", "유전학"], "description": "더 많은 우유를 생산하거나 더 빨리 자라는 가축을 만들기 위해 우수한 개체를 교배합니다.",
+        "prerequisites": ["animal_husbandry", "genetics"], "requiredStats": { "research": 20 }, "requiredFacility": "목장",
+        "stages": [{ "description": "우량 품종 선별 및 교배", "time": 720, "successRate": 0.5, "expPerMinute": 30 }],
+        "results": { "knowledge": ["knowledge_selective_breeding_livestock_1"] }
+    },
+    "feed_production": {
+        "name": "사료 생산", "tags": ["축산", "농업"], "description": "가축의 성장을 촉진하는 영양가 높은 사료를 개발하고 대량 생산합니다.",
+        "prerequisites": ["fertilizer_production", "animal_husbandry"], "requiredStats": { "research": 15, "gardening": 10 }, "requiredFacility": "사료 공장",
+        "stages": [{ "description": "영양 배합 연구", "time": 480, "successRate": 0.6, "expPerMinute": 20 }],
+        "results": { "unlockedRecipes": ["recipe_livestock_feed"] }
+    },
+    "monster_domestication": {
+        "name": "마물 길들이기", "tags": ["축산", "마법"], "description": "지능이 있는 마물을 단순한 조련을 넘어, 동반자로서 길들이는 방법을 연구합니다.",
+        "prerequisites": ["animal_taming", "mana_theory"], "requiredStats": { "research": 25, "charisma": 20 }, "requiredFacility": "마물 우리",
+        "stages": [{ "description": "마물과의 정신적 교감 시도", "time": 1800, "successRate": 0.3, "expPerMinute": 65 }],
+        "results": { "knowledge": ["knowledge_monster_taming_1"] }
+    },
+    "genetic_modification_livestock": {
+        "name": "유전자 변형 가축", "tags": ["축산", "유전학", "첨단기술"], "description": "질병에 절대 걸리지 않거나, 황금알을 낳는 등 특별한 능력을 가진 가축을 만들어냅니다.",
+        "prerequisites": ["genetic_modification_crops", "selective_breeding_livestock"], "requiredStats": { "research": 45 }, "requiredFacility": "유전공학 연구소",
+        "stages": [{ "description": "가축 유전자 조작", "time": 3200, "successRate": 0.25, "expPerMinute": 95 }],
+        "results": { "knowledge": ["knowledge_gmo_livestock_1"] }
+    },
+    "rocketry": {
+        "name": "로켓 공학", "tags": ["최종"], "description": "대기권을 돌파하여 우주로 나아갈 수 있는 추진체를 개발합니다.",
+        "prerequisites": ["thermodynamics", "gunpowder_synthesis", "steel_frame_construction"], "requiredStats": { "research": 60, "crafting": 50 }, "requiredFacility": "로켓 발사장",
+        "stages": [{ "description": "다단 로켓 추진 이론 연구", "time": 10000, "successRate": 0.15, "expPerMinute": 220 }],
+        "results": { "knowledge": ["knowledge_rocketry_1"] }
+    },
+    "quantum_mechanics": {
+        "name": "양자 역학", "tags": ["최종", "기초과학"], "description": "물질의 근원을 이루는 미시 세계의 불확실하고 기묘한 법칙을 탐구합니다. 차원 이동의 이론적 기반이 됩니다.",
+        "prerequisites": ["advanced_mathematics", "aetherial_syphoning"], "requiredStats": { "research": 70, "art": 65 }, "requiredFacility": "양자 연구소",
+        "stages": [{ "description": "입자 가속기 실험", "time": 20000, "successRate": 0.1, "expPerMinute": 400 }],
+        "results": { "knowledge": ["knowledge_quantum_mechanics_1"] }
+    },
+    "space_exploration": {
+        "name": "우주 탐사", "tags": ["최종"], "description": "로켓에 생명 유지 장치를 탑재하여 다른 행성을 탐사하고 자원을 채취합니다.",
+        "prerequisites": ["rocketry", "automatons", "life_extension"], "requiredStats": { "research": 80, "mining": 70 }, "requiredFacility": "우주 센터",
+        "stages": [{ "description": "무인 탐사선 발사", "time": 25000, "successRate": 0.1, "expPerMinute": 500 }],
+        "results": { "knowledge": ["knowledge_space_exploration_1"] }
+    },
+    "dimensional_theory": {
+        "name": "차원 이론", "tags": ["최종", "마법"], "description": "우리가 사는 차원 외에 다른 차원이 존재할 가능성을 이론적으로 증명하고, 그 특성을 연구합니다.",
+        "prerequisites": ["quantum_mechanics", "spell_weaving"], "requiredStats": { "research": 85, "art": 80 }, "requiredFacility": "차원 연구소",
+        "stages": [{ "description": "고차원 수학 모델링", "time": 30000, "successRate": 0.08, "expPerMinute": 600 }],
+        "results": { "knowledge": ["knowledge_dimensional_theory_1"] }
+    },
+    "starship_propulsion": {
+        "name": "항성간 추진", "tags": ["최종"], "description": "광속에 가깝게 여행할 수 있는 워프 드라이브나 반물질 엔진과 같은 차세대 우주선 엔진을 개발합니다.",
+        "prerequisites": ["space_exploration", "aetherium_armor"], "requiredStats": { "research": 90, "crafting": 85 }, "requiredFacility": "우주선 건조대",
+        "stages": [{ "description": "워프 드라이브 개발", "time": 50000, "successRate": 0.05, "expPerMinute": 800 }],
+        "results": { "unlockedRecipes": ["recipe_starship_engine"] }
+    },
+    "warp_gate_construction": {
+        "name": "워프 게이트 건설", "tags": ["최종"], "description": "공간을 접어 두 지점을 즉시 연결하는 거대한 구조물을 건설합니다. 다른 세계로의 문이 열립니다.",
+        "prerequisites": ["dimensional_theory", "skyscrapers"], "requiredStats": { "research": 100, "construction": 100, "art": 100 }, "requiredFacility": "이계의 제단",
+        "stages": [{ "description": "차원 고정 및 게이트 개방", "time": 100000, "successRate": 0.01, "expPerMinute": 1000 }],
+        "results": { "knowledge": ["knowledge_the_end_is_the_beginning"] }
+    }
+  }
+}
