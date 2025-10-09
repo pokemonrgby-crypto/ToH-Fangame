@@ -7,6 +7,20 @@
     "placeable": false,
     "aestheticValue": 5
   },
+    "wood": {
+    "name": "나무",
+    "type": "material",
+    "grade": "common",
+    "basePrice": 2,
+    "description": "가장 기본적인 건축 및 제작 재료입니다."
+  },
+  "stone": {
+    "name": "돌",
+    "type": "material",
+    "grade": "common",
+    "basePrice": 3,
+    "description": "단단하고 흔한 건축 재료입니다."
+  },
   "sunpetal": {
     "name": "태양꽃잎",
     "description": "따뜻한 기운이 느껴지는 화사한 꽃잎. 포션의 재료로 사용된다.",
