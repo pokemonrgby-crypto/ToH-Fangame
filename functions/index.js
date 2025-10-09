@@ -27,6 +27,8 @@ const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이�
 const historyFns = require('./history')(admin, { onCall, HttpsError });
 const realEstateFns = require('./real_estate')(admin);
 const jobFns = require('./jobs')(admin, { GEMINI_API_KEY });
+const researchFunctions = require('./research'); // 연구 함수 추가
+const assets = require('./assets'); // 에셋 로더 추가
 const companyFunctions = require('./company'); // () 호출 제거
 const constructionFunctions = require('./construction');
 const landmarkFunctions = require('./landmark'); // 추가
@@ -795,7 +797,7 @@ Object.assign(exports, jobFns);
 
 Object.assign(exports, companyFunctions);
 Object.assign(exports, constructionFunctions);
-
+Object.assign(exports, researchFunctions);
 Object.assign(exports, landmarkFunctions);
 
 // === BEGIN: admin tools (search) ===
