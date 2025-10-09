@@ -110,43 +110,55 @@ ${JSON.stringify(availableJobs)}`;
         return { ok: true, jobs: recommended };
     });
 
-    const setCharacterJobAndStats = onCall({ region: 'us-central1' }, async (req) => {
-        const uid = req.auth?.uid;
-        if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+const setCharacterJobAndStats = onCall({ region: 'us-central1' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-        const { charId, jobName, stats } = req.data;
-        if (!charId || !jobName || !stats) throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+    const { charId, jobName, stats } = req.data;
+    if (!charId || !jobName || !stats) throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
 
-        const charRef = db.doc(`chars/${charId}`);
-        const charSnap = await charRef.get();
-        if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+    const charRef = db.doc(`chars/${charId}`);
+    const charSnap = await charRef.get();
+    if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
 
-        const charData = charSnap.data();
-        if (charData.owner_uid !== uid) {
-            throw new HttpsError('permission-denied', '캐릭터 소유자만 직업을 설정할 수 있습니다.');
-        }
-        if (charData.job && charData.job !== '백수') {
-             throw new HttpsError('failed-precondition', '이미 직업이 설정된 캐릭터입니다.');
-        }
+    const charData = charSnap.data();
+    if (charData.owner_uid !== uid) {
+        throw new HttpsError('permission-denied', '캐릭터 소유자만 직업을 설정할 수 있습니다.');
+    }
+    if (charData.job && charData.job !== '백수') {
+         throw new HttpsError('failed-precondition', '이미 직업이 설정된 캐릭터입니다.');
+    }
 
-        let totalCost = 0;
-        for (const key in stats) {
-            const level = stats[key]?.level || 0;
-            totalCost += level * (level + 1) / 2;
-        }
-
-        if (totalCost > 20) {
-            throw new HttpsError('invalid-argument', `사용한 스탯 포인트(${totalCost})가 20을 초과했습니다.`);
-        }
+    // ▼▼▼ [수정된 부분] ▼▼▼
+    // 포인트 계산 방식을 '새로 올린 스탯' 기준으로 변경
+    let totalCost = 0;
+    // 'stats'는 프론트에서 보낸 최종 스탯 목표치
+    for (const key in stats) {
+        const finalLevel = stats[key]?.level || 0;
+        // 캐릭터가 원래 가지고 있던 스탯 레벨
+        const originalLevel = charData.skills?.[key]?.level || 0;
         
-        await charRef.update({
-            job: jobName,
-            skills: stats,
-            updatedAt: Date.now()
-        });
+        // 새로 올린 레벨에 대해서만 비용을 계산
+        if (finalLevel > originalLevel) {
+            const costForFinal = finalLevel * (finalLevel + 1) / 2;
+            const costForOriginal = originalLevel * (originalLevel + 1) / 2;
+            totalCost += (costForFinal - costForOriginal);
+        }
+    }
+    // ▲▲▲ [수정된 부분] ▲▲▲
 
-        return { ok: true };
+    if (totalCost > 20) {
+        throw new HttpsError('invalid-argument', `사용한 스탯 포인트(${totalCost})가 20을 초과했습니다.`);
+    }
+    
+    await charRef.update({
+        job: jobName,
+        skills: stats,
+        updatedAt: Date.now()
     });
+
+    return { ok: true };
+});
 
     return { recommendJobs, setCharacterJobAndStats };
 };
