@@ -58,8 +58,10 @@ function normalizeAiOutput(parsed, userInput = '') {
 
     return { name, intro, narratives, skills };
 }
+
+
 module.exports = (admin, { GEMINI_API_KEY }) => {
-  const db = admin.firestore();
+    const db = admin.firestore();
 
     const createChar = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
@@ -124,7 +126,6 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         logger.info(`New character created by ${uid}: ${charRef.id}`);
         return { ok: true, id: charRef.id };
     });
-  
 
   const getUserCharacters = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
