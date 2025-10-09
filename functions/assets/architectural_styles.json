@@ -1,0 +1,52 @@
+[
+  {
+    "id": "gothic",
+    "name": "고딕",
+    "description": "첨탑, 아치, 스테인드글라스가 특징인 웅장하고 수직적인 양식입니다."
+  },
+  {
+    "id": "romanesque",
+    "name": "로마네스크",
+    "description": "두꺼운 벽과 둥근 아치가 특징인 중후하고 견고한 양식입니다."
+  },
+  {
+    "id": "baroque",
+    "name": "바로크",
+    "description": "화려한 장식과 극적인 효과를 강조하는 웅장하고 역동적인 양식입니다."
+  },
+  {
+    "id": "brutalism",
+    "name": "브루탈리즘",
+    "description": "노출 콘크리트를 사용하여 거칠고 육중한 느낌을 주는 현대 건축 양식입니다."
+  },
+  {
+    "id": "art_deco",
+    "name": "아르데코",
+    "description": "기하학적인 문양과 대칭적인 디자인이 특징인 화려하고 장식적인 양식입니다."
+  },
+  {
+    "id": "curtain_wall",
+    "name": "커튼 월",
+    "description": "건물 외부를 유리나 금속 패널로 마감하여 현대적이고 개방적인 느낌을 줍니다."
+  },
+  {
+    "id": "art_nouveau",
+    "name": "아르누보",
+    "description": "자연에서 영감을 받은 곡선과 유기적인 형태를 사용하는 예술적인 양식입니다."
+  },
+  {
+    "id": "hightech",
+    "name": "하이테크",
+    "description": "건물의 구조와 설비를 의도적으로 노출시켜 기술적인 미학을 강조합니다."
+  },
+  {
+    "id": "deconstructivism",
+    "name": "해체주의",
+    "description": "기존의 건축 원리를 해체하고 파편화된 형태를 사용하여 예측 불가능한 공간을 만듭니다."
+  },
+  {
+    "id": "authoritarian",
+    "name": "권위주의",
+    "description": "거대한 규모와 대칭을 통해 권위와 질서를 강조하는 양식입니다."
+  }
+]
