@@ -3,6 +3,8 @@
 // 탐험 v2: 주사위/프리롤/프롬프트/로그를 서버로 이전
 
 const { Timestamp, FieldValue } = require('firebase-admin/firestore');
+const fs = require('fs').promises;
+const path = require('path');
 
 // ---- 테이블(클라 explore.js 값을 서버로 포팅) ----
 const EVENT_TABLE = {
@@ -127,6 +129,16 @@ function betterRarity(a, b){
 
 // ---- 유틸 ----
 const STAMINA_BASE = 10;
+// [추가] 직업 데이터 로더
+let _jobsCache = null;
+async function _loadJobs() {
+    if (_jobsCache) return _jobsCache;
+    const p = path.join(__dirname, 'assets/jobs.json');
+    const raw = await fs.readFile(p, 'utf8');
+    _jobsCache = JSON.parse(raw);
+    return _jobsCache;
+}
+
 function makePrerolls(n=50, mod=1000){
   return Array.from({length:n}, ()=> Math.floor(Math.random()*mod)+1);
 }
@@ -253,7 +265,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const startExploreV2 = onCall({ secrets: [GEMINI_API_KEY] }, async (req) => {
       const uid = req.auth?.uid;
       if(!uid) throw new HttpsError('unauthenticated', '로그인이 필요해');
-      const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart=10 } = req.data||{};
+      const { charId, worldId, worldName, siteId, siteName, difficulty='normal' } = req.data||{};
       if(!charId || !worldId || !siteId) throw new HttpsError('invalid-argument','필수값 누락');
 
       const qs = await db.collection('explore_runs')
@@ -262,6 +274,20 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         .where('status','==','ongoing')
         .limit(1).get();
       if(!qs.empty) throw new HttpsError('failed-precondition','이미 진행 중인 탐험이 있어');
+
+      const charSnap = await db.doc(`chars/${charId}`).get();
+      if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+      const charData = charSnap.data();
+
+      // 직업 보너스 계산
+      let staminaStart = STAMINA_BASE;
+      if (charData.job) {
+          const allJobs = await _loadJobs();
+          const jobData = allJobs.find(j => j.name === charData.job);
+          if (jobData?.abilities?.stamina_buff) {
+              staminaStart = Math.floor(staminaStart * (1 + jobData.abilities.stamina_buff));
+          }
+      }
 
       const payload = {
         charRef: `chars/${charId}`,
@@ -327,6 +353,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       '## 플레이어 캐릭터 컨텍스트',
       `- 출신 세계관: ${character?.world_id || '알 수 없음'}`,
       `- 캐릭터 이름: ${character?.name || '-'}`,
+      `- 캐릭터 직업: ${character?.job || '백수'}`,
       `- 캐릭터 핵심 서사: ${latestNarrative.long || character.summary || '(없음)'}`,
       `- 캐릭터 과거 요약: ${previousNarrativeSummary}`,
       `- 보유 스킬: ${skillsAsText}`,
@@ -387,8 +414,11 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       const pend = run.pending_choices;
       if(!pend) throw new HttpsError('failed-precondition','대기 선택 없음');
+      
+      const charId = String(run.charRef || '').replace(/^chars\//, '');
+      const charSnap = await tx.get(db.doc(`chars/${charId}`));
+      const character = charSnap.exists ? charSnap.data() : {};
 
-      // [PATCH] 레거시/빈 선택 방어 + 친절한 에러 메시지
       const inferDiceFromOutcome = (oc = {}) => {
         const t = String(oc.event_type || oc.type || '').trim();
         if (!t) return null;
@@ -403,14 +433,13 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
       const chosenOutcome = pend.choice_outcomes?.[idx] || {};
       const chosenDice =
         pend.diceResults?.[idx] ||
-        pend.dice_results?.[idx] || // [호환] 예전 스키마
+        pend.dice_results?.[idx] || 
         inferDiceFromOutcome(chosenOutcome);
 
       if (!chosenDice) {
         logger.warn('[advApplyChoiceV2] chosenDice missing (run may be old)', { runId, idx, pendKeys: Object.keys(pend||{}) });
         throw new HttpsError('failed-precondition', '선택 데이터가 오래돼서 적용할 수 없어. 상단의 "계속 탐험"을 눌러 새 턴을 만들자!');
       }
-
 
       const eventKind = chosenDice.eventKind;
 
@@ -485,7 +514,14 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
           });
         }
         default: {
-          const delta = Number(chosenDice?.deltaStamina || 0);
+          let delta = Number(chosenDice?.deltaStamina || 0);
+          if (chosenDice.eventKind === 'risk' && character.job) {
+              const allJobs = await _loadJobs();
+              const jobData = allJobs.find(j => j.name === character.job);
+              if (jobData?.abilities?.risk_reduction) {
+                  delta = Math.floor(delta * (1 - jobData.abilities.risk_reduction));
+              }
+          }
           const staminaNow = Math.max(0, (run.stamina||0) + delta);
           updates.stamina = staminaNow;
           
@@ -619,7 +655,30 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         
         const turnBonusDamage = Math.floor((battle.turn || 0) * 0.1 * baseRange.max);
         const expBonusDamage = Math.floor(playerExp / 2500);
-        const finalMaxDamage = baseRange.max + turnBonusDamage + expBonusDamage;
+        let finalMaxDamage = baseRange.max + turnBonusDamage + expBonusDamage;
+
+        // --- [수정] 근력 스탯 및 직업 보너스 적용 ---
+        const allJobs = await _loadJobs();
+        const jobData = allJobs.find(j => j.name === character.job);
+
+        if (jobData) {
+            // 직업 고유 능력 보너스 (곱연산)
+            if (jobData.abilities?.damage_bonus?.multiplicative) {
+                finalMaxDamage *= jobData.abilities.damage_bonus.multiplicative;
+            }
+            // 직업 고유 능력 보너스 (합연산)
+            if (jobData.abilities?.damage_bonus?.additive) {
+                finalMaxDamage += jobData.abilities.damage_bonus.additive;
+            }
+            // 근력 스탯 보너스 (주 스탯 또는 부 스탯이 근력일 경우)
+            if (jobData.stat1 === 'strength' || jobData.stat2 === 'strength') {
+                const strength = character.stats?.strength || 0;
+                const strengthBonus = Math.floor(strength / 5); // 근력 5당 추가 데미지 1
+                finalMaxDamage += strengthBonus;
+            }
+        }
+        finalMaxDamage = Math.round(finalMaxDamage);
+        // --- [수정 끝] ---
 
         const tierBump = { trash:0, normal:0, elite:1, boss:2 }[run?.pending_battle?.enemy?.tier || 'normal'] || 0;
         const maxDamageClamped = finalMaxDamage + tierBump;
@@ -650,7 +709,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const userPrompt = [
           '## 전투 컨텍스트',
           `- 장소 난이도: ${run.difficulty}`,
-          `- 플레이어: ${character.name} (현재 HP: ${battle.playerHp})`,
+          `- 플레이어: ${character.name} (직업: ${character.job || '백수'}, 현재 HP: ${battle.playerHp})`,
           `- 적: ${battle.enemy.name} (등급: ${battle.enemy.tier}, 현재 HP: ${battle.enemy.hp})`,
           `- 적 보유 스킬:\n${enemySkillsText || '(없음)'}`,
           '',
