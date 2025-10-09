@@ -1,16 +1,15 @@
 // /public/js/tabs/create.js
-// 생성 폼: 개수/쿨타임 검사 → AI 호출(서버 프록시) → (전처리) → Firestore 직접 저장
+// 생성 폼: 개수/쿨타임 검사 → 백엔드 함수 호출 → Firestore 저장
 
-import { auth, db, fx } from '../api/firebase.js';
+import { auth } from '../api/firebase.js';
 import { fetchWorlds, getMyCharCount } from '../api/store.js';
 import { showToast } from '../ui/toast.js';
-import { genCharacterFlash2 } from '../api/ai.js';
-
+// [수정] genCharacterFlash2 대신 백엔드 함수 호출 래퍼를 import합니다.
+import { createCharSecure } from '../api/secure-char.js';
 
 const LS_KEY_CREATE_LAST_AT = 'charCreateLastAt';
 const MAX_CHAR_COUNT = 10;
 const CREATE_COOLDOWN_SEC = 300;
-const PROMPT_DOC_ID = 'char_create';
 const DEBUG = !!localStorage.getItem('toh_debug_ai');
 
 function nowSec(){ return Math.floor(Date.now()/1000); }
@@ -62,115 +61,6 @@ function resolveWorldImg(img){
   if(/^https?:\/\//.test(img)) return img;
   if(img.startsWith('/')) return img;
   return `/assets/${img}`;
-}
-function stripUndefined(x){
-  if(Array.isArray(x)) return x.map(stripUndefined);
-  if(x && typeof x==='object'){
-    const y={};
-    for(const k of Object.keys(x)){
-      const v = x[k];
-      if(v === undefined) continue;
-      y[k] = stripUndefined(v);
-    }
-    return y;
-  }
-  return x;
-}
-function debugBox(){ return document.getElementById('aiDebug'); }
-function debugPrint(t){
-  if(!DEBUG) return;
-  const b = debugBox(); if(!b) return;
-  b.textContent += `[${new Date().toLocaleTimeString()}] ${t}\n`;
-}
-
-// Firestore 직접 저장
-async function saveCharDirect(payload){
-  const u = auth.currentUser;
-  if(!u) throw new Error('로그인이 필요해');
-  const docRef = await fx.addDoc(fx.collection(db,'chars'), { owner_uid: u.uid, ...payload });
-  return { id: docRef.id };
-}
-
-// 제목 생성: AI가 title을 주지 않으므로 안전 파생
-function deriveTitle(name, worldName, out){
-  const s = String(out?.narrative_short||'').trim();
-  if(s) return s.slice(0, 40);
-  return `${name} — ${worldName}`.slice(0, 40);
-}
-
-// AI 출력 → chars 문서 전처리
-function buildCharPayloadFromAi(out, world, name, desc){
-  const safe = (s, n) => String(s ?? '').slice(0, n);
-
-  // 스킬
-  const skills = Array.isArray(out?.skills) ? out.skills : [];
-  const abilities = skills.slice(0, 4).map(s => ({
-    name:      safe(s?.name,   24),
-    desc_soft: safe(s?.effect, 160)
-  }));
-  while(abilities.length < 4) abilities.push({ name:'', desc_soft:'' });
-
-  // [수정] AI가 보내준 narratives 배열에서 첫 번째 서사를 가져오도록 수정
-  const firstNarrative = (Array.isArray(out?.narratives) && out.narratives[0]) ? out.narratives[0] : {};
-  const nid = 'n' + Date.now();
-  const narrative = {
-    id: nid,
-    title: safe(firstNarrative.title || deriveTitle(name, world?.name||world?.id||'world', out), 60),
-    long:  safe(firstNarrative.long, 2000),
-    short: safe(firstNarrative.short, 200),
-    encounters: [],
-    createdAt: Date.now(),
-    updatedAt: Date.now()
-  };
-  
-  const payload = {
-    world_id: world?.id || world?.name || 'world',
-    name: safe(name, 20),
-
-    // 소개 + 서사(새 구조)
-    summary: safe(out?.intro, 600),
-    narratives: [ narrative ],
-    narrative_latest_id: nid,
-
-    // 스킬
-    abilities_all: abilities,
-    abilities_equipped: [0,1],
-    items_equipped: [],
-
-        // [수정] 신규 캐릭터 생성 시 모든 스킬을 0으로 초기화
-    skills: {
-        gardening: 0,
-        art: 0,
-        construction: 0,
-        speech: 0,
-        mining: 0,
-        cooking: 0,
-        processing: 0,
-        crafting: 0,
-        research: 0
-    },
-
-
-    // 썸네일(없으면 빈 값 유지)
-    image_url: '',
-
-    // 전투/탐험/경험치(기본값)
-    elo: 1000,
-    likes_weekly: 0,
-    likes_total: 0,
-    exp: 0, // 추가됨
-
-    // 입력 정보 기록
-    input_info: {
-      name: safe(name, 20),
-      desc: safe(desc, 1000),
-      world_name: safe(world?.name || world?.id || 'world', 40)
-    },
-
-    createdAt: Date.now()
-  };
-
-  return stripUndefined(payload);
 }
 
 export async function showCreate(){
@@ -256,7 +146,6 @@ export async function showCreate(){
           <div style="display:flex; gap:8px; align-items:center;">
             <button id="btnCreate" class="btn primary">생성</button>
             <div id="createHint" style="color:var(--dim); font-size:13px;">AI 호출은 서버에서 처리돼. 생성 시작 시 쿨타임이 걸려.</div>
-
           </div>
         </form>
       </div>
@@ -295,7 +184,7 @@ export async function showCreate(){
 
       if(!name){ showToast('이름을 입력해줘'); return; }
       if(name.length > 20){ showToast('이름은 20자 이하'); return; }
-      if(!desc){ showToast('설정을 입력해줘'); descEl.focus(); return; }  // ← 이 줄 추가
+      if(!desc){ showToast('설정을 입력해줘'); descEl.focus(); return; }
       if(desc.length > 1000){ showToast('설명은 1000자 이하'); return; }
 
 
@@ -303,37 +192,37 @@ export async function showCreate(){
 
       const btn = document.getElementById('btnCreate');
       btn.disabled = true;
+      btn.textContent = '서버에서 생성 중...';
 
       try{
         const userInput = `이름: ${name}\n설정:\n${desc}`;
-        const out = await genCharacterFlash2({
-          world: {
-          id: w.id,
-          name: w.name,
-          summary: w.summary || w.intro || '',
-          detail: (w.detail && (w.detail.lore_long || w.detail.lore)) || w.detail || w.summary || '',
-          rawJson: w
-        },
-        userInput,
-        injectionGuard: ''
-      });
+        
+        // 서버 함수에 필요한 모든 정보를 payload로 전달합니다.
+        const payload = {
+            world: {
+                id: w.id,
+                name: w.name,
+                summary: w.summary || w.intro || '',
+                detail: (w.detail && (w.detail.lore_long || w.detail.lore)) || '',
+                rawJson: w
+            },
+            userInput,
+            name,
+            desc
+        };
 
-
-        const payload = buildCharPayloadFromAi(out, w, name, desc);
-        if(DEBUG){
-          const box = debugBox();
-          if(box){
-            box.textContent = 'AI out:\n' + JSON.stringify(out, null, 2) + '\n\nPayload:\n' + JSON.stringify(payload, null, 2);
-          }
-        }
-        const res = await saveCharDirect(payload);
+        const res = await createCharSecure(payload);
+        
         showToast('캐릭터 생성 완료!');
         location.hash = `#/char/${res.id}`;
       }catch(e){
         console.error('[create] error', e);
         showToast('생성에 실패했어: ' + (e?.message || e?.code || 'unknown'));
+        // 실패 시 쿨타임 초기화 (선택적)
+        localStorage.removeItem(LS_KEY_CREATE_LAST_AT);
       }finally{
         btn.disabled = false;
+        btn.textContent = '생성';
       }
     };
 
