@@ -2,7 +2,7 @@ name: Deploy Firebase Functions
 
 on:
   push:
-    branches: [ "main" ]  # 필요하면 브랜치 바꿔도 돼
+    branches: [ "main" ]
 
 jobs:
   deploy-functions:
@@ -11,6 +11,9 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        # [수정] 변경된 파일을 비교하기 위해 fetch-depth 추가
+        with:
+          fetch-depth: 2
 
       - name: Use Node.js 20
         uses: actions/setup-node@v4
@@ -28,14 +31,99 @@ jobs:
           else
             npm i
           fi
+
+      # [추가] 변경된 함수 목록 생성
+      - name: Get changed functions
+        id: changed_functions
+        run: |
+          echo "Determining changed functions..."
+          # main 브랜치의 직전 커밋과 현재 커밋 간의 변경된 파일 목록을 가져옵니다.
+          CHANGED_FILES=$(git diff --name-only HEAD^ HEAD)
+          echo "Changed files:"
+          echo "$CHANGED_FILES"
+
+          # functions 디렉토리 내의 변경사항만 필터링합니다.
+          FUNC_CHANGES=$(echo "$CHANGED_FILES" | grep '^functions/' | awk -F/ '{print $2}')
           
+          # package.json이나 index.js 같은 핵심 파일이 변경되면 모든 함수를 배포합니다.
+          if echo "$FUNC_CHANGES" | grep -q -E '^(index\.js|package\.json|package-lock\.json)$'; then
+            echo "Core file changed. Deploying all functions."
+            echo "deploy_args=--only functions" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          # 변경된 파일이 없으면 배포를 건너뜁니다.
+          if [ -z "$FUNC_CHANGES" ]; then
+            echo "No function changes detected. Skipping deployment."
+            echo "deploy_args=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          # 파일명과 함수 그룹명을 매핑합니다.
+          # 키: 파일명, 값: firebase deploy에서 사용할 함수 이름들 (쉼표로 구분)
+          declare -A FUNC_MAP
+          FUNC_MAP["battle/index.js"]="runBattleV2,runBattleTextOnly"
+          FUNC_MAP["character.js"]="createChar,getUserCharacters"
+          FUNC_MAP["cleanup.ts"]="unlockExpired"
+          FUNC_MAP["encounter_v2.js"]="startEncounter"
+          FUNC_MAP["explore_v2.js"]="startExploreV2,advPrepareNextV2,advApplyChoiceV2,endExploreV2,advBattleActionV2,advBattleFleeV2"
+          FUNC_MAP["farm.js"]="buySeed,getFarmPlotDetail,plantSeedOnTile,harvestTiles,cancelPlanting"
+          FUNC_MAP["guild.js"]="createGuild,joinGuild,cancelGuildRequest,approveGuildJoin,rejectGuildJoin,deleteGuild,leaveGuild,kickFromGuild,setGuildRole,transferGuildOwner,setGuildStaff,upgradeGuildLevel,investGuildStat,getGuildBuffsForChar,donateGuildCoins,assignHonoraryRank,unassignHonoraryRank,getGuildLevelCost,adminCleanupOrphanedMembers"
+          FUNC_MAP["history.js"]="getUserBattleHistory"
+          FUNC_MAP["inventory.js"]="toggleItemLock,appraiseItem,usePromptItem"
+          FUNC_MAP["land.js"]="getLandDetail,buyMicroPlot,sellMicroPlot"
+          FUNC_MAP["mail.js"]="sendMail,claimMail"
+          FUNC_MAP["maintenance.js"]="setMaintenanceStatus,onMaintenanceChange"
+          FUNC_MAP["match.js"]="requestMatch"
+          FUNC_MAP["match.ts"]="requestMatch,cancelMatch" # ts 파일도 js로 컴파일되므로 변경 감지에 포함
+          FUNC_MAP["pool.ts"]="syncCharPool,onCharDeleteCleanup"
+          FUNC_MAP["raid.js"]="startRaid,getActiveRaidBoss,getRaidRankings,findRandomPartyForRaid,findGuildPartyForRaid,adminSetupNewRaidBoss"
+          FUNC_MAP["real_estate.js"]="assignCharacterToFacility,createFarmland,startConstruction"
+          FUNC_MAP["skill.js"]="generateNewSkill,confirmAddSkill,initiateEnhanceSkill,confirmEnhanceSkill"
+          FUNC_MAP["stockmarket.js"]="updateStockMarket,buyStock,sellStock,subscribeToStock,createGuildStock,distributeDividends,planDailyStockEvents,adminCreateStock,adminCreateManualEvent,processWorldEvents,adminDelistAllAndRefund,nudgeBluechipsDaily,adminCreateRandomEvent"
+          FUNC_MAP["trade.js"]="tradeCreateListing,tradeCancelListing,tradeGetListingDetail,tradeListPublic,tradeBuy,tradeListMyListings,auctionCreate,auctionListPublic,auctionListMyListings,auctionGetDetail,auctionBid,auctionSettle,auctionListMyBids,adminSettleAllEndedAuctions"
+
+          DEPLOY_LIST=""
+          for FILE in $FUNC_CHANGES; do
+            if [[ -n "${FUNC_MAP[$FILE]}" ]]; then
+              if [[ -n "$DEPLOY_LIST" ]]; then
+                DEPLOY_LIST="$DEPLOY_LIST,"
+              fi
+              DEPLOY_LIST="$DEPLOY_LIST${FUNC_MAP[$FILE]}"
+            else
+              # 매핑에 없는 파일이 변경되면 안전하게 전체 배포
+              echo "Unmapped file changed: $FILE. Deploying all functions."
+              echo "deploy_args=--only functions" >> $GITHUB_OUTPUT
+              exit 0
+            fi
+          done
+          
+          # 중복된 함수 이름 제거
+          UNIQUE_LIST=$(echo "$DEPLOY_LIST" | tr ',' '\n' | sort -u | tr '\n' ',' | sed 's/,$//')
+
+          if [ -z "$UNIQUE_LIST" ]; then
+            echo "No deployable function changes detected."
+            echo "deploy_args=" >> $GITHUB_OUTPUT
+          else
+            echo "Functions to deploy: $UNIQUE_LIST"
+            # deploy 인자 생성: functions:함수1,functions:함수2 ...
+            ARGS=$(echo "$UNIQUE_LIST" | awk -F, '{for(i=1;i<=NF;i++) printf "functions:%s%s", $i, (i==NF ? "" : ",")}')
+            echo "deploy_args=--only $ARGS" >> $GITHUB_OUTPUT
+          fi
+
       - name: Configure GCP credentials
         run: |
           echo '${{ secrets.GCP_SA_KEY }}' > ${HOME}/gcloud-key.json
           echo "GOOGLE_APPLICATION_CREDENTIALS=${HOME}/gcloud-key.json" >> $GITHUB_ENV
 
+      # [수정] deploy_args를 사용하여 동적으로 배포 명령어 실행
       - name: Deploy to Firebase Functions
+        if: steps.changed_functions.outputs.deploy_args != ''
         run: |
           firebase --version
-          firebase deploy --only functions --project tale-of-heros---fangame --non-interactive --force
+          firebase deploy ${{ steps.changed_functions.outputs.deploy_args }} --project tale-of-heros---fangame --non-interactive
 
+      # [추가] 배포를 건너뛸 경우 메시지 출력
+      - name: Skip Deployment
+        if: steps.changed_functions.outputs.deploy_args == ''
+        run: echo "No functions were deployed because no changes were detected."
