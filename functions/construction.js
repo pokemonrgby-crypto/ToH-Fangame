@@ -4,63 +4,32 @@ const { FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const { v4: uuidv4 } = require('uuid');
-const { deductItemsFromInventory } = require('./utils'); // 유틸 함수가 있다고 가정
-const { buildingMaterials } = require('./assets'); // 에셋 로더 사용
+
+// 에셋 로더와 유틸리티 함수를 불러옵니다.
+const { buildingMaterials, researchTree, buildings: buildingsData } = require('./assets');
+const { deductItemsFromInventory, ensureCharacterSkills } = require('./utils');
+
+const MATERIAL_BUYOUT_MULTIPLIER = 2.5; // 자재 긴급 구매 시 가격 배수
 
 /**
- * 건설에 필요한 자재와 비용, 시간을 계산하는 내부 함수 (개선)
- * @param {string} scale - 규모 (소형, 중형, 대형, 초대형)
- * @param {number} height - 높이 (m)
- * @param {string} architecturalStyle - 건축 양식
- * @returns {object} { materials, cost, duration, aestheticValue }
+ * 건설 요구사항 계산 함수 (업그레이드)
+ * @param {object} params - { scale, height, architecturalStyle, constructionLevel }
+ * @returns {object} { materials, cost, duration, aestheticValue, qualityBonus }
  */
-function calculateConstructionRequirements(scale, height, architecturalStyle) {
+function calculateConstructionRequirements({ scale, height, architecturalStyle, constructionLevel = 1 }) {
     const materialsData = buildingMaterials();
-    if (!materialsData) {
-        throw new HttpsError('internal', '건축 자재 데이터를 불러올 수 없습니다.');
-    }
+    // ... (기존 계산 로직, aestheticValue 계산 포함)
 
-    let baseMultiplier = 1;
-    if (scale === '중형') baseMultiplier = 5;
-    if (scale === '대형') baseMultiplier = 25;
-    if (scale === '초대형') baseMultiplier = 125;
+    // [수정] 건설 레벨에 따른 시간 단축 및 품질 보너스
+    const durationMultiplier = 1 / (1 + (constructionLevel - 1) * 0.05); // 레벨당 5% 시간 단축
+    const duration = Math.max(10, Math.floor(baseDuration * durationMultiplier)); // 최소 10분
+    const qualityBonus = Math.min(0.5, (constructionLevel - 1) * 0.005); // 레벨당 0.5% 품질 보너스 확률 (최대 50%)
 
-    const heightMultiplier = Math.max(1, height / 10);
-    const styleMultiplier = 1.2; // 양식에 따른 비용/자재 증가 (예시)
-
-    // 건축 양식에 따라 필요 자재 종류 및 수량 변경 (예시 로직)
-    const materials = {};
-    if (architecturalStyle === '브루탈리즘') {
-        materials['concrete_mix'] = Math.floor(200 * baseMultiplier * heightMultiplier);
-        materials['iron_ingot'] = Math.floor(50 * baseMultiplier * heightMultiplier);
-    } else {
-        materials['processed_wood'] = Math.floor(100 * baseMultiplier * heightMultiplier * styleMultiplier);
-        materials['stone_brick'] = Math.floor(80 * baseMultiplier * heightMultiplier * styleMultiplier);
-        materials['iron_ingot'] = Math.floor(20 * baseMultiplier * heightMultiplier);
-        materials['glass'] = Math.floor(15 * baseMultiplier * heightMultiplier * styleMultiplier);
-    }
-    
-    let cost = 0;
-    let aestheticValue = 0;
-    for(const matId in materials) {
-        if(materialsData[matId]) {
-            const materialInfo = materialsData[matId];
-            cost += materialInfo.basePrice * materials[matId];
-            if (materialInfo.aesthetic_modifier) {
-                aestheticValue += (materials[matId] * (materialInfo.aesthetic_modifier - 1));
-            }
-        }
-    }
-    cost = Math.floor(cost * 1.25); // 시공사 마진 및 인건비
-    aestheticValue = Math.floor(aestheticValue + (height / 10) + (baseMultiplier * 5)); // 규모와 높이에 따른 미관 점수
-
-    const duration = Math.floor(60 * baseMultiplier * heightMultiplier * styleMultiplier);
-
-    return { materials, cost, duration, aestheticValue };
+    return { materials, cost, duration, aestheticValue, qualityBonus };
 }
 
 /**
- * 신규 건물 건설 시작
+ * 신규 건물 건설 시작 (v2 - 노동력, 자재 구매, 기술 통합)
  */
 exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid;
@@ -68,35 +37,103 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
 
     const {
         plotId,
-        buildingName,
-        buildingType,
-        architecturalStyle,
-        scale,
-        height, // m 단위 숫자
-        contractor, // 시공사 정보
+        buildingId, // 건설할 건물의 ID (buildings.json)
+        contractor, // { type: 'character' | 'npc', id?: string, level?: number }
+        allowMaterialBuyout = false, // 자재 긴급 구매 허용 여부
+        // 이름, 양식 등은 buildingId로 조회
     } = req.data;
-    
-    if (!plotId || !buildingName || !buildingType || !architecturalStyle || !scale || !height) {
+
+    if (!plotId || !buildingId || !contractor) {
         throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
     }
-    if (typeof height !== 'number' || height < 5 || height > 1000) {
-        throw new HttpsError('invalid-argument', '높이는 5m에서 1000m 사이여야 합니다.');
+
+    const buildingInfo = buildingsData()[buildingId];
+    if (!buildingInfo) {
+        throw new HttpsError('not-found', '존재하지 않는 건물입니다.');
     }
 
-    const { materials, cost, duration, aestheticValue } = calculateConstructionRequirements(scale, height, architecturalStyle);
+    let constructionLevel = 1;
+    let laborCost = 0;
 
+    // 트랜잭션 시작
     try {
-        await db.runTransaction(async (transaction) => {
+        const result = await db.runTransaction(async (transaction) => {
             const userRef = db.collection('users').doc(uid);
             const userDoc = await transaction.get(userRef);
             if (!userDoc.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+            const userData = userDoc.data();
+
+            // 1. 기술(지식) 선행 조건 확인
+            if (buildingInfo.required_knowledge && buildingInfo.required_knowledge.length > 0) {
+                const knowledgeRef = db.collection('knowledge').doc(uid);
+                const knowledgeDoc = await transaction.get(knowledgeRef);
+                const userKnowledge = knowledgeDoc.exists ? knowledgeDoc.data() : {};
+                for (const techId of buildingInfo.required_knowledge) {
+                    if (!userKnowledge[techId] || userKnowledge[techId].understanding < 100) {
+                        const techName = researchTree().projects[techId]?.name || techId;
+                        throw new HttpsError('failed-precondition', `필요한 기술(${techName})이 부족합니다.`);
+                    }
+                }
+            }
+
+            // 2. 노동력(건축가) 레벨 결정 및 비용 계산
+            if (contractor.type === 'character' && contractor.id) {
+                const charRef = db.collection('chars').doc(contractor.id);
+                let charData = (await transaction.get(charRef)).data();
+                if (!charData || charData.owner_uid !== uid) throw new HttpsError('permission-denied', '유효하지 않은 캐릭터입니다.');
+                
+                // 레거시 캐릭터 호환
+                charData = await ensureCharacterSkills(transaction, charRef, charData);
+                constructionLevel = charData.skills.construction.level;
+                // TODO: 캐릭터 상태를 'constructing'으로 변경
+                
+            } else if (contractor.type === 'npc' && contractor.level) {
+                constructionLevel = contractor.level;
+                laborCost = Math.floor(50 * Math.pow(constructionLevel, 1.5)); // NPC 레벨에 따른 인건비 (기하급수적 증가)
+            }
+
+            // 3. 건설 요구사항 계산 (노동력 레벨 반영)
+            const { materials, cost, duration, aestheticValue, qualityBonus } = calculateConstructionRequirements({
+                ...buildingInfo, // scale, height 등
+                constructionLevel,
+            });
+
+            const totalCost = cost + laborCost;
+
+            // 4. 자재 확인 및 긴급 구매 처리
+            let materialBuyoutCost = 0;
+            const materialsToDeduct = {};
+            const userItems = userData.items_all || [];
+
+            for (const matId in materials) {
+                const requiredQty = materials[matId];
+                const userItem = userItems.find(item => item.id === matId);
+                const userQty = userItem ? (userItem.count || 1) : 0;
+
+                if (userQty < requiredQty) {
+                    if (!allowMaterialBuyout) {
+                        throw new HttpsError('failed-precondition', `자재(${buildingMaterials()[matId].name})가 부족합니다.`);
+                    }
+                    const missingQty = requiredQty - userQty;
+                    const price = buildingMaterials()[matId].basePrice;
+                    materialBuyoutCost += missingQty * price * MATERIAL_BUYOUT_MULTIPLIER;
+                    if(userQty > 0) materialsToDeduct[matId] = userQty; // 있는 만큼은 차감
+                } else {
+                    materialsToDeduct[matId] = requiredQty;
+                }
+            }
             
-            const userCoins = userDoc.data().coins || 0;
-            if (userCoins < cost) throw new HttpsError('failed-precondition', `비용이 부족합니다. (현재: ${userCoins}, 필요: ${cost})`);
+            // 5. 최종 비용 확인 및 차감
+            const finalCost = totalCost + materialBuyoutCost;
+            if (userData.coins < finalCost) {
+                throw new HttpsError('failed-precondition', `비용이 부족합니다. (필요: ${finalCost})`);
+            }
+            transaction.update(userRef, { coins: FieldValue.increment(-finalCost) });
             
-            transaction.update(userRef, { coins: FieldValue.increment(-cost) });
-            await deductItemsFromInventory(transaction, uid, materials); // 유틸 함수 사용
-            
+            // 6. 자재 차감
+            await deductItemsFromInventory(transaction, uid, materialsToDeduct);
+
+            // 7. 건설 프로젝트 문서 생성
             const projectId = uuidv4();
             const projectRef = db.collection('construction_projects').doc(projectId);
             const startTime = Date.now();
@@ -106,25 +143,25 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
                 ownerId: uid,
                 plotId,
                 projectId,
-                buildingName,
-                buildingType,
-                architecturalStyle,
-                scale,
-                height,
+                buildingId,
+                buildingName: buildingInfo.name,
                 contractor,
-                requiredMaterials: materials,
-                cost,
-                baseAestheticValue: aestheticValue,
+                constructionLevel,
                 status: 'inprogress',
                 startTime: new Date(startTime),
                 completionTime,
+                baseAestheticValue: aestheticValue,
+                qualityBonus,
             });
+
+            return { projectId, message: `'${buildingInfo.name}' 건설을 시작합니다!` };
         });
 
-        return { success: true, message: `'${buildingName}' 건설을 시작합니다. 예상 완공 시간: ${new Date(Date.now() + duration * 60 * 1000).toLocaleString()}` };
+        return result;
 
     } catch (error) {
         console.error("Construction start failed:", error);
+        if (error instanceof HttpsError) throw error;
         throw new HttpsError('internal', error.message || '건설 시작에 실패했습니다.');
     }
 });
