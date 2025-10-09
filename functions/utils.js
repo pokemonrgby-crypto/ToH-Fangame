@@ -28,4 +28,39 @@ async function deductItemsFromInventory(transaction, uid, itemsToDeduct) {
     }
 }
 
-module.exports = { deductItemsFromInventory };
+/**
+ * 캐릭터 문서에 skills 객체가 없으면 기본값을 채워넣어줍니다. (레거시 호환)
+ * @param {admin.firestore.Transaction} transaction - Firestore 트랜잭션 객체
+ * @param {admin.firestore.DocumentReference} charRef - 캐릭터 문서 참조
+ * @param {object} charData - 캐릭터 데이터
+ * @returns {object} skills 객체가 보장된 캐릭터 데이터
+ */
+async function ensureCharacterSkills(transaction, charRef, charData) {
+    if (charData.skills && typeof charData.skills === 'object') {
+        return charData; // 이미 skills 객체가 있으면 그대로 반환
+    }
+
+    console.log(`[Legacy] Initializing skills for character: ${charRef.id}`);
+    const defaultSkills = {
+        strength: { level: 1, exp: 0, nextLevelExp: 100 },
+        intelligence: { level: 1, exp: 0, nextLevelExp: 100 },
+        wisdom: { level: 1, exp: 0, nextLevelExp: 100 },
+        dexterity: { level: 1, exp: 0, nextLevelExp: 100 },
+        stamina: { level: 1, exp: 0, nextLevelExp: 100 },
+        charisma: { level: 1, exp: 0, nextLevelExp: 100 },
+        faith: { level: 1, exp: 0, nextLevelExp: 100 },
+        art: { level: 1, exp: 0, nextLevelExp: 100 },
+        research: { level: 1, exp: 0, nextLevelExp: 100 },
+        crafting: { level: 1, exp: 0, nextLevelExp: 100 },
+        construction: { level: 1, exp: 0, nextLevelExp: 100 }, // 건설 스킬 추가
+        gardening: { level: 1, exp: 0, nextLevelExp: 100 },
+    };
+
+    // 트랜잭션 내에서 업데이트
+    transaction.update(charRef, { skills: defaultSkills });
+
+    // 업데이트된 데이터를 반환
+    return { ...charData, skills: defaultSkills };
+}
+
+module.exports = { deductItemsFromInventory, ensureCharacterSkills };
