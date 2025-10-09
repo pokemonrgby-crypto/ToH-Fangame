@@ -1,26 +1,59 @@
 {
-  "bakery": {
-    "name": "빵집",
-    "description": "신선한 빵과 과자를 만들어 판매합니다.",
-    "requirements": {
-      "min_area": 20,
-      "required_facilities": ["stone_oven_tier1", "dough_table"]
+  "library": {
+    "name": "서재",
+    "type": "연구",
+    "description": "간단한 이론 연구를 진행할 수 있습니다.",
+    "requirements": [
+      { "facilityId": "study_desk", "quantity": 1 }
+    ],
+    "effects": {
+      "enables_research_facility": "서재"
     }
   },
-  "smithy": {
-    "name": "대장간",
-    "description": "금속을 제련하고 도구와 무기를 제작합니다.",
-    "requirements": {
-      "min_area": 30,
-      "required_facilities": ["basic_forge", "anvil"]
+  "basic_laboratory": {
+    "name": "기초 연구소",
+    "type": "연구",
+    "description": "과학의 기초를 다지는 연구를 수행합니다.",
+    "requirements": [
+      { "facilityId": "basic_lab_bench", "quantity": 1 }
+    ],
+    "effects": {
+      "enables_research_facility": "기초 연구소"
     }
   },
-  "research_lab": {
+  "laboratory": {
     "name": "연구소",
-    "description": "새로운 기술을 연구하고 지식을 발견합니다.",
-    "requirements": {
-      "min_area": 25,
-      "required_facilities": ["basic_research_desk"]
+    "type": "연구",
+    "description": "더 복잡하고 심도 있는 응용 과학 연구를 진행합니다.",
+    "requirements": [
+      { "facilityId": "research_lab_bench", "quantity": 1 },
+      { "facilityId": "study_desk", "quantity": 2 }
+    ],
+    "effects": {
+      "enables_research_facility": "연구소"
+    }
+  },
+  "biology_laboratory": {
+    "name": "생물학 연구소",
+    "type": "연구",
+    "description": "생명의 신비를 파헤치는 유전학, 생물학 연구의 중심지입니다.",
+    "requirements": [
+      { "facilityId": "biology_lab_station", "quantity": 1 },
+      { "facilityId": "research_lab_bench", "quantity": 1 }
+    ],
+    "effects": {
+      "enables_research_facility": "생물학 연구소"
+    }
+  },
+    "alchemical_laboratory": {
+    "name": "연금술 실험실",
+    "type": "연구",
+    "description": "물질의 변환과 창조를 연구하는 신비로운 공간입니다.",
+    "requirements": [
+      { "facilityId": "alchemy_lab", "quantity": 1 }
+    ],
+    "effects": {
+      "enables_research_facility": "연금술 실험실"
     }
   }
 }
