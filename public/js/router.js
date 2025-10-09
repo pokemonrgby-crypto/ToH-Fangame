@@ -1,4 +1,4 @@
-// /public/js/router.js (전체 코드)
+// /public/js/router.js
 export const routes = {
   '#/home': () => import('./tabs/home.js').then(m => (m.showHome || m.default)()),
   '#/adventure': () => import('./tabs/adventure.js').then(m => (m.showAdventure || m.default)()),
@@ -45,7 +45,6 @@ export function highlightTab() {
     tabName = 'plaza';
   }
 
-  // ANCHOR: [추가] 성장 페이지에서도 '캐릭터' 탭이 활성화되도록 처리
   if (tabName.startsWith('char-')) {
     tabName = 'char';
   }
@@ -56,7 +55,6 @@ export function highlightTab() {
 }
 
 export function router() {
-  // 기존 뷰의 클린업 함수가 있다면 호출 (메모리 누수 방지)
   const view = document.getElementById('view');
   if (view && view.__cleanup) {
     try { view.__cleanup(); } catch(e) { console.error('View cleanup failed:', e); }
@@ -64,13 +62,16 @@ export function router() {
   }
   document.querySelector('.fixed-actions')?.remove();
   
-  const hash = location.hash.split('?')[0] || '#/home'; // ANCHOR: [수정] 쿼리스트링 제거
+  const hash = location.hash.split('?')[0] || '#/home';
   
+  // ▼▼▼ [수정된 부분] ▼▼▼
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/'
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/',
+    '#/plaza/' // ◀◀◀ 이 부분을 추가했습니다.
   ];
+  // ▲▲▲ [수정된 부분] ▲▲▲
   
   const matchedRoute = dynamicRoutes.find(route => hash.startsWith(route));
 
@@ -89,7 +90,6 @@ export function router() {
   }
 }
 
-// 앱 시작 시 한 번만 호출
 export function routeOnce() { 
   router(); 
 }
