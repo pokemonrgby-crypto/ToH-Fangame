@@ -176,7 +176,7 @@
   { "name": "빌런", "stat1": "strength", "stat2": "charisma" },
   { "name": "경찰", "stat1": "strength", "stat2": "speech" },
   { "name": "안티히어로", "stat1": "strength", "stat2": "speech" },
-  { "name": "용사", "stat1": "strength", "stat2": "charisma", "abilities": { "damage_bonus": { "additive": 0.1, "multiplicative": 1.1 } } },
+  { "name": "용사", "stat1": "strength", "stat2": "charisma", "abilities": { "damage_bonus": { "additive": 0.2, "multiplicative": 1.3 } } },
   { "name": "트레이너", "stat1": "charisma", "stat2": "strength" },
   { "name": "소환사", "stat1": "research", "stat2": "charisma" },
   { "name": "지휘자", "stat1": "art", "stat2": "charisma" },
