@@ -30,90 +30,113 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
         
         let state = {
             step: 1,
-            design: {
-                name: "나의 건물",
-                totalArea: Math.min(100, availableArea),
-                zones: [{ id: Date.now(), name: "구역 1", area: Math.min(100, availableArea), purpose: "주거" }],
-                materials: { main: null, secondary: null, special: [] }
-            },
-            contractor: { type: 'character', id: null },
-            allowMaterialBuyout: false,
+            name: '',
+            purpose: null,
+            style: null,
+            materials: [],
+            totalCost: 0,
+            requiredArea: 1
         };
 
-        const materialOptions = (filter = () => true) => Object.entries(materialsAsset)
-            .filter(([id, data]) => filter(data))
-            .map(([id, data]) => `<option value="${id}">${data.name}</option>`).join('');
-
         const render = () => {
-            const { step, design } = state;
             let contentHtml = '';
+            switch (state.step) {
+                case 1:
+                    contentHtml = `
+                        <h2>새 건물 설계 - 1단계: 이름</h2>
+                        <p>건물의 이름을 입력하세요.</p>
+                        <input type="text" id="building-name" value="${state.name}" placeholder="예: 대장간, 연금술사의 탑">
+                    `;
+                    break;
+                case 2:
+                    contentHtml = `
+                        <h2>새 건물 설계 - 2단계: 용도</h2>
+                        <p>건물의 주된 용도를 선택하세요.</p>
+                        <div class="radio-grid">
+                            ${Object.values(materialsAsset.purposes).map(p => `
+                                <label>
+                                    <input type="radio" name="building-purpose" value="${p.id}" ${state.purpose === p.id ? 'checked' : ''}>
+                                    <span>${p.name}</span>
+                                    <small>${p.description}</small>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                    break;
+                case 3:
+                    contentHtml = `
+                        <h2>새 건물 설계 - 3단계: 건축 양식</h2>
+                        <p>건물의 건축 양식을 선택하세요.</p>
+                        <div class="radio-grid">
+                            ${Object.values(materialsAsset.styles).map(s => `
+                                <label>
+                                    <input type="radio" name="architectural-style" value="${s.id}" ${state.style === s.id ? 'checked' : ''}>
+                                    <span>${s.name}</span>
+                                    <small>${s.description}</small>
+                                </label>
+                            `).join('')}
+                        </div>
+                    `;
+                    break;
+                case 4:
+                    const materialOptions = Object.values(materialsAsset.materials);
+                    contentHtml = `
+                        <h2>새 건물 설계 - 4단계: 주 자재</h2>
+                        <p>건설에 사용할 주요 자재를 선택하세요. (복수 선택 가능)</p>
+                        <div class="checkbox-grid">
+                            ${materialOptions.map(m => {
+                                const userMaterial = userItems.find(i => i.id === m.id);
+                                const possessed = userMaterial ? userMaterial.quantity : 0;
+                                const disabled = possessed === 0;
+                                return `
+                                    <label class="${disabled ? 'disabled' : ''}">
+                                        <input type="checkbox" name="building-material" value="${m.id}" ${state.materials.includes(m.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+                                        <span>${m.name} (보유: ${possessed})</span>
+                                        <small>${m.description}</small>
+                                    </label>
+                                `;
+                            }).join('')}
+                        </div>
+                    `;
+                    break;
+                case 5:
+                    const selectedPurpose = materialsAsset.purposes[state.purpose];
+                    const selectedStyle = materialsAsset.styles[state.style];
+                    const selectedMaterials = state.materials.map(id => materialsAsset.materials[id]);
 
-            // 각 단계별 HTML 렌더링
-            if (step === 1) { // 기본 정보
-                contentHtml = `
-                    <h3>Step 1: 기본 설계</h3>
-                    <div class="col" style="gap: 4px;">
-                        <label>건물 이름</label>
-                        <input id="buildingName" class="input" value="${esc(design.name)}">
-                    </div>
-                    <div class="col" style="gap: 4px; margin-top: 12px;">
-                        <label>총 면적 (최대: ${availableArea}m²)</label>
-                        <input id="totalArea" class="input" type="number" value="${design.totalArea}" max="${availableArea}">
-                    </div>
-                `;
-            } else if (step === 2) { // 구역 설정
-                const zonesHtml = design.zones.map(z => `
-                    <div class="row kv-card" style="gap:8px; padding: 8px;" data-zone-id="${z.id}">
-                        <input class="input zone-name" value="${esc(z.name)}" placeholder="구역 이름">
-                        <input class="input zone-area" type="number" value="${z.area}" style="width: 80px;">
-                        <select class="input zone-purpose" style="flex:1;"><option>주거</option><option>상업</option><option>연구</option></select>
-                        <button class="btn ghost small remove-zone">X</button>
-                    </div>`).join('');
-                const currentTotal = design.zones.reduce((sum, z) => sum + z.area, 0);
-                contentHtml = `
-                    <h3>Step 2: 구역 설정 (할당: ${currentTotal} / ${design.totalArea} m²)</h3>
-                    <div class="col" style="gap: 8px;" id="zone-list">${zonesHtml}</div>
-                    <button class="btn" id="add-zone" style="margin-top: 8px;">+ 구역 추가</button>
-                `;
-            } else if (step === 3) { // 재료 선택
-                contentHtml = `
-                    <h3>Step 3: 건축 재료 선택</h3>
-                    <div class="col" style="gap: 4px;">
-                        <label>주재료</label><select id="main-mat" class="input">${materialOptions()}</select>
-                    </div>
-                    <div class="col" style="gap: 4px; margin-top: 12px;">
-                        <label>부재료</label><select id="sec-mat" class="input">${materialOptions()}</select>
-                    </div>
-                     <div class="col" style="gap: 4px; margin-top: 12px;">
-                        <label>특별 재료 (다중 선택 가능)</label>
-                        <select id="spec-mat" class="input" multiple style="min-height: 120px;">
-                            ${materialOptions(m => m.aesthetic_modifier)}
-                        </select>
-                    </div>
-                `;
-            } else if (step === 4) { // 건축가 선택
-                const charOptions = characters.map(c => `<option value="${c.id}">${c.name} (건설 Lv.${c.skills?.construction?.level || 1})</option>`).join('');
-                contentHtml = `
-                    <h3>Step 4: 노동력 할당</h3>
-                    <div class="tabs" style="display:flex; gap: 8px; margin-bottom: 12px;">
-                        <button class="btn tab ${state.contractor.type === 'character' ? 'active' : ''}" data-type="character">내 캐릭터</button>
-                        <button class="btn tab ${state.contractor.type === 'npc' ? 'active' : ''}" data-type="npc">NPC 고용</button>
-                    </div>
-                    <div id="contractor-options"></div>
-                `;
-            } else if (step === 5) { // 최종 확인
-                 // 이 단계에서 calculateCustomRequirements와 유사한 로직으로 예상 견적을 프론트에서 보여줌
-                contentHtml = `<h3>Step 5: 최종 확인</h3><div id="summary">계산 중...</div>`;
+                    let totalCost = 0;
+                    selectedMaterials.forEach(m => {
+                        const materialInfo = materialsAsset.materials[m.id];
+                        if (materialInfo) {
+                            totalCost += materialInfo.cost || 0;
+                        }
+                    });
+                    
+                    state.totalCost = totalCost;
+
+                    contentHtml = `
+                        <h2>새 건물 설계 - 최종 확인</h2>
+                        <p>아래 내용으로 건설을 시작하시겠습니까?</p>
+                        <ul>
+                            <li><strong>이름:</strong> ${state.name}</li>
+                            <li><strong>용도:</strong> ${selectedPurpose.name}</li>
+                            <li><strong>건축 양식:</strong> ${selectedStyle.name}</li>
+                            <li><strong>주 자재:</strong> ${selectedMaterials.map(m => m.name).join(', ')}</li>
+                            <li><strong>필요 면적:</strong> ${state.requiredArea}</li>
+                            <li><strong>총 비용:</strong> ${state.totalCost.toLocaleString()} G</li>
+                        </ul>
+                    `;
+                    break;
             }
 
             back.innerHTML = `
                 <div class="modal-card col" style="gap: 16px; min-width: 500px;">
                     ${contentHtml}
                     <div class="row" style="justify-content: space-between; margin-top: 16px;">
-                        <button class="btn ghost" id="prev-step" ${step === 1 ? 'disabled' : ''}>이전</button>
+                        <button class="btn ghost" id="prev-step" ${state.step === 1 ? 'disabled' : ''}>이전</button>
                         <div>
                             <button class="btn ghost" id="cancel-build">취소</button>
-                            <button class="btn primary" id="next-step">${step === 5 ? '건설 시작' : '다음'}</button>
+                            <button class="btn primary" id="next-step">${state.step === 5 ? '건설 시작' : '다음'}</button>
                         </div>
                     </div>
                 </div>
@@ -121,14 +144,130 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             attachModalEvents();
         };
 
-        const updateStateAndRender = (newState) => {
-            state = { ...state, ...newState };
-            render();
+        const attachModalEvents = () => {
+            const closeModal = () => {
+                document.body.removeChild(back);
+                resolve(null);
+            };
+
+            document.getElementById('cancel-build').addEventListener('click', closeModal);
+
+            const prevStepBtn = document.getElementById('prev-step');
+            if (prevStepBtn) {
+                prevStepBtn.addEventListener('click', () => {
+                    if (state.step > 1) {
+                        state.step--;
+                        render();
+                    }
+                });
+            }
+
+            const nextStepBtn = document.getElementById('next-step');
+            if (nextStepBtn) {
+                nextStepBtn.addEventListener('click', async () => {
+                    // 각 단계별 유효성 검사 및 상태 업데이트
+                    switch (state.step) {
+                        case 1:
+                            if (!state.name.trim()) {
+                                showToast('건물 이름을 입력해주세요.', 'error');
+                                return;
+                            }
+                            break;
+                        case 2:
+                            if (!state.purpose) {
+                                showToast('건물 용도를 선택해주세요.', 'error');
+                                return;
+                            }
+                            break;
+                        case 3:
+                            if (!state.style) {
+                                showToast('건축 양식을 선택해주세요.', 'error');
+                                return;
+                            }
+                            break;
+                        case 4:
+                            if (state.materials.length === 0) {
+                                showToast('주 자재를 하나 이상 선택해주세요.', 'error');
+                                return;
+                            }
+                            break;
+                        case 5:
+                            // 건설 시작 로직
+                            showToast('건설을 시작합니다...', 'info');
+                            const buildingData = {
+                                name: state.name,
+                                purpose: state.purpose,
+                                style: state.style,
+                                materials: state.materials,
+                                requiredArea: state.requiredArea,
+                                cost: state.totalCost,
+                                isCustom: true
+                            };
+                            try {
+                                const result = await window.startCustomConstruction(getCurrentLandId(), buildingData);
+                                if (result.success) {
+                                    showToast('새로운 건물 건설을 시작했습니다!', 'success');
+                                    resolve(result); // 성공 결과와 함께 Promise 해결
+                                } else {
+                                    showToast(result.error || '건설 시작에 실패했습니다.', 'error');
+                                    resolve(null); // 실패 시 null로 해결
+                                }
+                            } catch (err) {
+                                console.error('Error starting custom construction:', err);
+                                showToast(err.message || '알 수 없는 오류로 건설에 실패했습니다.', 'error');
+                                resolve(null);
+                            }
+                            closeModal();
+                            return; // 다음 단계로 넘어가지 않도록 여기서 함수 종료
+                    }
+
+                    // 다음 단계로 이동
+                    if (state.step < 5) {
+                        state.step++;
+                        render();
+                    }
+                });
+            }
+
+            // 각 단계별 입력 필드에 이벤트 리스너 추가
+            switch (state.step) {
+                case 1:
+                    document.getElementById('building-name').addEventListener('input', e => {
+                        state.name = e.target.value;
+                    });
+                    break;
+                case 2:
+                    document.querySelectorAll('input[name="building-purpose"]').forEach(radio => {
+                        radio.addEventListener('change', e => {
+                            state.purpose = e.target.value;
+                        });
+                    });
+                    break;
+                case 3:
+                    document.querySelectorAll('input[name="architectural-style"]').forEach(radio => {
+                        radio.addEventListener('change', e => {
+                            state.style = e.target.value;
+                        });
+                    });
+                    break;
+                case 4:
+                    document.querySelectorAll('input[name="building-material"]').forEach(checkbox => {
+                        checkbox.addEventListener('change', e => {
+                            if (e.target.checked) {
+                                if (!state.materials.includes(e.target.value)) {
+                                    state.materials.push(e.target.value);
+                                }
+                            } else {
+                                state.materials = state.materials.filter(m => m !== e.target.value);
+                            }
+                        });
+                    });
+                    break;
+            }
         };
         
-        const attachModalEvents = () => { /* 이벤트 핸들러 로직 */ };
-        
-        render(); // 초기 렌더링
+        document.body.appendChild(back);
+        render();
     });
 }
 
