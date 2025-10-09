@@ -12,6 +12,7 @@ import { showToast } from '../ui/toast.js';
 import { showItemDetailModal } from '../ui/item.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { prettyTime } from '../ui/utils.js';
+import { renderRich } from '../ui/narrative.js';
 
 export function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({
