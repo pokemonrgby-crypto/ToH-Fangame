@@ -1,12 +1,28 @@
 {
   "basic_workshop": {
-    "name": "기초 작업장", "grade": 1, "area_required": 10,
-    "placement_requirements": { "knowledge": ["wood_processing"] },
-    "effects": { "unlocks_crafting_category": ["basic_woodworking"] }
+    "name": "기초 작업장",
+    "grades": [
+      {
+        "grade": 1,
+        "name": "허름한 작업대",
+        "area_required": 10,
+        "placement_requirements": { "knowledge": ["woodworking"] },
+        "effects": { "unlocks_crafting_category": ["basic_woodworking"] },
+        "cost": [{ "materialId": "processed_wood", "quantity": 10 }]
+      }
+    ]
   },
-  "research_lab_basic": {
-    "name": "기초 연구소", "grade": 1, "area_required": 10,
-    "placement_requirements": { "knowledge": ["basic_architecture"] },
-    "effects": { "unlocks_research_tier": 1 }
+  "basic_research_lab": {
+    "name": "기초 연구소",
+    "grades": [
+      {
+        "grade": 1,
+        "name": "간이 연구실",
+        "area_required": 15,
+        "placement_requirements": { "knowledge": ["basic_physics"] },
+        "effects": { "unlocks_research_tier": 1 },
+        "cost": [{ "materialId": "processed_wood", "quantity": 20 }, { "materialId": "stone_brick", "quantity": 10 }]
+      }
+    ]
   }
 }
