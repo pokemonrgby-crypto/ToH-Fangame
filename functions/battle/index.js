@@ -19,7 +19,7 @@ const { defineSecret } = require('firebase-functions/params');
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // firebase functions:secrets:set GEMINI_API_KEY
 
 // ---------- 공통 유틸 ----------
-const MODEL_POOL = ['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+const MODEL_POOL = ['gemini-2.5-flash-lite'];
 
 function pickModels() {
   const shuffled = [...MODEL_POOL].sort(() => 0.5 - Math.random());
