@@ -86,7 +86,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             .replace(/{user_input}/g, userInput ?? '');
         
         // AI 호출
-        const aiResult = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash-lite', systemFilled, userInput);
+        const aiResult = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-flash', systemFilled, userInput);
         const normalized = normalizeAiOutput(aiResult, userInput);
 
         // Firestore에 저장할 최종 데이터 생성
@@ -153,7 +153,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const baseSkills = {
           gardening: defaultSkill, art: defaultSkill, construction: defaultSkill,
           speech: defaultSkill, mining: defaultSkill, cooking: defaultSkill,
-          processing: defaultSkill, crafting: defaultSkill, research: defaultSkill
+          processing: defaultSkill, crafting: defaultSkill, research: defaultSkill,
+          strength: defaultSkill, charisma: defaultSkill, // 신규 스탯 추가
         };
 
         let skills = data.skills || {};
@@ -165,7 +166,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             finalSkills[key] = {
               level,
               exp: 0,
-              nextExp: Math.floor(200 ** (Math.sqrt(level)))
+              nextExp: Math.floor(200 * (2 ** Math.sqrt(level)))
             };
           } else if (typeof skills[key] === 'object' && skills[key] !== null) {
             finalSkills[key] = {
