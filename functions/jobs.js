@@ -100,7 +100,7 @@ ${narrative}
 ## 추천 가능한 직업 목록
 ${JSON.stringify(availableJobs)}`;
 
-        const result = await _callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash', systemPrompt, userPrompt);
+        const result = await _callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash-latest', systemPrompt, userPrompt);
         
         // [추가] AI 호출 성공 시, 현재 시간을 타임스탬프로 저장
         await charRef.update({ lastJobRecommendationAt: now });
