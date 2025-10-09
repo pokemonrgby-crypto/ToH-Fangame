@@ -676,7 +676,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             // 근력 스탯 보너스 (주 스탯 또는 부 스탯이 근력일 경우)
             if (jobData.stat1 === 'strength' || jobData.stat2 === 'strength') {
                 const strength = character.stats?.strength || 0;
-                const strengthBonus = Math.floor(strength / 5); // 근력 5당 추가 데미지 1
+                const strengthBonus = Math.floor(strength / 1); // 근력 5당 추가 데미지 1
                 finalMaxDamage += strengthBonus;
             }
         }
