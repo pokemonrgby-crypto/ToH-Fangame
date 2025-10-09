@@ -1,0 +1,12 @@
+{
+  "basic_workshop": {
+    "name": "기초 작업장", "grade": 1, "area_required": 10,
+    "placement_requirements": { "knowledge": ["wood_processing"] },
+    "effects": { "unlocks_crafting_category": ["basic_woodworking"] }
+  },
+  "research_lab_basic": {
+    "name": "기초 연구소", "grade": 1, "area_required": 10,
+    "placement_requirements": { "knowledge": ["basic_architecture"] },
+    "effects": { "unlocks_research_tier": 1 }
+  }
+}
