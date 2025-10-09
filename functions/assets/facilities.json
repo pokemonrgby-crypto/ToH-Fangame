@@ -1,28 +1,37 @@
 {
-  "basic_workshop": {
-    "name": "기초 작업장",
-    "grades": [
-      {
-        "grade": 1,
-        "name": "허름한 작업대",
-        "area_required": 10,
-        "placement_requirements": { "knowledge": ["woodworking"] },
-        "effects": { "unlocks_crafting_category": ["basic_woodworking"] },
-        "cost": [{ "materialId": "processed_wood", "quantity": 10 }]
-      }
-    ]
+  "stone_oven_tier1": {
+    "name": "돌가마 1등급",
+    "area_required": 8,
+    "cost": [{ "materialId": "stone_brick", "quantity": 30 }, { "materialId": "processed_wood", "quantity": 10 }],
+    "placement_requirements": { "knowledge": ["basic_cooking"] },
+    "aesthetic_modifier": 10
   },
-  "basic_research_lab": {
-    "name": "기초 연구소",
-    "grades": [
-      {
-        "grade": 1,
-        "name": "간이 연구실",
-        "area_required": 15,
-        "placement_requirements": { "knowledge": ["basic_physics"] },
-        "effects": { "unlocks_research_tier": 1 },
-        "cost": [{ "materialId": "processed_wood", "quantity": 20 }, { "materialId": "stone_brick", "quantity": 10 }]
-      }
-    ]
+  "dough_table": {
+    "name": "반죽 작업대",
+    "area_required": 4,
+    "cost": [{ "materialId": "processed_wood", "quantity": 20 }],
+    "placement_requirements": {},
+    "aesthetic_modifier": 5
+  },
+  "basic_forge": {
+    "name": "기본 화로",
+    "area_required": 10,
+    "cost": [{ "materialId": "stone_brick", "quantity": 50 }],
+    "placement_requirements": { "knowledge": ["basic_smithing"] },
+    "aesthetic_modifier": 15
+  },
+  "anvil": {
+    "name": "모루",
+    "area_required": 5,
+    "cost": [{ "materialId": "iron_ingot", "quantity": 10 }],
+    "placement_requirements": { "knowledge": ["basic_smithing"] },
+    "aesthetic_modifier": 8
+  },
+  "basic_research_desk": {
+    "name": "기초 연구용 책상",
+    "area_required": 6,
+    "cost": [{ "materialId": "processed_wood", "quantity": 30 }],
+    "placement_requirements": { "knowledge": ["basic_mathematics"] },
+    "aesthetic_modifier": 12
   }
 }
