@@ -1,5 +1,6 @@
 // public/js/ui/modal.js
 // [전체 교체]
+
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
 /**
@@ -11,13 +12,13 @@ export function ensureModalCss(){
   const st = document.createElement('style');
   st.id = 'toh-modal-css';
   st.textContent = `
-    /* 모달 오버레이: 토스트보다 낮게 */
+    /* 모달 오버레이: 기본 z-index를 9990으로 설정 */
     .modal-back{
       position:fixed; inset:0; z-index:9990;
       display:flex; align-items:center; justify-content:center;
       background:rgba(0,0,0,.6); backdrop-filter:blur(4px);
     }
-    .modal-back > .modal-card { /* .modal 클래스도 지원 */
+    .modal-back > .modal-card {
       background:#0e1116; border:1px solid #273247; border-radius:14px;
       padding:16px; width:92vw; max-width:480px; max-height:90vh; overflow-y:auto;
     }
@@ -34,79 +35,112 @@ export function ensureModalCss(){
 }
 
 /**
+ * [추가] 비어있는 모달 창을 생성하고, card와 modal element를 반환합니다.
+ * item.js 등에서 상세 모달을 만들 때 사용합니다.
+ * @param {object} options - { zIndex }
+ * @returns {{modal: HTMLElement, card: HTMLElement}}
+ */
+export function createModal(options = {}) {
+    ensureModalCss();
+    const back = document.createElement('div');
+    back.className = 'modal-back';
+    
+    // zIndex 옵션이 있으면 적용하고, 없으면 현재 열린 모달 개수에 따라 동적으로 계산
+    back.style.zIndex = options.zIndex || (9990 + document.querySelectorAll('.modal-back').length);
+
+    const card = document.createElement('div');
+    card.className = 'modal-card';
+    back.appendChild(card);
+
+    // 배경 클릭 시 닫기
+    const close = () => back.remove();
+    back.addEventListener('click', e => {
+        if (e.target === back) close();
+    });
+
+    document.body.appendChild(back);
+    // card element를 반환하여 내용을 채울 수 있도록 하고, modal(back) element는 z-index 계산 등에 사용
+    return { modal: back, card };
+}
+
+/**
+ * [추가] 모달 내부의 버튼 등에서 모달을 닫을 때 사용합니다.
+ * @param {HTMLElement} elementInsideModal - 모달 내부의 아무 엘리먼트
+ */
+export function closeModal(elementInsideModal) {
+    elementInsideModal.closest('.modal-back')?.remove();
+}
+
+
+/**
  * 간단한 확인/취소 모달을 띄우고 Promise를 반환합니다.
- * @param {object} opts - {title, lines, okText, cancelText}
+ * @param {object} opts - {title, lines, okText, cancelText, zIndex}
  * @returns {Promise<boolean>} - 확인(true), 취소(false)
  */
 export function confirmModal(opts){
-  ensureModalCss(); // [추가] CSS가 주입되었는지 확인
   return new Promise(res=>{
-    const back = document.createElement('div');
-    back.className = 'modal-back';
-    back.innerHTML = `
-      <div class="modal-card">
-        <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(opts.title||'확인')}</div>
-        <div class="col" style="gap:6px; margin-bottom:10px; font-size:13px; color:rgba(255,255,255,.8);">
-          ${(opts.lines||[]).map(t=>`<div>${esc(t)}</div>`).join('')}
-        </div>
-        <div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px;">
-          <button class="btn ghost" data-x>${esc(opts.cancelText||'취소')}</button>
-          <button class="btn primary" data-ok>${esc(opts.okText||'확인')}</button>
-        </div>
+    // zIndex를 옵션으로 받아 createModal에 전달합니다.
+    const { modal, card } = createModal({ zIndex: opts.zIndex });
+    
+    card.innerHTML = `
+      <div style="font-weight:900; font-size:18px; margin-bottom:8px">${esc(opts.title||'확인')}</div>
+      <div class="col" style="gap:6px; margin-bottom:10px; font-size:13px; color:rgba(255,255,255,.8);">
+        ${(opts.lines||[]).map(t=>`<div>${esc(t)}</div>`).join('')}
+      </div>
+      <div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px;">
+        <button class="btn ghost" data-x>${esc(opts.cancelText||'취소')}</button>
+        <button class="btn primary" data-ok>${esc(opts.okText||'확인')}</button>
       </div>
     `;
-    const close = (v)=>{ back.remove(); res(v); };
-    back.addEventListener('click', e=>{ if(e.target===back) close(false); });
-    back.querySelector('[data-x]').onclick = ()=> close(false);
-    back.querySelector('[data-ok]').onclick = ()=> close(true);
-    document.body.appendChild(back);
+    const close = (v)=>{ modal.remove(); res(v); };
+    card.querySelector('[data-x]').onclick = ()=> close(false);
+    card.querySelector('[data-ok]').onclick = ()=> close(true);
   });
 }
 
 /**
- * [교체] 텍스트 프롬프트를 입력받는 새로운 모달
+ * 텍스트 프롬프트를 입력받는 새로운 모달
+ * @param {object} opts - { title, placeholder, hint, maxLen, okText, cancelText, zIndex }
  */
-export function promptModal({ title, placeholder, hint, maxLen = 300, okText = '확인', cancelText = '취소' }) {
-    ensureModalCss();
+export function promptModal({ title, placeholder, hint, maxLen = 300, okText = '확인', cancelText = '취소', zIndex }) {
     return new Promise(resolve => {
-        const back = document.createElement('div');
-        back.className = 'modal-back';
-        back.innerHTML = `
-            <div class="modal-card" style="max-width: 560px;">
-                <div style="font-weight:900; font-size:18px;">${esc(title)}</div>
-                <div style="font-size:13px; color:rgba(255,255,255,.6); margin-top:4px;">${esc(hint)}</div>
-                <textarea id="prompt-text" class="input" style="margin-top:12px; min-height:100px; resize:vertical;" maxlength="${maxLen}" placeholder="${esc(placeholder)}"></textarea>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
-                    <div id="char-count" style="font-size:12px; color:rgba(255,255,255,.6);">0 / ${maxLen}</div>
-                    <div class="row" style="gap: 8px;">
-                        <button class="btn ghost" id="prompt-cancel">${esc(cancelText)}</button>
-                        <button class="btn primary" id="prompt-ok">${esc(okText)}</button>
-                    </div>
+        const { modal, card } = createModal({ zIndex });
+        
+        card.style.maxWidth = '560px';
+        card.innerHTML = `
+            <div style="font-weight:900; font-size:18px;">${esc(title)}</div>
+            <div style="font-size:13px; color:rgba(255,255,255,.6); margin-top:4px;">${esc(hint)}</div>
+            <textarea id="prompt-text" class="input" style="margin-top:12px; min-height:100px; resize:vertical;" maxlength="${maxLen}" placeholder="${esc(placeholder)}"></textarea>
+            <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                <div id="char-count" style="font-size:12px; color:rgba(255,255,255,.6);">0 / ${maxLen}</div>
+                <div class="row" style="gap: 8px;">
+                    <button class="btn ghost" id="prompt-cancel">${esc(cancelText)}</button>
+                    <button class="btn primary" id="prompt-ok">${esc(okText)}</button>
                 </div>
             </div>
         `;
 
-        const txt = back.querySelector('#prompt-text');
-        const countEl = back.querySelector('#char-count');
+        const txt = card.querySelector('#prompt-text');
+        const countEl = card.querySelector('#char-count');
         
         const updateCount = () => {
             countEl.textContent = `${txt.value.length} / ${maxLen}`;
         };
         txt.addEventListener('input', updateCount);
 
-        const close = (val) => { back.remove(); resolve(val); };
+        const close = (val) => { modal.remove(); resolve(val); };
         
-        back.addEventListener('click', e => { if (e.target === back) close(null); });
-        back.querySelector('#prompt-cancel').onclick = () => close(null);
-        back.querySelector('#prompt-ok').onclick = () => {
+        card.querySelector('#prompt-cancel').onclick = () => close(null);
+        card.querySelector('#prompt-ok').onclick = () => {
             const value = txt.value.trim();
             if (!value) {
+                // alert() 대신 confirmModal과 비슷한 알림 모달을 사용하는 것이 더 일관적일 수 있습니다.
+                // 여기서는 일단 alert를 유지합니다.
                 alert('내용을 입력해주세요.');
                 return;
             }
             close(value);
         };
-        document.body.appendChild(back);
         txt.focus();
         updateCount();
     });
