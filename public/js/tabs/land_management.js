@@ -3,10 +3,11 @@ import { auth, db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal, promptModal } from '../ui/modal.js';
 
-// 신규: 필요한 함수들을 land.js와 farm.js에서 가져옵니다.
-import { startConstruction, completeConstruction } from '../api/land.js'; 
-import { createFarmland, plantInFarmland, harvestFromFarmland, assignCharacterToFacility } from '../api/farm.js';
+// ▼▼▼ [수정된 부분] ▼▼▼
+// farm.js 대신 real_estate.js에서 함수를 가져옵니다.
+import { assignCharacterToFacility, createFarmland, startConstruction } from '../api/real_estate.js';
 import { getUserCharacters } from '../api/char.js';
+// ▲▲▲ [수정된 부분] ▲▲▲
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -22,8 +23,7 @@ function parseLandPlotInfo() {
   };
 }
 
-// 화면을 다시 그리는 메인 함수
-function render(root, plotInfo, plotData, characters) {
+function render(root, plotInfo, plotData, characters, plotDocId) {
     const totalArea = plotData.totalArea || 10000;
     const usedArea = plotData.usedArea || 0;
     const availableArea = totalArea - usedArea;
@@ -31,42 +31,34 @@ function render(root, plotInfo, plotData, characters) {
 
     const facilityCardsHtml = facilities.map(fac => {
         const assignedChar = characters.find(c => c.id === fac.assignedCharId);
-        if (fac.type === 'building') {
-            return `
-                <div class="kv-card">
-                    <div class="row" style="justify-content:space-between">
-                        <b>${esc(fac.name)} (건물)</b>
-                        <span>${fac.area}m² / ${fac.floors}층</span>
-                    </div>
-                    <div class="text-dim" style="font-size:12px;">용도: ${esc(fac.purpose)} | 등급: ${fac.grade}</div>
-                    <div class="kv-card" style="margin-top:8px; padding:8px;">
-                        담당: ${assignedChar ? esc(assignedChar.name) : '없음'}
-                    </div>
-                    <div class="row" style="justify-content:flex-end; gap:8px; margin-top:8px;">
-                        <button class="btn small" data-facility-id="${fac.id}" data-action="assign-char">캐릭터 배치</button>
-                        <button class="btn small" data-facility-id="${fac.id}" data-action="manage-building">관리</button>
-                    </div>
+        const cardContent = fac.type === 'building' ? `
+            <div class="row" style="justify-content:space-between">
+                <b>${esc(fac.name)} (건물)</b>
+                <span>${fac.area}m² / ${fac.floors}층</span>
+            </div>
+            <div class="text-dim" style="font-size:12px;">용도: ${esc(fac.purpose)} | 등급: ${fac.grade}</div>
+            <div class="kv-card" style="margin-top:8px; padding:8px;">
+                담당: ${assignedChar ? `${esc(assignedChar.name)} (건설 Lv.${assignedChar.skills?.construction?.level || 0})` : '없음'}
+            </div>
+        ` : `
+            <div class="row" style="justify-content:space-between">
+                <b>${esc(fac.name)} (농지)</b>
+                <span>${fac.area}m²</span>
+            </div>
+             <div class="kv-card" style="margin-top:8px; padding:8px;">
+                담당: ${assignedChar ? `${esc(assignedChar.name)} (원예 Lv.${assignedChar.skills?.gardening?.level || 0})` : '없음'}
+            </div>
+        `;
+
+        return `
+            <div class="kv-card">
+                ${cardContent}
+                <div class="row" style="justify-content:flex-end; gap:8px; margin-top:8px;">
+                    <button class="btn small" data-facility-id="${fac.id}" data-action="assign-char">캐릭터 배치</button>
+                    <button class="btn small" data-facility-id="${fac.id}" data-action="manage-${fac.type}">관리</button>
                 </div>
-            `;
-        }
-        if (fac.type === 'farmland') {
-             return `
-                <div class="kv-card">
-                    <div class="row" style="justify-content:space-between">
-                        <b>${esc(fac.name)} (농지)</b>
-                        <span>${fac.area}m²</span>
-                    </div>
-                     <div class="kv-card" style="margin-top:8px; padding:8px;">
-                        담당: ${assignedChar ? `${esc(assignedChar.name)} (원예 Lv.${assignedChar.skills?.gardening?.level || 0})` : '없음'}
-                    </div>
-                    <div class="row" style="justify-content:flex-end; gap:8px; margin-top:8px;">
-                        <button class="btn small" data-facility-id="${fac.id}" data-action="assign-char">캐릭터 배치</button>
-                        <button class="btn small" data-facility-id="${fac.id}" data-action="manage-farm">농사 관리</button>
-                    </div>
-                </div>
-            `;
-        }
-        return '';
+            </div>
+        `;
     }).join('');
 
     root.innerHTML = `
@@ -95,30 +87,92 @@ function render(root, plotInfo, plotData, characters) {
           </div>
         </section>
     `;
-    attachEvents(root, plotInfo, availableArea, characters);
+    attachEvents(root, plotInfo, plotDocId, availableArea, characters);
 }
 
-// 이벤트 핸들러 부착 함수
-function attachEvents(root, plotInfo, availableArea, characters) {
+async function openCharacterPickerModal(characters) {
+    ensureModalCss();
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-back';
+        let cardsHtml = characters.map(char => {
+            const skills = char.skills || {};
+            return `
+                <div class="kv-card" data-char-id="${char.id}" style="cursor:pointer;">
+                    <div class="row" style="gap:10px">
+                        <img src="${char.thumb_url || char.image_url || ''}" onerror="this.style.display='none'" style="width:60px; height:60px; border-radius:4px; object-fit:cover;">
+                        <div>
+                            <div style="font-weight:bold;">${esc(char.name)}</div>
+                            <div class="text-dim" style="font-size:11px; margin-top:4px; line-height: 1.4;">
+                                원예 ${skills.gardening?.level||0} | 건설 ${skills.construction?.level||0} | ...
+                            </div>
+                        </div>
+                    </div>
+                </div>`;
+        }).join('');
+        cardsHtml += `<button class="kv-card" data-char-id="null" style="cursor:pointer; text-align:center;"><div class="text-dim">🚫 담당자 할당 해제</div></button>`;
+        back.innerHTML = `
+            <div class="modal-card" style="max-width: 700px;">
+                <div style="font-weight:900; margin-bottom:12px;">담당 캐릭터 선택</div>
+                <div class="grid2" style="gap:10px; max-height: 50vh; overflow-y:auto;">${cardsHtml}</div>
+                <button class="btn ghost" id="mClose" style="margin-top:16px; align-self:flex-end;">닫기</button>
+            </div>`;
+        document.body.appendChild(back);
+        const close = (char = undefined) => { back.remove(); resolve(char); };
+        back.querySelector('#mClose').onclick = () => close();
+        back.addEventListener('click', e => { if (e.target === back) close(); });
+        back.querySelectorAll('[data-char-id]').forEach(card => {
+            card.onclick = () => {
+                const charId = card.dataset.charId;
+                close(charId === 'null' ? null : characters.find(c => c.id === charId));
+            };
+        });
+    });
+}
+
+function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
     root.querySelector('#btn-new-building').onclick = async () => {
-        // TODO: 건물 건설을 위한 상세 정보 입력 모달 구현
+        // TODO: 건물 건설 상세 모달 구현
         showToast('건물 건설 기능은 준비 중입니다.');
     };
+    
+    // ▼▼▼ [수정된 부분] ▼▼▼
     root.querySelector('#btn-new-farmland').onclick = async () => {
-        // TODO: 밭 경작을 위한 면적 입력 모달 구현
-        showToast('밭 경작 기능은 준비 중입니다.');
+        const name = await promptModal('새로운 농지의 이름을 입력하세요.', '나의 텃밭');
+        if (!name) return;
+
+        const areaStr = await promptModal(`경작할 면적을 입력하세요 (최대: ${availableArea}m²)`, Math.min(100, availableArea));
+        const area = parseInt(areaStr, 10);
+        if (isNaN(area) || area <= 0 || area > availableArea) {
+            showToast('올바른 면적을 입력해주세요.');
+            return;
+        }
+
+        try {
+            await createFarmland({ plotId: plotDocId, name, area });
+            showToast(`'${name}' 농지가 생성되었습니다.`);
+        } catch (e) {
+            showToast(`농지 생성 실패: ${e.message}`);
+        }
     };
+    // ▲▲▲ [수정된 부분] ▲▲▲
 
     root.querySelectorAll('[data-action="assign-char"]').forEach(btn => {
         btn.onclick = async () => {
             const facilityId = btn.dataset.facilityId;
-            // TODO: 캐릭터 선택 모달 구현 및 캐릭터 할당 로직 연결
-            showToast(`[${facilityId}]에 캐릭터를 배치하는 기능은 준비 중입니다.`);
+            const selectedChar = await openCharacterPickerModal(characters);
+            if (selectedChar === undefined) return;
+            
+            try {
+                await assignCharacterToFacility({ plotId: plotDocId, facilityId, charId: selectedChar ? selectedChar.id : null });
+                showToast('캐릭터 배치가 완료되었습니다.');
+            } catch (e) {
+                showToast(`배치 실패: ${e.message}`);
+            }
         };
     });
 }
 
-// 메인 실행 함수
 export async function showLandManagement() {
     const root = document.getElementById('view');
     const plotInfo = parseLandPlotInfo();
@@ -134,15 +188,16 @@ export async function showLandManagement() {
         const plotDocId = `${plotInfo.mapId}_${plotInfo.x}_${plotInfo.y}_${plotInfo.microX}_${plotInfo.microY}`;
         const plotRef = fx.doc(db, 'land_plots', plotDocId);
 
-        // 데이터 실시간 구독 설정
-        fx.onSnapshot(plotRef, async (plotSnap) => {
+        const unsub = fx.onSnapshot(plotRef, async (plotSnap) => {
             const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [] };
-            const characters = await getUserCharacters(); // 캐릭터 목록은 필요할 때마다 다시 가져옴
-            render(root, plotInfo, plotData, characters);
+            const { characters } = await getUserCharacters(); // API 응답 구조에 맞게 수정
+            render(root, plotInfo, plotData, characters || [], plotDocId);
         }, (error) => {
             console.error("토지 정보 실시간 수신 실패:", error);
             root.innerHTML = `<section class="container narrow"><div class="kv-card error">데이터를 불러오는 데 실패했습니다.</div></section>`;
         });
+        
+        root.closest('#view').__cleanup = () => unsub();
 
     } catch (error) {
         console.error("초기 데이터 로딩 실패:", error);
