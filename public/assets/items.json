@@ -7,19 +7,65 @@
     "placeable": false,
     "aestheticValue": 5
   },
+  "wood": {
+    "name": "나무",
+    "type": "material",
+    "grade": "normal",
+    "basePrice": 2,
+    "sellPrice": 3,
+    "description": "가장 기본적인 건축 및 제작 재료입니다."
+  },
+  "stone": {
+    "name": "돌",
+    "type": "material",
+    "grade": "normal",
+    "basePrice": 3,
+    "sellPrice": 4,
+    "description": "단단하고 흔한 건축 재료입니다."
+  },
+  "iron_ore": {
+    "name": "철광석",
+    "type": "material",
+    "grade": "normal",
+    "basePrice": 10,
+    "sellPrice": 15,
+    "description": "제련하여 철 주괴를 만들 수 있는 광석입니다."
+  },
+  "gold_ore": {
+    "name": "금광석",
+    "type": "material",
+    "grade": "rare",
+    "basePrice": 50,
+    "sellPrice": 75,
+    "description": "아름다운 황금빛을 내는 희귀한 광석입니다.",
+    "aesthetic_modifier": 1.2
+  },
+  "raw_diamond": {
+    "name": "다이아몬드 원석",
+    "type": "material",
+    "grade": "epic",
+    "basePrice": 200,
+    "sellPrice": 300,
+    "description": "세공하면 눈부신 빛을 내는 보석의 왕입니다.",
+    "aesthetic_modifier": 2.0
+  },
   "sunpetal": {
     "name": "태양꽃잎",
     "description": "따뜻한 기운이 느껴지는 화사한 꽃잎. 포션의 재료로 사용된다.",
-    "rarity": "normal",
+    "grade": "normal",
     "type": "material",
+    "basePrice": 5,
+    "sellPrice": 8,
     "placeable": false,
     "aestheticValue": 2
   },
   "ironwood_log": {
     "name": "강철나무 원목",
     "description": "금속처럼 단단하고 무거운 나무. 최고급 가구나 건축재로 사용된다.",
-    "rarity": "epic",
+    "grade": "epic",
     "type": "material",
+    "basePrice": 100,
+    "sellPrice": 150,
     "placeable": true,
     "aestheticValue": 20
   },
