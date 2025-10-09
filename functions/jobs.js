@@ -89,8 +89,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const allJobs = await _loadJobs();
         const availableJobs = allJobs.filter(j => j.name !== '히든 직업' && j.name !== '백수').map(j => j.name);
         
-        const systemPrompt = `당신은 'Tale of Heros' 게임의 직업 추천 전문가입니다. 캐릭터의 서사를 분석하여, 제공된 직업 목록 중에서 가장 어울리는 직업 5개를 추천해야 합니다.
-- 응답은 반드시 {"recommended_jobs": ["직업1", "직업2", "직업3", "직업4", "직업5"]} 형식의 JSON이어야 합니다.
+        const systemPrompt = `당신은 'Tale of Heros' 게임의 직업 추천 전문가입니다. 캐릭터의 서사를 분석하여, 제공된 직업 목록 중에서 가장 어울리는 직업 10개를 추천해야 합니다.
+- 응답은 반드시 {"recommended_jobs": ["직업1", "직업2", "직업3", "직업4", "직업5", "직업6", "직업7", "직업8", "직업9", "직업10"]} 형식의 JSON이어야 합니다.
 - 절대로 '히든 직업'이나 '백수'를 추천해서는 안 됩니다.
 - 반드시 제공된 직업 목록에 있는 이름만 사용해야 합니다.`;
         
