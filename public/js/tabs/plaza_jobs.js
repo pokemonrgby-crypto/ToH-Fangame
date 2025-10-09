@@ -3,7 +3,7 @@ import { auth, db, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss } from '../ui/modal.js';
-import { fetchMyChars } from '../api/store.js'; // 내 캐릭터 로드 함수 import
+import { fetchMyChars } from '../api/store.js';
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -59,9 +59,14 @@ export async function showPlazaJobs(root) {
 
 // --- 캐릭터 상세 정보 및 직업 설정 UI ---
 function renderCharDetail(container, charData) {
-    // skills 필드가 없을 경우를 대비하여 기본값 설정
     const skills = charData.skills || {};
     const skillKeys = ['strength', 'charisma', 'gardening', 'art', 'construction', 'speech', 'mining', 'cooking', 'processing', 'crafting', 'research'];
+    // [추가] 스탯 영문<->한글 변환 객체
+    const statTranslations = {
+        strength: '근력', charisma: '매력', gardening: '원예', art: '예술',
+        construction: '건설', speech: '화술', mining: '채굴', cooking: '조리',
+        processing: '가공', crafting: '제작', research: '연구'
+    };
 
     container.innerHTML = `
         <div class="kv-card">
@@ -78,7 +83,7 @@ function renderCharDetail(container, charData) {
                 <div style="display:grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap:8px;">
                     ${skillKeys.map(key => `
                         <div class="text-dim" style="font-size:13px;">
-                            ${key}: <b style="color:white;">Lv.${(skills[key] && skills[key].level) || 0}</b>
+                            ${statTranslations[key] || key}: <b style="color:white;">Lv.${(skills[key] && skills[key].level) || 0}</b>
                         </div>
                     `).join('')}
                 </div>
@@ -90,7 +95,6 @@ function renderCharDetail(container, charData) {
     container.querySelector('#back-to-list').onclick = () => showPlazaJobs(container);
     container.querySelector('#btn-recommend').onclick = async (e) => {
         const btn = e.currentTarget;
-        // 이미 직업이 있는 경우, 스탯 재분배 불가
         if (charData.job && charData.job !== '백수') {
             showToast('이미 직업이 설정된 캐릭터입니다.');
             return;
@@ -117,6 +121,13 @@ function renderCharDetail(container, charData) {
 async function openJobAndStatModal(char, recommendedJobs) {
     ensureModalCss();
     
+    // [추가] 스탯 영문<->한글 변환 객체
+    const statTranslations = {
+        strength: '근력', charisma: '매력', gardening: '원예', art: '예술',
+        construction: '건설', speech: '화술', mining: '채굴', cooking: '조리',
+        processing: '가공', crafting: '제작', research: '연구'
+    };
+
     let selectedJob = recommendedJobs[0] || '';
     const initialStats = {
         strength: { level: 0 }, charisma: { level: 0 }, gardening: { level: 0 },
@@ -154,7 +165,7 @@ async function openJobAndStatModal(char, recommendedJobs) {
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-top:8px;">
                         ${skillKeys.map(key => `
                             <div class="row" style="justify-content:space-between; align-items:center;">
-                                <span style="text-transform: capitalize;">${key}</span>
+                                <span>${statTranslations[key] || key}</span>
                                 <div class="row" style="gap:4px;">
                                     <button class="btn ghost xs btn-stat" data-stat="${key}" data-op="-">-</button>
                                     <span style="width:40px; text-align:center;">Lv.${initialStats[key].level}</span>
@@ -216,11 +227,10 @@ async function openJobAndStatModal(char, recommendedJobs) {
             confirmBtn.textContent = '적용 중...';
             
             try {
-                const setJobFn = httpsCallable(func, 'setCharacterJobAndStats'); // 변경된 함수 이름 호출
+                const setJobFn = httpsCallable(func, 'setCharacterJobAndStats');
                 await setJobFn({ charId: char.id, jobName: selectedJob, stats: initialStats });
                 showToast(`'${selectedJob}' 직업이 적용되었습니다.`);
                 back.remove();
-                // 부모 컨테이너(plaza-content)를 찾아 전체 탭을 다시 로드
                 const plazaContent = document.getElementById('plaza-content');
                 if (plazaContent) {
                     showPlazaJobs(plazaContent);
