@@ -1,0 +1,26 @@
+{
+  "bakery": {
+    "name": "빵집",
+    "description": "신선한 빵과 과자를 만들어 판매합니다.",
+    "requirements": {
+      "min_area": 20,
+      "required_facilities": ["stone_oven_tier1", "dough_table"]
+    }
+  },
+  "smithy": {
+    "name": "대장간",
+    "description": "금속을 제련하고 도구와 무기를 제작합니다.",
+    "requirements": {
+      "min_area": 30,
+      "required_facilities": ["basic_forge", "anvil"]
+    }
+  },
+  "research_lab": {
+    "name": "연구소",
+    "description": "새로운 기술을 연구하고 지식을 발견합니다.",
+    "requirements": {
+      "min_area": 25,
+      "required_facilities": ["basic_research_desk"]
+    }
+  }
+}
