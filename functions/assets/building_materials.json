@@ -1,0 +1,12 @@
+{
+  "categories": {
+    "wood": { "name": "목재" }, "stone": { "name": "석재" }, "metal": { "name": "금속" }, "special": { "name": "특수 재료" }
+  },
+  "materials": {
+    "processed_wood": { "name": "가공된 목재", "category": "wood", "grade": "common", "basePrice": 5 },
+    "stone_brick": { "name": "석재 벽돌", "category": "stone", "grade": "common", "basePrice": 8 },
+    "iron_ingot": { "name": "철 주괴", "category": "metal", "grade": "uncommon", "basePrice": 20 },
+    "steel_ingot": { "name": "강철 주괴", "category": "metal", "grade": "rare", "basePrice": 50 },
+    "gold_leaf": { "name": "금박", "category": "special", "grade": "epic", "basePrice": 500, "aesthetic_modifier": 1.5 }
+  }
+}
