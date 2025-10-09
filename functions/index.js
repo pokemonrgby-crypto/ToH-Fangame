@@ -27,7 +27,7 @@ const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이�
 const historyFns = require('./history')(admin, { onCall, HttpsError });
 const realEstateFns = require('./real_estate')(admin);
 const jobFns = require('./jobs')(admin, { GEMINI_API_KEY });
-const companyFunctions = require('./company')({ firestore: db, auth: admin.auth() });
+const companyFunctions = require('./company'); // () 호출 제거
 const constructionFunctions = require('./construction');
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
@@ -792,8 +792,8 @@ exports.getUserCharacters = charFns.getUserCharacters; // [추가]
 
 Object.assign(exports, jobFns);
 
-exports.startConstructionProject = companyFunctions.startConstructionProject;
-exports.postConstructionContract = companyFunctions.postConstructionContract;
+Object.assign(exports, companyFunctions);
+Object.assign(exports, constructionFunctions);
 
 exports.startConstruction = constructionFunctions.startConstruction;
 
