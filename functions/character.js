@@ -60,7 +60,8 @@ function normalizeAiOutput(parsed, userInput = '') {
 }
 
 
-module.exports = (admin, { GEMINI_API_KEY }) => {
+module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
+// ▲▲▲ [수정된 부분] ▲▲▲
     const db = admin.firestore();
 
     const createChar = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
@@ -189,5 +190,5 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     }
   });
 
-  return { getUserCharacters };
+  return { createChar, getUserCharacters };
 };
