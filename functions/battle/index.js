@@ -210,9 +210,11 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
 
   ## 캐릭터 1 (index 0) 정보
   ${JSON.stringify(attackerData, null, 2)}
-
+  캐릭터 1 정보 끝
+  
   ## 캐릭터 2 (index 1) 정보
   ${JSON.stringify(defenderData, null, 2)}
+  캐릭터 2 정보 끝
 </INPUT>
         `.trim();
 
