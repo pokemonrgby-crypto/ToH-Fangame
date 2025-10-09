@@ -11,7 +11,7 @@ async function _callGemini(apiKey, model, systemText, userText) {
       systemInstruction: { role: 'system', parts: [{ text: systemText }] },
       contents: [{ role: 'user', parts: [{ text: userText }] }],
       generationConfig: {
-        temperature: 0.7, maxOutputTokens: 2048, responseMimeType: "application/json",
+        temperature: 0.7, maxOutputTokens: 4096, responseMimeType: "application/json",
       }
     };
     const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -105,7 +105,7 @@ ${JSON.stringify(availableJobs)}`;
         // [추가] AI 호출 성공 시, 현재 시간을 타임스탬프로 저장
         await charRef.update({ lastJobRecommendationAt: now });
 
-        const recommended = (Array.isArray(result.recommended_jobs) ? result.recommended_jobs : []).slice(0, 5);
+        const recommended = (Array.isArray(result.recommended_jobs) ? result.recommended_jobs : []).slice(0, 10);
 
         return { ok: true, jobs: recommended };
     });
