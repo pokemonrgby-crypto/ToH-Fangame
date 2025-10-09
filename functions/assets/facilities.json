@@ -1,46 +1,50 @@
 {
-  "basic_workshop": {
-    "name": "기본 작업대",
-    "area_required": 10,
-    "cost": [
-      { "materialId": "processed_wood", "quantity": 20 }
-    ],
-    "placement_requirements": {
-      "building_purpose": ["crafting_workshop", "storage"]
-    },
-    "effects": {
-      "unlocks_recipe": ["recipe_processed_wood_plus"]
-    },
-    "aesthetic_score": 10
+  "study_desk": {
+    "name": "서재 책상",
+    "area_required": 8,
+    "grade": "basic",
+    "cost": [{ "materialId": "processed_wood", "quantity": 30 }],
+    "description": "기초적인 문헌을 연구할 수 있는 간단한 책상입니다. '서재'의 핵심 시설입니다."
   },
-  "stone_furnace": {
-    "name": "석조 화덕",
+  "basic_lab_bench": {
+    "name": "기초 실험대",
     "area_required": 15,
+    "grade": "basic",
     "cost": [
-      { "materialId": "stone_brick", "quantity": 50 },
-      { "materialId": "iron_ingot", "quantity": 5 }
+      { "materialId": "processed_wood", "quantity": 20 },
+      { "materialId": "stone_brick", "quantity": 20 }
     ],
-    "placement_requirements": {
-      "building_purpose": ["smithy", "kitchen", "bakery"]
-    },
-    "effects": {
-      "unlocks_recipe": ["recipe_iron_ingot", "recipe_bread"]
-    },
-    "aesthetic_score": 20
+    "description": "간단한 물리, 화학 실험을 진행할 수 있는 작업대입니다. '기초 연구소'의 핵심 시설입니다."
   },
-  "research_desk": {
-    "name": "연구용 책상",
-    "area_required": 12,
+  "research_lab_bench": {
+    "name": "연구용 실험대",
+    "area_required": 20,
+    "grade": "advanced",
     "cost": [
-      { "materialId": "processed_wood", "quantity": 30 },
-      { "materialId": "glass", "quantity": 5 }
+      { "materialId": "iron_ingot", "quantity": 30 },
+      { "materialId": "glass", "quantity": 15 }
     ],
-    "placement_requirements": {
-      "building_purpose": ["research_lab", "library"]
-    },
-    "effects": {
-      "enables_action": ["action_basic_research"]
-    },
-    "aesthetic_score": 30
+    "description": "더 정밀하고 복잡한 실험을 수행할 수 있는 고급 실험대입니다. '연구소'의 핵심 시설입니다."
+  },
+  "biology_lab_station": {
+    "name": "생물학 실험 스테이션",
+    "area_required": 25,
+    "grade": "advanced",
+    "cost": [
+        { "materialId": "iron_ingot", "quantity": 20 },
+        { "materialId": "glass", "quantity": 30 }
+    ],
+    "description": "세포 관찰 및 유전자 분석 등 생물학 연구를 위한 특수 장비입니다. '생물학 연구소'의 핵심 시설입니다."
+  },
+  "alchemy_lab": {
+    "name": "연금술 실험실",
+    "area_required": 30,
+    "grade": "magical",
+    "cost": [
+        { "materialId": "gold_bar", "quantity": 5 },
+        { "materialId": "gemstone", "quantity": 10 },
+        { "materialId": "glass", "quantity": 50 }
+    ],
+    "description": "물질 변성과 포션 조제를 위한 신비한 도구들로 가득 찬 시설입니다. '연금술 실험실'의 핵심입니다."
   }
 }
