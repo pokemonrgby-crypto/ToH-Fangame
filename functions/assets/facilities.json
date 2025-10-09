@@ -1,37 +1,46 @@
 {
-  "stone_oven_tier1": {
-    "name": "돌가마 1등급",
-    "area_required": 8,
-    "cost": [{ "materialId": "stone_brick", "quantity": 30 }, { "materialId": "processed_wood", "quantity": 10 }],
-    "placement_requirements": { "knowledge": ["basic_cooking"] },
-    "aesthetic_modifier": 10
-  },
-  "dough_table": {
-    "name": "반죽 작업대",
-    "area_required": 4,
-    "cost": [{ "materialId": "processed_wood", "quantity": 20 }],
-    "placement_requirements": {},
-    "aesthetic_modifier": 5
-  },
-  "basic_forge": {
-    "name": "기본 화로",
+  "basic_workshop": {
+    "name": "기본 작업대",
     "area_required": 10,
-    "cost": [{ "materialId": "stone_brick", "quantity": 50 }],
-    "placement_requirements": { "knowledge": ["basic_smithing"] },
-    "aesthetic_modifier": 15
+    "cost": [
+      { "materialId": "processed_wood", "quantity": 20 }
+    ],
+    "placement_requirements": {
+      "building_purpose": ["crafting_workshop", "storage"]
+    },
+    "effects": {
+      "unlocks_recipe": ["recipe_processed_wood_plus"]
+    },
+    "aesthetic_score": 10
   },
-  "anvil": {
-    "name": "모루",
-    "area_required": 5,
-    "cost": [{ "materialId": "iron_ingot", "quantity": 10 }],
-    "placement_requirements": { "knowledge": ["basic_smithing"] },
-    "aesthetic_modifier": 8
+  "stone_furnace": {
+    "name": "석조 화덕",
+    "area_required": 15,
+    "cost": [
+      { "materialId": "stone_brick", "quantity": 50 },
+      { "materialId": "iron_ingot", "quantity": 5 }
+    ],
+    "placement_requirements": {
+      "building_purpose": ["smithy", "kitchen", "bakery"]
+    },
+    "effects": {
+      "unlocks_recipe": ["recipe_iron_ingot", "recipe_bread"]
+    },
+    "aesthetic_score": 20
   },
-  "basic_research_desk": {
-    "name": "기초 연구용 책상",
-    "area_required": 6,
-    "cost": [{ "materialId": "processed_wood", "quantity": 30 }],
-    "placement_requirements": { "knowledge": ["basic_mathematics"] },
-    "aesthetic_modifier": 12
+  "research_desk": {
+    "name": "연구용 책상",
+    "area_required": 12,
+    "cost": [
+      { "materialId": "processed_wood", "quantity": 30 },
+      { "materialId": "glass", "quantity": 5 }
+    ],
+    "placement_requirements": {
+      "building_purpose": ["research_lab", "library"]
+    },
+    "effects": {
+      "enables_action": ["action_basic_research"]
+    },
+    "aesthetic_score": 30
   }
 }
