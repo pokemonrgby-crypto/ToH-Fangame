@@ -317,7 +317,8 @@ exports.runBattleV2 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] 
             try {
                 // 안전장치: 현재 설정된 쿨타임이 우리가 설정한 값과 동일할 때만 초기화합니다.
                 const userSnapAfterError = await userRef.get();
-                if (userSnapAfterError.exists()) {
+                // [수정] .exists() 함수 호출을 .exists 속성 접근으로 변경
+                if (userSnapAfterError.exists) {
                     const finalCooldown = userSnapAfterError.data().cooldown_all_until;
                     if (finalCooldown === newCooldownUntil) {
                         await userRef.set({ cooldown_all_until: 0 }, { merge: true });
