@@ -1,7 +1,5 @@
 // functions/explore_v2.js
 
-// 탐험 v2: 주사위/프리롤/프롬프트/로그를 서버로 이전
-
 const { Timestamp, FieldValue } = require('firebase-admin/firestore');
 const fs = require('fs').promises;
 const path = require('path');
@@ -265,7 +263,8 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
   const startExploreV2 = onCall({ secrets: [GEMINI_API_KEY] }, async (req) => {
       const uid = req.auth?.uid;
       if(!uid) throw new HttpsError('unauthenticated', '로그인이 필요해');
-      const { charId, worldId, worldName, siteId, siteName, difficulty='normal' } = req.data||{};
+      // ANCHOR: [수정] 클라이언트에서 보낸 staminaStart 값을 받도록 수정
+      const { charId, worldId, worldName, siteId, siteName, difficulty='normal', staminaStart } = req.data||{};
       if(!charId || !worldId || !siteId) throw new HttpsError('invalid-argument','필수값 누락');
 
       const qs = await db.collection('explore_runs')
@@ -277,17 +276,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
       const charSnap = await db.doc(`chars/${charId}`).get();
       if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
-      const charData = charSnap.data();
-
-      // 직업 보너스 계산
-      let staminaStart = STAMINA_BASE;
-      if (charData.job) {
-          const allJobs = await _loadJobs();
-          const jobData = allJobs.find(j => j.name === charData.job);
-          if (jobData?.abilities?.stamina_buff) {
-              staminaStart = Math.floor(staminaStart * (1 + jobData.abilities.stamina_buff));
-          }
-      }
+      
+      // ANCHOR: [수정] 서버에서 스태미나를 다시 계산하는 로직을 제거하고, 클라이언트 값을 사용
+      const finalStaminaStart = Number(staminaStart) || STAMINA_BASE;
 
       const payload = {
         charRef: `chars/${charId}`,
@@ -296,9 +287,9 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         site_id: siteId,   site_name: siteName||siteId,
         difficulty,
         startedAt: Timestamp.now(),
-        stamina_start: staminaStart,
-        stamina: staminaStart,
-        combat_hp: staminaStart,
+        stamina_start: finalStaminaStart,
+        stamina: finalStaminaStart,
+        combat_hp: finalStaminaStart,
         turn: 0,
         status: 'ongoing',
         summary3: '',
