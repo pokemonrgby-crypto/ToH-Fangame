@@ -26,6 +26,7 @@ const skillFns = require('./skill')(admin, { onCall, HttpsError, logger, GEMINI_
 const raidFns = require('./raid')(admin, { logger, GEMINI_API_KEY }); // 레이드 함수 로드
 const historyFns = require('./history')(admin, { onCall, HttpsError });
 const realEstateFns = require('./real_estate')(admin);
+const jobFns = require('./jobs')(admin, { GEMINI_API_KEY });
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -784,7 +785,10 @@ Object.assign(exports, skillFns);
 Object.assign(exports, realEstateFns);
 
 exports.createChar = charFns.createChar;
+
 exports.getUserCharacters = charFns.getUserCharacters; // [추가]
+
+Object.assign(exports, jobFns);
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
