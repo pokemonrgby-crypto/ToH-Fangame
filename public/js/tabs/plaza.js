@@ -2,7 +2,8 @@
 import { db, fx, auth, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
-import { fetchMyChars, uploadGuildBadgeSquare, createGuild } from '../api/store.js';
+import { fetchMyChars, createGuild } from '../api/store.js';
+import { showPlazaJobs } from './plaza_jobs.js';
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -73,12 +74,16 @@ async function loadActiveChar(){
 }
 
 export default async function showPlaza() {
-  const root = document.getElementById('view');
-  root.innerHTML = `<section class="container narrow"><div class="spin-center" style="margin-top:40px;"></div></section>`;
-  
-  const c = await loadActiveChar();
+    const root = document.getElementById('view');
+    root.innerHTML = `<section class="container narrow"><div class="spin-center" style="margin-top:40px;"></div></section>`;
+    
+    const hash = location.hash || '#/plaza/guilds';
+    const isGuilds = hash.includes('/guilds') || !hash.includes('/jobs'); // Default to guilds
+    const isJobs = hash.includes('/jobs');
+    
+    const c = await loadActiveChar();
 
-  let myGuildId = null, myGuild = null;
+    let myGuildId = null, myGuild = null;
     if (c?.id) {
         const cs = await fx.getDoc(fx.doc(db, 'chars', c.id));
         const cd = cs.exists() ? cs.data() : {};
@@ -114,10 +119,22 @@ export default async function showPlaza() {
       <div class="book-card">
         <div class="bookmarks">
             <a href="#/economy" class="bookmark">🏛️ 경제</a>
-            <a href="#/plaza" class="bookmark active">🏰 길드</a>
+            <a href="#/plaza/guilds" class="bookmark ${isGuilds ? 'active' : ''}">🏰 길드</a>
+            <a href="#/plaza/jobs" class="bookmark ${isJobs ? 'active' : ''}">📜 직업</a>
             <a href="#/market" class="bookmark">↔️ 거래소</a>
         </div>
-        <div class="bookview p12">
+        <div class="bookview p12" id="plaza-content">
+          
+        </div>
+      </div>
+    `;
+    
+    const plazaContent = wrap.querySelector('#plaza-content');
+
+    if (isJobs) {
+        await showPlazaJobs(plazaContent);
+    } else { // 기본 탭을 길드로 설정
+        plazaContent.innerHTML = `
           <div class="kv-card" style="margin-bottom:12px;">
             <div class="row" style="justify-content:space-between;align-items:center">
               <div style="font-weight:900">길드</div>
@@ -148,15 +165,14 @@ export default async function showPlaza() {
                 ${guilds.length ? guilds.map(guildCard).join('') : `<div class="text-dim">아직 공개된 길드가 없습니다.</div>`}
             </div>
           </div>
-        </div>
-      </div>
-    `;
+        `;
+    }
 
     root.innerHTML = '';
     root.appendChild(wrap);
 
     wrap.querySelector('#btnPickChar')?.addEventListener('click', () => {
-        openCharPicker(showPlaza);
+        openCharPicker(() => showPlaza());
     });
     
     wrap.querySelector('#btn-open-create')?.addEventListener('click', () => {
@@ -166,11 +182,10 @@ export default async function showPlaza() {
         }
         if (!c) {
             showToast('길드를 생성하려면 먼저 활동할 캐릭터를 선택해야 합니다.');
-            openCharPicker(showPlaza);
+            openCharPicker(() => showPlaza());
             return;
         }
 
-        // 길드 생성 모달을 띄우는 로직 (예시)
         const guildName = prompt('생성할 길드의 이름을 입력하세요 (2~20자):');
         if (guildName && guildName.trim().length >= 2 && guildName.trim().length <= 20) {
             const btn = wrap.querySelector('#btn-open-create');
@@ -180,15 +195,14 @@ export default async function showPlaza() {
             createGuild({ charId: c.id, name: guildName.trim() })
                 .then(result => {
                     showToast(`'${guildName}' 길드가 성공적으로 생성되었습니다!`);
-                    // 성공 후 광장 페이지를 새로고침하여 내 길드 정보를 표시
-                    showPlaza();
+                    location.hash = '#/plaza/guilds';
                 })
                 .catch(e => {
                     showToast(`길드 생성 실패: ${e.message}`);
                     btn.disabled = false;
                     btn.textContent = '길드 만들기';
                 });
-        } else if (guildName !== null) { // 사용자가 취소를 누르지 않았을 경우
+        } else if (guildName !== null) {
             showToast('길드 이름은 2자 이상 20자 이하로 입력해주세요.');
         }
     });
