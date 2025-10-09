@@ -3,11 +3,9 @@ import { auth, db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal, promptModal } from '../ui/modal.js';
 
-// ▼▼▼ [수정된 부분] ▼▼▼
-// farm.js 대신 real_estate.js에서 함수를 가져옵니다.
+// real_estate.js에서 startConstruction 함수를 가져옵니다.
 import { assignCharacterToFacility, createFarmland, startConstruction } from '../api/real_estate.js';
 import { getUserCharacters } from '../api/char.js';
-// ▲▲▲ [수정된 부분] ▲▲▲
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 
@@ -23,6 +21,81 @@ function parseLandPlotInfo() {
   };
 }
 
+// [신규 추가] 건물 건설 옵션을 입력받는 모달
+async function openConstructionModal(availableArea) {
+    ensureModalCss();
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-back';
+        
+        const styles = ['고딕', '로마네스크', '바로크', '브루탈리즘', '아르데코', '커튼 월', '아르누보', '하이테크', '해체주의', '권위주의'];
+        const scales = ['소형', '중형', '대형', '초대형'];
+
+        back.innerHTML = `
+            <div class="modal-card col" style="gap: 12px;">
+                <h3 style="margin: 0;">새 건물 건설</h3>
+                
+                <div class="col" style="gap: 4px;">
+                    <label for="buildingName" class="text-dim" style="font-size: 13px;">건물 이름</label>
+                    <input id="buildingName" class="input" type="text" placeholder="예: 중앙 연구소" value="나의 첫 건물">
+                </div>
+
+                <div class="col" style="gap: 4px;">
+                    <label for="buildingType" class="text-dim" style="font-size: 13px;">건물 유형</label>
+                    <input id="buildingType" class="input" type="text" placeholder="예: 연구시설, 주거공간" value="주거공간">
+                </div>
+
+                <div class="grid2" style="gap: 12px;">
+                    <div class="col" style="gap: 4px;">
+                        <label for="architecturalStyle" class="text-dim" style="font-size: 13px;">건축 양식</label>
+                        <select id="architecturalStyle" class="input">${styles.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+                    </div>
+                    <div class="col" style="gap: 4px;">
+                        <label for="scale" class="text-dim" style="font-size: 13px;">규모</label>
+                        <select id="scale" class="input">${scales.map(s => `<option value="${s}">${s}</option>`).join('')}</select>
+                    </div>
+                </div>
+
+                <div class="col" style="gap: 4px;">
+                    <label for="height" class="text-dim" style="font-size: 13px;">높이 (5m ~ 1000m)</label>
+                    <input id="height" class="input" type="number" min="5" max="1000" step="1" value="10">
+                </div>
+
+                <div class="row" style="justify-content: flex-end; gap: 8px; margin-top: 8px;">
+                    <button class="btn ghost" id="construct-cancel">취소</button>
+                    <button class="btn primary" id="construct-ok">건설 시작</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(back);
+
+        const close = (val) => { back.remove(); resolve(val); };
+
+        back.addEventListener('click', e => { if (e.target === back) close(null); });
+        back.querySelector('#construct-cancel').onclick = () => close(null);
+        back.querySelector('#construct-ok').onclick = () => {
+            const data = {
+                buildingName: back.querySelector('#buildingName').value.trim(),
+                buildingType: back.querySelector('#buildingType').value.trim(),
+                architecturalStyle: back.querySelector('#architecturalStyle').value,
+                scale: back.querySelector('#scale').value,
+                height: parseInt(back.querySelector('#height').value, 10),
+            };
+
+            if (!data.buildingName || !data.buildingType) {
+                showToast('건물 이름과 유형을 입력해주세요.');
+                return;
+            }
+            if (isNaN(data.height) || data.height < 5 || data.height > 1000) {
+                showToast('높이는 5m에서 1000m 사이여야 합니다.');
+                return;
+            }
+            close(data);
+        };
+    });
+}
+
+
 function render(root, plotInfo, plotData, characters, plotDocId) {
     const totalArea = plotData.totalArea || 10000;
     const usedArea = plotData.usedArea || 0;
@@ -34,9 +107,9 @@ function render(root, plotInfo, plotData, characters, plotDocId) {
         const cardContent = fac.type === 'building' ? `
             <div class="row" style="justify-content:space-between">
                 <b>${esc(fac.name)} (건물)</b>
-                <span>${fac.area}m² / ${fac.floors}층</span>
+                <span>${fac.area || 'N/A'}m² / ${fac.height || 'N/A'}m</span>
             </div>
-            <div class="text-dim" style="font-size:12px;">용도: ${esc(fac.purpose)} | 등급: ${fac.grade}</div>
+            <div class="text-dim" style="font-size:12px;">스타일: ${esc(fac.style)} | 안전도: ${esc(fac.safetyLevel)}</div>
             <div class="kv-card" style="margin-top:8px; padding:8px;">
                 담당: ${assignedChar ? `${esc(assignedChar.name)} (건설 Lv.${assignedChar.skills?.construction?.level || 0})` : '없음'}
             </div>
@@ -66,7 +139,7 @@ function render(root, plotInfo, plotData, characters, plotDocId) {
           <div class="card p12">
             <div class="row" style="justify-content:space-between">
                 <h3 style="margin-top:0">토지 관리 (${plotInfo.x},${plotInfo.y}) - (${plotInfo.microX},${plotInfo.microY})</h3>
-                <button class="btn ghost" onclick="history.back()">뒤로가기</button>
+                <a href="#/worldmap" class="btn ghost">월드맵</a>
             </div>
             
             <div class="kv-card" style="margin-top:12px;">
@@ -131,17 +204,35 @@ async function openCharacterPickerModal(characters) {
 }
 
 function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
+    // [수정] '새 건물 건설' 버튼 이벤트
     root.querySelector('#btn-new-building').onclick = async () => {
-        // TODO: 건물 건설 상세 모달 구현
-        showToast('건물 건설 기능은 준비 중입니다.');
+        const constructionData = await openConstructionModal(availableArea);
+        if (!constructionData) return;
+
+        // 시공사는 일단 현재 사용자로 고정
+        const payload = {
+            ...constructionData,
+            plotId: plotDocId,
+            contractor: auth.currentUser.uid, 
+        };
+
+        try {
+            const result = await startConstruction(payload);
+            showToast(result.message || '건설을 시작합니다.');
+            // onSnapshot이 자동으로 UI를 업데이트합니다.
+        } catch (e) {
+            console.error(e);
+            showToast(`건설 시작 실패: ${e.message}`);
+        }
     };
     
-    // ▼▼▼ [수정된 부분] ▼▼▼
     root.querySelector('#btn-new-farmland').onclick = async () => {
-        const name = await promptModal('새로운 농지의 이름을 입력하세요.', '나의 텃밭');
+        const name = await promptModal({ title: '새로운 농지의 이름을 입력하세요.', placeholder: '나의 텃밭' });
         if (!name) return;
 
-        const areaStr = await promptModal(`경작할 면적을 입력하세요 (최대: ${availableArea}m²)`, Math.min(100, availableArea));
+        const areaStr = await promptModal({ title: `경작할 면적을 입력하세요 (최대: ${availableArea}m²)`, placeholder: `최대 ${availableArea}` });
+        if (!areaStr) return;
+
         const area = parseInt(areaStr, 10);
         if (isNaN(area) || area <= 0 || area > availableArea) {
             showToast('올바른 면적을 입력해주세요.');
@@ -155,7 +246,6 @@ function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
             showToast(`농지 생성 실패: ${e.message}`);
         }
     };
-    // ▲▲▲ [수정된 부분] ▲▲▲
 
     root.querySelectorAll('[data-action="assign-char"]').forEach(btn => {
         btn.onclick = async () => {
@@ -190,14 +280,21 @@ export async function showLandManagement() {
 
         const unsub = fx.onSnapshot(plotRef, async (plotSnap) => {
             const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [] };
-            const { characters } = await getUserCharacters(); // API 응답 구조에 맞게 수정
-            render(root, plotInfo, plotData, characters || [], plotDocId);
+            // 캐릭터 목록은 자주 바뀌지 않으므로 최초 한 번만 불러오거나, 필요 시 다시 불러오도록 최적화 가능
+            if (!root.characters) {
+                const { characters } = await getUserCharacters();
+                root.characters = characters || [];
+            }
+            render(root, plotInfo, plotData, root.characters, plotDocId);
         }, (error) => {
             console.error("토지 정보 실시간 수신 실패:", error);
             root.innerHTML = `<section class="container narrow"><div class="kv-card error">데이터를 불러오는 데 실패했습니다.</div></section>`;
         });
         
-        root.closest('#view').__cleanup = () => unsub();
+        root.closest('#view').__cleanup = () => {
+             if (root.characters) delete root.characters;
+             unsub();
+        }
 
     } catch (error) {
         console.error("초기 데이터 로딩 실패:", error);
