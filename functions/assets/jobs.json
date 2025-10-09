@@ -227,5 +227,6 @@
   { "name": "황제", "stat1": "speech", "stat2": "charisma" },
   { "name": "군주", "stat1": "speech", "stat2": "strength" },
   { "name": "무생물" },
-  { "name": "기동검사", "stat1": "strength", "stat2": "crafting" }
+  { "name": "기동검사", "stat1": "strength", "stat2": "crafting" },
+  { "name": "매춘부", "stat1": "charisma", "stat2": "speech" }
 ]
