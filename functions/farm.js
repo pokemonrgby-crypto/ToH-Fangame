@@ -388,58 +388,6 @@ module.exports = (admin) => {
     return { ok: true, planted: tileIndices.length };
   });
 
-  // ANCHOR: assignCharacterToFarm 함수에 레거시 호환 코드 복원
-  const assignCharacterToFarm = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid || req.auth?.token?.uid;
-    const { mapId, x, y, microX, microY, charId } = req.data || {};
-    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
-    if ([mapId,x,y,microX,microY].some(v=>v==null)) throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
-
-    const isOwner = await _isOwner(uid, { mapId, x, y, microX, microY });
-    if (!isOwner) throw new HttpsError('permission-denied', '이 토지에 배정할 권한이 없습니다.');
-
-    const plotId = plotIdFrom({ mapId, x, y, microX, microY });
-    const plotRef = db.doc(`farm_plots/${plotId}`);
-
-    if (charId) {
-      const charRef = db.doc(`chars/${charId}`);
-      
-      // ANCHOR: [복원] 레거시 스킬 데이터(숫자)를 새 구조(객체)로 마이그레이션하는 로직
-      await db.runTransaction(async (tx) => {
-        const now = Date.now();
-        const cSnap = await tx.get(charRef);
-        const cData = cSnap.exists ? (cSnap.data() || {}) : {};
-
-        let skills = cData.skills || {};
-        let needsUpdate = false;
-
-        const defaultSkillKeys = ['gardening', 'construction', 'art', 'crafting', 'research', 'speech', 'mining', 'cooking', 'processing'];
-        for (const key of defaultSkillKeys) {
-          if (!skills[key] || typeof skills[key] === 'number') {
-            const level = Number(skills[key] || 0);
-            skills[key] = {
-              level,
-              exp: 0,
-              nextExp: Math.floor(200 * (2 ** Math.sqrt(level)))
-            };
-            needsUpdate = true;
-          }
-        }
-        
-        if (needsUpdate) {
-          tx.set(charRef, { skills, updatedAt: now }, { merge: true });
-        }
-        // ANCHOR_END
-
-        tx.set(plotRef, { assigned_char_id: charId, updatedAt: now }, { merge: true });
-      });
-    } else {
-      await plotRef.set({ assigned_char_id: null, updatedAt: Date.now() }, { merge: true });
-    }
-
-    return { ok: true, assigned_char_id: charId || null };
-  });
-
   // ANCHOR: harvestTiles 함수에 등급별 스킬 경험치 지급 로직 추가
   const harvestTiles = onCall({ region: 'us-central1' }, async (req) => {
     const uid = req.auth?.uid || req.auth?.token?.uid;
@@ -680,5 +628,5 @@ module.exports = (admin) => {
   });
 
 
-  return { buySeed, getFarmPlotDetail, plantSeedOnTile, assignCharacterToFarm, harvestTiles, cancelPlanting };
+  return { buySeed, getFarmPlotDetail, plantSeedOnTile, harvestTiles, cancelPlanting };
 };
