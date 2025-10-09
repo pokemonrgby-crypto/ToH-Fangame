@@ -795,8 +795,6 @@ Object.assign(exports, jobFns);
 Object.assign(exports, companyFunctions);
 Object.assign(exports, constructionFunctions);
 
-exports.startConstruction = constructionFunctions.startConstruction;
-
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
   if (!uid) return false;
