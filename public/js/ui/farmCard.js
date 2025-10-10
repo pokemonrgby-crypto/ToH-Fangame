@@ -1,7 +1,7 @@
 // /public/js/ui/farmCard.js
 import {
     esc,
-    formatNumber
+    numberWithCommas
 } from '../ui/utils.js';
 import {
     showToast
