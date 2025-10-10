@@ -1,4 +1,5 @@
 // /public/js/ui/utils.js
+
 export function esc(s){
   return String(s ?? '').replace(/[&<>"']/g, c => ({
     '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
@@ -12,23 +13,23 @@ export function rarityStyle(r) {
     epic:   { bg: '#20163a', border: '#7e5cff', text: '#e6dcff', label: '유니크' },
     legend: { bg: '#2b220b', border: '#f3c34f', text: '#ffe9ad', label: '레전드' },
     myth:   { bg: '#3a0f14', border: '#ff5b66', text: '#ffc9ce', label: '신화' },
-    aether: { 
-      bg: '#2f2b3b', 
-      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5856d6, #af52de)', 
-      text: '#f8f8f2', 
-      label: '에테르' 
+    aether: {
+      bg: '#2f2b3b',
+      border: 'linear-gradient(135deg, #ff3b30, #ff9500, #ffd60a, #34c759, #00c7be, #007aff, #5856d6, #af52de)',
+      text: '#f8f8f2',
+      label: '에테르'
     },
-    alpha: { 
-      bg: 'linear-gradient(145deg, #1d2b64 0%, #000000 74%)', 
-      border: '#7dd3fc', 
-      text: '#ffffff', 
-      label: '알파' 
+    alpha: {
+      bg: 'linear-gradient(145deg, #1d2b64 0%, #000000 74%)',
+      border: '#7dd3fc',
+      text: '#ffffff',
+      label: '알파'
     },
-    omega: { 
-      bg: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)', 
-      border: 'linear-gradient(160deg, #FFFFFF 0%, #F0F0F0 50%, #E0E0E0 100%)', 
+    omega: {
+      bg: 'radial-gradient(ellipse at bottom, #1b2735 0%, #090a0f 100%)',
+      border: 'linear-gradient(160deg, #FFFFFF 0%, #F0F0F0 50%, #E0E0E0 100%)',
       text: '#000000',
-      label: '오메가' 
+      label: '오메가'
     },
   };
   return map[(r || '').toLowerCase()] || map.normal;
@@ -85,4 +86,12 @@ export function prettyTime(ts){
   const nano = (ts?._nanoseconds ?? ts?.nanoseconds ?? 0);
   if (sec != null) return fmt(new Date(sec * 1000 + Math.floor(nano/1e6)));
   return '-';
+}
+
+// [추가된 함수] 숫자에 콤마를 추가하는 함수
+export function numberWithCommas(x) {
+    if (x === null || x === undefined) {
+        return '';
+    }
+    return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
