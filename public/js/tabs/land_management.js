@@ -45,17 +45,18 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       name: '',
       purpose: null,      // building type (= server design.type)
       style: null,        // architectural style id
-      // 규모/치수
-      scale: 'small',     // small | medium | large | xlarge
-      heightM: 5,         // 5~1000
-      totalArea: 10,      // 총면적(m²)
+      // 층수/면적
+      floors: 1,
+      baseAreaM2: 10,
+      totalAreaM2: 10,
       // 구역 분할
-      zones: [],          // { name, purpose, roomId?, areaM2 }
+      zones: [],          // { name, purpose, roomId?, areaM2, items? }
       // 자재
-      materials: [],      // 선택된 자재 id[]
+      primaryMaterials: [],
+      secondaryMaterials: [],
       totalCost: 0,
       // 시공사(서버 규격에 맞춤)
-      contractorType: 'self',         // 'self'|'player'|'company'|'npc_team'|'characters'
+      contractorType: 'self',         // 'self' = 모집(퀘스트), 'player'|'company'|'npc_team'|'characters'
       contractorId: null,             // player/company일 때 사용
       npcTeam: [{ level: 1, count: 1 }], // npc_team 구성
       selectedCharIds: []             // characters 구성
@@ -108,33 +109,27 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       `;
 
       const step4 = () => `
-        <h2>새 건물 설계 - 4단계: 규모 · 높이 · 총면적</h2>
+        <h2>새 건물 설계 - 4단계: 층수 · 한 층 면적</h2>
         <div class="grid2" style="gap:12px;">
           <div class="kv-card">
-            <div class="kv-label">규모</div>
-            <select id="building-scale">
-              <option value="small" ${state.scale==='small'?'selected':''}>소형 (≤ 500m²)</option>
-              <option value="medium" ${state.scale==='medium'?'selected':''}>중형 (≤ 2,000m²)</option>
-              <option value="large" ${state.scale==='large'?'selected':''}>대형 (≤ 5,000m²)</option>
-              <option value="xlarge" ${state.scale==='xlarge'?'selected':''}>초대형 (≤ 10,000m²)</option>
-            </select>
+            <div class="kv-label">층수 (기본 1~2층, 지식 보유 시 3층↑ 가능)</div>
+            <input type="number" id="floors" min="1" value="${state.floors || 1}">
           </div>
           <div class="kv-card">
-            <div class="kv-label">높이 (5~1000 m)</div>
-            <input type="number" id="building-height" min="5" max="1000" value="${state.heightM}">
+            <div class="kv-label">한 층 면적 (m²)</div>
+            <input type="number" id="baseAreaM2" min="1" value="${state.baseAreaM2 || 10}">
           </div>
         </div>
         <div class="kv-card" style="margin-top:8px;">
-          <div class="kv-label">총면적 (m²) — 남은 면적: ${availableArea.toLocaleString()}m²</div>
-          <input type="number" id="building-totalarea" min="1" max="${availableArea}" value="${state.totalArea}">
-          <small class="text-dim">규모는 가이드일 뿐, 실제 제약은 남은 면적이야.</small>
+          <div class="kv-label">총면적 (자동 계산) — 남은 면적: ${availableArea.toLocaleString()}m²</div>
+          <div><b id="totalAreaM2View">${((state.floors||1) * (state.baseAreaM2||10)).toLocaleString()}</b> m²</div>
         </div>
       `;
 
       const step5 = () => {
         const rows = (state.zones.length
           ? state.zones
-          : [{ name:'본관', purpose: state.purpose || Object.keys(assets.purposes)[0], roomId:'', areaM2: state.totalArea }]);
+          : [{ name:'본관', purpose: state.purpose || Object.keys(assets.purposes)[0], roomId:'', areaM2: state.totalAreaM2 }]);
 
         const roomOptions = roomListForType(state.purpose);
 
@@ -163,7 +158,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
 
         return `
           <h2>새 건물 설계 - 5단계: 구역 분할</h2>
-          <p>총면적을 구역으로 나눠줘. 합계는 총면적(${state.totalArea}m²)과 같아야 해.</p>
+          <p>총면적을 구역으로 나눠줘. 합계는 총면적(${state.totalAreaM2}m²)과 같아야 해.</p>
           <div class="kv-card">
             <table class="kv-table">
               <thead><tr><th>구역명</th><th>용도</th><th>방</th><th>면적(m²)</th><th></th></tr></thead>
@@ -171,34 +166,38 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             </table>
             <div class="row" style="gap:8px; margin-top:8px;">
               <button class="btn small" id="z-add">+ 구역 추가</button>
-              <div class="text-dim">합계: <b id="zones-sum">${zonesSum}</b> / ${state.totalArea} m²</div>
+              <div class="text-dim">합계: <b id="zones-sum">${zonesSum}</b> / ${state.totalAreaM2} m²</div>
             </div>
           </div>
         `;
       };
 
       const step6 = () => {
-        const materialEntries = Object.entries(assets.materials);
+        const entries = Object.entries(assets.materials);
+        const isPrimary = id => (state.primaryMaterials || []).includes(id);
+        const isSecondary = id => (state.secondaryMaterials || []).includes(id);
+
+        const matCard = ([id, m]) => {
+          const userMaterial = userItems.find(i => i.id === id || i.itemId === id);
+          const have = userMaterial ? (userMaterial.quantity || userMaterial.count || 0) : 0;
+          return `
+            <label class="mat-tile" data-id="${id}">
+              <div class="row" style="justify-content:space-between;">
+                <b>${esc(m.name)}</b><small class="text-dim">보유 ${have}</small>
+              </div>
+              <small class="text-dim">${esc(m.description || '')}</small>
+              <div class="row" style="gap:6px; margin-top:6px;">
+                <button class="btn tiny ghost btn-primary ${isPrimary(id)?'active':''}" data-p="${id}">주재료</button>
+                <button class="btn tiny ghost btn-secondary ${isSecondary(id)?'active':''}" data-s="${id}">부재료</button>
+              </div>
+            </label>`;
+        };
+
         return `
-          <h2>새 건물 설계 - 6단계: 주 자재</h2>
-          <p>건설에 사용할 주요 자재를 선택해줘. (복수 선택 가능)</p>
-          <div class="checkbox-grid">
-            ${materialEntries.map(([id, m]) => {
-              const userMaterial = userItems.find(i => i.id === id || i.itemId === id);
-              const possessed = userMaterial ? (userMaterial.quantity || userMaterial.count || 0) : 0;
-              const needsPurchase = possessed === 0;
-              return `
-                <label>
-                  <input type="checkbox" name="building-material" value="${id}" ${state.materials.includes(id) ? 'checked' : ''}>
-                  <div>
-                    <span>${esc(m.name)} (보유: ${possessed})</span>
-                    <small>${esc(m.description || '')}</small>
-                    ${needsPurchase ? `<small style="color:#f59e0b; font-weight:bold; margin-top:4px;">※ 보유량이 없어 구매가 필요해.</small>` : ''}
-                  </div>
-                </label>
-              `;
-            }).join('')}
-          </div>
+          <h2>새 건물 설계 - 6단계: 자재 선택</h2>
+          <p>주재료(최대 4개)는 안정성·등급 확률에, 부재료는 미관 점수에만 영향을 줘.</p>
+          <div class="grid2" style="gap:8px;">${entries.map(matCard).join('')}</div>
+          <small class="text-dim">주재료는 5개째를 누르면 가장 먼저 선택된 게 자동 해제돼.</small>
         `;
       };
 
@@ -246,12 +245,12 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             <div class="kv-label">건설사 ID</div>
             <input type="text" id="company-id" value="${esc(state.contractorId||'')}">
           `
-          : `<div class="text-dim">내가 직접 맡아. 추가 정보는 없어.</div>`;
+          : `<div class="text-dim">모집 공고를 게시해서 인원을 모을게. 추가 정보는 없어.</div>`;
 
         return `
           <h2>새 건물 설계 - 7단계: 시공사/인원 선택</h2>
           <div class="tabs row" style="gap:8px; margin-bottom:8px;">
-            ${tabBtn('self','개인(나)')}
+            ${tabBtn('self','모집(퀘스트)')}
             ${tabBtn('player','타인(플레이어)')}
             ${tabBtn('company','건설사')}
             ${tabBtn('npc_team','NPC 팀')}
@@ -264,26 +263,10 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       const step8 = () => {
         const selectedPurpose = assets.purposes[state.purpose];
         const selectedStyle = assets.styles[state.style];
-        const selectedMaterialsInfo = state.materials.map(id => ({ id, ...assets.materials[id] }));
 
-        let buyoutCost = 0;
-        const DUMMY_REQUIRED_QTY_PER_AREA = 10; // 예시
-        const materialsSummary = [];
+        const matsPrimary = (state.primaryMaterials||[]).map(id => assets.materials[id]?.name || id);
+        const matsSecondary = (state.secondaryMaterials||[]).map(id => assets.materials[id]?.name || id);
 
-        selectedMaterialsInfo.forEach(material => {
-          const requiredQty = state.totalArea * DUMMY_REQUIRED_QTY_PER_AREA;
-          const userMaterial = userItems.find(i => i.id === material.id || i.itemId === material.id);
-          const possessed = userMaterial ? (userMaterial.quantity || userMaterial.count || 0) : 0;
-          const missingQty = Math.max(0, requiredQty - possessed);
-
-          if (missingQty > 0) {
-            const price = material.basePrice || 1;
-            buyoutCost += missingQty * price * 2.5; // 긴급 구매 2.5배
-          }
-          materialsSummary.push(`<li>${esc(material.name)} ${requiredQty}개 (보유: ${possessed})${missingQty>0?` - <b style="color:#f59e0b;">${missingQty}개 구매</b>`:''}</li>`);
-        });
-
-        state.totalCost = Math.ceil(buyoutCost);
         const zonesSum = (state.zones||[]).reduce((a,b)=>a+Number(b.areaM2||0),0);
 
         return `
@@ -292,19 +275,16 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             <li><strong>이름:</strong> ${esc(state.name)}</li>
             <li><strong>유형:</strong> ${esc(selectedPurpose?.name || state.purpose)}</li>
             <li><strong>양식:</strong> ${esc(selectedStyle?.name || state.style)}</li>
-            <li><strong>규모:</strong> ${esc(state.scale)}</li>
-            <li><strong>높이:</strong> ${state.heightM} m</li>
-            <li><strong>총면적:</strong> ${state.totalArea} m²</li>
+            <li><strong>층수:</strong> ${state.floors}층</li>
+            <li><strong>한 층 면적:</strong> ${state.baseAreaM2} m²</li>
+            <li><strong>총면적:</strong> ${state.totalAreaM2} m²</li>
             <li><strong>구역 합계:</strong> ${zonesSum} m²</li>
+            <li><strong>주재료(≤4):</strong> ${matsPrimary.join(', ') || '-'}</li>
+            <li><strong>부재료:</strong> ${matsSecondary.join(', ') || '-'}</li>
           </ul>
           <div class="kv-card" style="margin-top:8px;">
-            <div class="kv-label">필요 자재</div>
-            <ul style="padding-left:20px; margin:0; font-size:13px;">${materialsSummary.join('')}</ul>
-            <hr style="margin:12px 0; border-color:#2a2f36;">
-            <div class="row" style="justify-content:space-between;">
-              <span>자재 구매 비용(예상):</span>
-              <b style="color:#f59e0b;">🪙 ${state.totalCost.toLocaleString()} G</b>
-            </div>
+            <div class="kv-label">주의</div>
+            <small class="text-dim">아이템 배치는 구역별로 <b>4m²당 1개</b>까지만 가능해. 3층 이상은 관련 지식 보유자(캐릭 or NPC)가 최소 1명 참여해야 해.</small>
           </div>
         `;
       };
@@ -358,30 +338,35 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             break;
 
           case 4: {
-            const ta = Number(back.querySelector('#building-totalarea')?.value || 0);
-            const hm = Number(back.querySelector('#building-height')?.value || 0);
-            const sc = String(back.querySelector('#building-scale')?.value || 'small');
-            if (!Number.isFinite(ta) || ta<=0) { showToast('총면적을 올바르게 입력해줘.', 'error'); return; }
-            if (ta > availableArea) { showToast(`남은 면적(${availableArea}m²)을 넘을 수 없어.`, 'error'); return; }
-            if (!Number.isFinite(hm) || hm<5 || hm>1000) { showToast('높이는 5~1000m 사이로 입력해줘.', 'error'); return; }
-            state.totalArea = ta;
-            state.heightM = hm;
-            state.scale = sc;
-            if (!state.zones.length) state.zones = [{ name:'본관', purpose: state.purpose, roomId:'', areaM2: ta }];
+            const f = Number(back.querySelector('#floors')?.value || 1);
+            const ba = Number(back.querySelector('#baseAreaM2')?.value || 0);
+            if (!Number.isFinite(f) || f < 1) { showToast('층수는 1층 이상이야.', 'error'); return; }
+            if (!Number.isFinite(ba) || ba <= 0) { showToast('한 층 면적을 올바르게 입력해줘.', 'error'); return; }
+            const total = f * ba;
+            if (total > availableArea) { showToast(`남은 면적(${availableArea}m²)을 넘을 수 없어.`, 'error'); return; }
+            state.floors = f;
+            state.baseAreaM2 = ba;
+            state.totalAreaM2 = total;
+            if (!state.zones.length) state.zones = [{ name:'본관', purpose: state.purpose, roomId:'', areaM2: total }];
             break;
           }
 
           case 5: {
             const sum = (state.zones||[]).reduce((a,b)=>a+Number(b.areaM2||0),0);
-            if (sum !== Number(state.totalArea)) {
-              showToast(`구역 면적 합계(${sum})가 총면적(${state.totalArea})과 같아야 해.`, 'error'); 
+            if (sum !== Number(state.totalAreaM2)) {
+              showToast(`구역 면적 합계(${sum})가 총면적(${state.totalAreaM2})과 같아야 해.`, 'error'); 
               return;
             }
             break;
           }
 
           case 6:
-            if (state.materials.length === 0) { showToast('주 자재를 하나 이상 선택해줘.', 'error'); return; }
+            if (!Array.isArray(state.primaryMaterials) || state.primaryMaterials.length < 1) {
+              showToast('주재료를 하나 이상 선택해줘. (최대 4개)', 'error'); return;
+            }
+            if (state.primaryMaterials.length > 4) {
+              showToast('주재료는 최대 4개까지 선택할 수 있어.', 'error'); return;
+            }
             break;
 
           case 7:
@@ -398,6 +383,13 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             break;
 
           case 8: {
+            // 4m²당 1개 규칙 프리체크
+            for (const z of (state.zones || [])) {
+              const cap = Math.floor(Number(z.areaM2 || 0) / 4);
+              const cnt = (z.items || []).reduce((s,it)=>s + Number(it.count || 1), 0);
+              if (cnt > cap) { showToast(`'${z.name||z.roomId||"구역"}'은 최대 ${cap}개까지만 배치 가능해.`, 'error'); return; }
+            }
+
             // 서버 규격에 맞는 contractor 만들기
             let contractor;
             if (state.contractorType === 'npc_team') {
@@ -416,19 +408,20 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                 name: state.name,
                 type: state.purpose,
                 style: state.style,
-                scale: state.scale,
-                heightM: Number(state.heightM||0),
-                totalArea: Number(state.totalArea||0),
+                scale: state.scale || 'small',
+                floors: Number(state.floors || 1),
+                baseAreaM2: Number(state.baseAreaM2 || 0),
+                totalAreaM2: Number(state.totalAreaM2 || 0),
                 zones: (state.zones||[]).map(z=>({
                   name: String(z.name||'').trim()||'구역',
                   purpose: z.purpose || state.purpose,
                   roomId: z.roomId || '',
-                  areaM2: Number(z.areaM2||0)
+                  areaM2: Number(z.areaM2||0),
+                  items: Array.isArray(z.items) ? z.items : []
                 })),
                 materials: {
-                  main: state.materials[0] || null,
-                  secondary: state.materials[1] || null,
-                  special: state.materials.slice(2)
+                  primary: state.primaryMaterials || [],
+                  secondary: state.secondaryMaterials || []
                 }
               },
               contractor,
@@ -462,7 +455,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
         back.querySelectorAll('input[name="building-purpose"]')
           .forEach(r => r.addEventListener('change', e => {
             state.purpose = e.target.value;
-            // 방 목록은 유형에 따라 달라지므로 구역의 roomId를 초기화해주는 편이 안전
+            // 방 목록은 유형에 따라 달라지므로 구역의 roomId를 초기화
             state.zones = state.zones.map(z => ({ ...z, roomId: '' }));
           }));
       }
@@ -473,13 +466,19 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       }
 
       if (state.step === 4) {
-        back.querySelector('#building-scale')?.addEventListener('change', e => { state.scale = e.target.value; });
-        back.querySelector('#building-height')?.addEventListener('input', e => { state.heightM = Number(e.target.value||0); });
-        back.querySelector('#building-totalarea')?.addEventListener('input', e => {
-          const v = Math.max(1, Math.min(availableArea, Number(e.target.value||0)));
-          state.totalArea = v;
-          e.target.value = v;
-        });
+        const floorsEl = back.querySelector('#floors');
+        const baseEl = back.querySelector('#baseAreaM2');
+        const totalView = back.querySelector('#totalAreaM2View');
+
+        const recalc = () => {
+          state.floors = Math.max(1, Number(floorsEl.value || 1));
+          state.baseAreaM2 = Math.max(1, Number(baseEl.value || 1));
+          state.totalAreaM2 = state.floors * state.baseAreaM2;
+          totalView.textContent = state.totalAreaM2.toLocaleString();
+        };
+        floorsEl.addEventListener('input', recalc);
+        baseEl.addEventListener('input', recalc);
+        recalc();
       }
 
       if (state.step === 5) {
@@ -490,7 +489,8 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             name: tr.querySelector('.z-name')?.value || '',
             purpose: tr.querySelector('.z-purpose')?.value || state.purpose,
             roomId: tr.querySelector('.z-room')?.value || '',
-            areaM2: Number(tr.querySelector('.z-area')?.value || 0)
+            areaM2: Number(tr.querySelector('.z-area')?.value || 0),
+            items: [] // 아이템 편집 UI는 추후 확장
           }));
           const sum = state.zones.reduce((a,b)=>a+Number(b.areaM2||0),0);
           const sumEl = back.querySelector('#zones-sum');
@@ -533,14 +533,35 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       }
 
       if (state.step === 6) {
-        back.querySelectorAll('input[name="building-material"]').forEach(c =>
-          c.addEventListener('change', e => {
-            if (e.target.checked) {
-              if (!state.materials.includes(e.target.value)) state.materials.push(e.target.value);
+        const cap = 4;
+        state.primaryMaterials = state.primaryMaterials || [];
+        state.secondaryMaterials = state.secondaryMaterials || [];
+        back.querySelectorAll('[data-p]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.p;
+            if (!state.primaryMaterials.includes(id)) {
+              state.primaryMaterials.push(id);
+              if (state.primaryMaterials.length > cap) state.primaryMaterials.shift(); // 5개째면 첫 항목 제거
             } else {
-              state.materials = state.materials.filter(m => m !== e.target.value);
+              state.primaryMaterials = state.primaryMaterials.filter(x => x !== id);
             }
-          }));
+            // 한 자재가 주로 가면 부에선 제거
+            state.secondaryMaterials = state.secondaryMaterials.filter(x => x !== id);
+            render();
+          });
+        });
+        back.querySelectorAll('[data-s]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const id = btn.dataset.s;
+            if (state.secondaryMaterials.includes(id)) {
+              state.secondaryMaterials = state.secondaryMaterials.filter(x => x !== id);
+            } else {
+              // 부재료엔 제한 없음. 단, 주에 있으면 부로 못 옮김
+              if (!state.primaryMaterials.includes(id)) state.secondaryMaterials.push(id);
+            }
+            render();
+          });
+        });
       }
 
       if (state.step === 7) {
