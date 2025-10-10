@@ -136,7 +136,7 @@ function render(root, plotData, characters, plotDocId) {
     // 부지 기본 정보 렌더링
     root.querySelector('#plot-name').textContent = plotData.name || '이름 없는 부지';
     root.querySelector('#plot-description').textContent = plotData.description || '설명 없음';
-    root.querySelector('#plot-area').textContent = `${formatNumber(plotData.totalAreaM2)} m² (사용 가능: ${formatNumber(plotData.availableAreaM2)} m²)`;
+    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`;
     root.querySelector('#plot-owner').textContent = plotData.ownerName || '소유주 정보 없음';
 
     // 시설 목록 렌더링
