@@ -6,6 +6,29 @@ export function esc(s){
   }[c]));
 }
 
+/**
+ * [추가된 함수] 자원 비용을 HTML 문자열로 렌더링합니다.
+ * @param {object} costs - { gold: 100, wood: 50 }와 같은 자원 객체
+ * @returns {string} - 렌더링된 HTML 문자열
+ */
+export function renderResourceCosts(costs) {
+    if (!costs || Object.keys(costs).length === 0) {
+        return '<span>무료</span>';
+    }
+
+    return Object.entries(costs).map(([resource, amount]) => {
+        // 간단한 예시: 실제 자원 이름과 아이콘 매핑이 필요할 수 있습니다.
+        const resourceName = {
+            gold: '골드',
+            wood: '목재',
+            stone: '석재',
+            iron: '철'
+        } [resource] || resource;
+
+        return `<span>${resourceName}: ${numberWithCommas(amount)}</span>`;
+    }).join(' | ');
+}
+
 export function rarityStyle(r) {
   const map = {
     normal: { bg: '#2a2f3a', border: '#5f6673', text: '#c8d0dc', label: '일반' },
