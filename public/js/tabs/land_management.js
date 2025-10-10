@@ -1,38 +1,16 @@
 // /public/js/tabs/land_management.js
 
-import {
-    getFirestore,
-    doc,
-    onSnapshot,
-    getDoc,
-    setDoc
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js";
-import {
-    getFunctions,
-    httpsCallable
-} from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
-import {
-    showToast
-} from '../ui/toast.js';
-import {
-    openModal,
-    closeModal
-} from '../ui/modal.js';
-import {
-    renderResourceCosts,
-    esc,
-    numberWithCommas,
-    listenToPlayerState
-} from '../ui/utils.js';
-import {
-    renderBuildingCard
-} from '../ui/buildingCard.js';
-import {
-    renderFarmCard
-} from '../ui/farmCard.js';
+// [수정] Firebase SDK에서 직접 가져오는 대신, 초기화된 인스턴스를 firebase.js에서 가져옵니다.
+import { db, func as functions, fx } from '../api/firebase.js'; // [!code focus]
+import { showToast } from '../ui/toast.js';
+import { openModal, closeModal } from '../ui/modal.js';
+import { renderResourceCosts, esc, numberWithCommas, listenToPlayerState } from '../ui/utils.js';
+import { renderBuildingCard } from '../ui/buildingCard.js';
+import { renderFarmCard } from '../ui/farmCard.js';
 
-const db = getFirestore();
-const functions = getFunctions();
+// [삭제] 아래 두 줄은 이제 필요 없습니다.
+// const db = getFirestore();
+// const functions = getFunctions();
 
 let currentPlotData = null;
 let currentPlotDocId = null;
@@ -97,14 +75,13 @@ function init(plotDocId) {
     });
 
     document.getElementById('add-farm-btn').addEventListener('click', () => {
-        // TODO: 경작지 추가 기능 구현
         showToast('경작지 추가 기능은 아직 준비 중입니다.');
     });
 
 
     // Listen to plot data
-    const plotRef = doc(db, 'plots', plotDocId);
-    unsubscribePlot = onSnapshot(plotRef, (doc) => {
+    const plotRef = fx.doc(db, 'plots', plotDocId); // [!code focus]
+    unsubscribePlot = fx.onSnapshot(plotRef, (doc) => { // [!code focus]
         if (doc.exists()) {
             currentPlotData = doc.data();
             render(root, currentPlotData, allCharacters, plotDocId);
@@ -130,12 +107,12 @@ function render(root, plotData, characters, plotDocId) {
     // 부지 기본 정보 렌더링
     root.querySelector('#plot-name').textContent = plotData.name || '이름 없는 부지';
     root.querySelector('#plot-description').textContent = plotData.description || '설명 없음';
-    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`;
+    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`; // [!code focus]
     root.querySelector('#plot-owner').textContent = plotData.ownerName || '소유주 정보 없음';
 
     // 시설 목록 렌더링
     const facilitiesList = root.querySelector('#facilities-list');
-    facilitiesList.innerHTML = ''; // 기존 목록 비우기
+    facilitiesList.innerHTML = '';
 
     if (!plotData.facilities || plotData.facilities.length === 0) {
         facilitiesList.innerHTML = '<p>아직 건설된 시설이 없습니다.</p>';
@@ -167,7 +144,7 @@ function openCustomConstructionModal(plotDocId, plotData) {
         floors: 1,
         baseAreaM2: 100,
         totalAreaM2: 100,
-        copyFirstFloor_enabled: false, // 1층 설계 복사 여부
+        copyFirstFloor_enabled: false,
         zones: [],
         designSummary: {},
     };
@@ -176,39 +153,22 @@ function openCustomConstructionModal(plotDocId, plotData) {
         state.totalAreaM2 = (state.floors || 1) * (state.baseAreaM2 || 0);
         const totalAreaView = document.getElementById('totalAreaM2View');
         const baseAreaView = document.getElementById('baseAreaM2View');
-        if (totalAreaView) totalAreaView.textContent = `${numberWithCommas(state.totalAreaM2)} m²`;
-        if (baseAreaView) baseAreaView.textContent = `${numberWithCommas(state.baseAreaM2)} m²`;
+        if (totalAreaView) totalAreaView.textContent = `${numberWithCommas(state.totalAreaM2)} m²`; // [!code focus]
+        if (baseAreaView) baseAreaView.textContent = `${numberWithCommas(state.baseAreaM2)} m²`; // [!code focus]
     };
 
     const renderStep = () => {
         let content = '';
         switch (state.step) {
-            case 1:
-                content = step1();
-                break;
-            case 2:
-                content = step2();
-                break;
-            case 3:
-                content = step3();
-                break;
-            case 4:
-                content = step4(plotData.availableAreaM2);
-                break;
-            case 5:
-                content = step5();
-                break;
-            case 6:
-                content = step6();
-                break;
-            case 7:
-                content = step7();
-                break;
-            case 8:
-                content = step8();
-                break;
-            default:
-                content = `<p>알 수 없는 단계입니다.</p>`
+            case 1: content = step1(); break;
+            case 2: content = step2(); break;
+            case 3: content = step3(); break;
+            case 4: content = step4(plotData.availableAreaM2); break;
+            case 5: content = step5(); break;
+            case 6: content = step6(); break;
+            case 7: content = step7(); break;
+            case 8: content = step8(); break;
+            default: content = `<p>알 수 없는 단계입니다.</p>`
         }
         const modalContent = `
             ${content}
@@ -279,7 +239,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
                 <input type="number" id="baseAreaM2" min="1" value="${state.baseAreaM2 || 100}">
             </div>
         </div>
-        
         <div class="kv-card" style="margin-top:8px;">
             <label class="row" style="gap:8px; align-items:center; cursor:pointer;">
                 <input type="checkbox" id="copyFirstFloor" ${state.copyFirstFloor_enabled ? 'checked' : ''}>
@@ -287,7 +246,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
             </label>
             <small class="text-dim">이 옵션을 선택하면 5단계에서 1층의 구역만 설정하고, 총면적이 아닌 1층 면적을 기준으로 구역을 나눕니다.</small>
         </div>
-
         <div class="kv-card" style="margin-top:8px;">
             <div class="kv-label">부지 점유 면적 (1층 면적) — 남은 면적: ${numberWithCommas(availableArea)}m²</div>
             <div><b id="baseAreaM2View">${numberWithCommas(state.baseAreaM2 || 100)}</b> m²</div>
@@ -302,7 +260,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
         const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
         const areaLabel = state.copyFirstFloor_enabled ? `1층 면적(${numberWithCommas(areaToDivide)}m²)` : `건물 총면적(${numberWithCommas(areaToDivide)}m²)`;
         const currentSum = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
-
         return `
             <h2>새 건물 설계 - 5단계: 구역 분할</h2>
             <p>${areaLabel}에 맞춰 구역을 나눠주세요. 합계는 ${numberWithCommas(areaToDivide)}m²와 같아야 합니다.</p>
@@ -322,8 +279,8 @@ function openCustomConstructionModal(plotDocId, plotData) {
         `;
     };
 
-    const step6 = () => `<h2>새 건물 설계 - 6단계: 방 배치 (준비 중)</h2><p>각 구역에 어떤 방을 배치할지 설정합니다. (이 기능은 현재 개발 중입니다.)</p>`;
-    const step7 = () => `<h2>새 건물 설계 - 7단계: 외관/내부 마감 (준비 중)</h2><p>건물의 외관과 내부 마감재를 선택합니다. (이 기능은 현재 개발 중입니다.)</p>`;
+    const step6 = () => `<h2>새 건물 설계 - 6단계: 방 배치 (준비 중)</h2><p>이 기능은 현재 개발 중입니다.</p>`;
+    const step7 = () => `<h2>새 건물 설계 - 7단계: 외관/내부 마감 (준비 중)</h2><p>이 기능은 현재 개발 중입니다.</p>`;
 
     const step8 = () => {
         state.designSummary = {
@@ -337,14 +294,8 @@ function openCustomConstructionModal(plotDocId, plotData) {
             zones: state.zones,
             copyFirstFloor: state.copyFirstFloor_enabled,
         };
-
-        const {
-            summary,
-            costs
-        } = calculateDesignCosts(state.designSummary);
-
-        state.finalCosts = costs; // 최종 비용 저장
-
+        const { summary, costs } = calculateDesignCosts(state.designSummary);
+        state.finalCosts = costs;
         return `
             <h2>새 건물 설계 - 최종 확인</h2>
             <p>아래 내용을 확인하고 '건설 시작' 버튼을 눌러주세요.</p>
@@ -358,7 +309,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
         `;
     };
 
-
     const attachModalEvents = () => {
         const back = document.querySelector('.modal-content');
         if (!back) return;
@@ -371,7 +321,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
         back.querySelector('#next-step')?.addEventListener('click', async () => {
             if (await validateStep()) {
                 if (state.step === 8) {
-                    // 최종 제출 로직
                     submitConstructionProject();
                 } else {
                     state.step++;
@@ -380,13 +329,10 @@ function openCustomConstructionModal(plotDocId, plotData) {
             }
         });
 
-
-        // Step-specific listeners
         if (state.step === 1) {
             back.querySelector('#buildingName').addEventListener('input', e => state.buildingName = e.target.value);
             back.querySelector('#purposeId').addEventListener('change', e => {
                 state.purposeId = e.target.value;
-                // re-render to show description
                 renderStep();
             });
         }
@@ -395,7 +341,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
             back.querySelectorAll(`input[name="${groupName}"]`).forEach(radio => {
                 radio.addEventListener('change', (e) => {
                     state[groupName] = e.target.value;
-                    // re-render for visual feedback
                     renderStep();
                 });
             });
@@ -414,38 +359,25 @@ function openCustomConstructionModal(plotDocId, plotData) {
             back.querySelector('#copyFirstFloor')?.addEventListener('change', e => {
                 state.copyFirstFloor_enabled = e.target.checked;
                 showToast(state.copyFirstFloor_enabled ? '1층 설계 복사 활성화' : '1층 설계 복사 비활성화', 'info');
-                // 옵션 변경 시 5단계 구역 설정을 초기화
                 state.zones = [];
             });
         }
-
         if (state.step === 5) {
             const zoneList = back.querySelector('#zone-list');
             const sumEl = back.querySelector('#zone-sum');
             const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
-
             const updateZoneSum = () => {
                 const currentSum = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
-                sumEl.textContent = numberWithCommas(currentSum);
-                if (currentSum === areaToDivide) {
-                    sumEl.parentElement.style.color = 'var(--color-success)';
-                } else {
-                    sumEl.parentElement.style.color = 'var(--color-danger)';
-                }
+                sumEl.textContent = numberWithCommas(currentSum); // [!code focus]
+                sumEl.parentElement.style.color = currentSum === areaToDivide ? 'var(--color-success)' : 'var(--color-danger)';
             };
-
             const updateStateFromUI = () => {
-                const newZones = [];
-                zoneList.querySelectorAll('.zone-row').forEach(row => {
-                    newZones.push({
-                        name: row.querySelector('.zone-name').value,
-                        areaM2: Number(row.querySelector('.zone-area').value) || 0,
-                    });
-                });
-                state.zones = newZones;
+                state.zones = Array.from(zoneList.querySelectorAll('.zone-row')).map(row => ({
+                    name: row.querySelector('.zone-name').value,
+                    areaM2: Number(row.querySelector('.zone-area').value) || 0,
+                }));
                 updateZoneSum();
             };
-
             zoneList.addEventListener('input', updateStateFromUI);
             zoneList.addEventListener('click', (e) => {
                 if (e.target.classList.contains('remove-zone-btn')) {
@@ -453,123 +385,83 @@ function openCustomConstructionModal(plotDocId, plotData) {
                     updateStateFromUI();
                 }
             });
-
             back.querySelector('#add-zone-btn').addEventListener('click', () => {
-                const newZone = {
-                    name: '',
-                    areaM2: 0
-                };
-                state.zones.push(newZone);
-                const index = state.zones.length - 1;
-
-                const row = document.createElement('div');
-                row.className = 'zone-row';
-                row.dataset.index = index;
-                row.innerHTML = `
-                    <input type="text" class="zone-name" placeholder="구역 이름 (예: 로비)">
-                    <input type="number" class="zone-area" placeholder="면적 (m²)">
-                    <button class="btn small danger remove-zone-btn">삭제</button>
-                `;
-                zoneList.appendChild(row);
+                state.zones.push({ name: '', areaM2: 0 });
+                renderStep();
             });
         }
     };
-
 
     const validateStep = async () => {
         switch (state.step) {
             case 1:
                 if (!state.buildingName.trim()) {
-                    showToast('건물 이름을 입력해주세요.', 'error');
-                    return false;
+                    showToast('건물 이름을 입력해주세요.', 'error'); return false;
                 }
                 if (!state.purposeId) {
-                    showToast('건물 용도를 선택해주세요.', 'error');
-                    return false;
+                    showToast('건물 용도를 선택해주세요.', 'error'); return false;
                 }
                 break;
             case 2:
                 if (!state.styleId) {
-                    showToast('건축 양식을 선택해주세요.', 'error');
-                    return false;
+                    showToast('건축 양식을 선택해주세요.', 'error'); return false;
                 }
                 break;
             case 3:
                 if (!state.materialId) {
-                    showToast('주 자재를 선택해주세요.', 'error');
-                    return false;
+                    showToast('주 자재를 선택해주세요.', 'error'); return false;
                 }
                 break;
             case 4:
                 if (state.baseAreaM2 <= 0 || state.floors <= 0) {
-                    showToast('층수와 면적은 0보다 커야 합니다.', 'error');
-                    return false;
+                    showToast('층수와 면적은 0보다 커야 합니다.', 'error'); return false;
                 }
                 if (state.baseAreaM2 > plotData.availableAreaM2) {
-                    showToast('건물 1층 면적이 부지의 남은 면적보다 클 수 없습니다.', 'error');
-                    return false;
+                    showToast('건물 1층 면적이 부지의 남은 면적보다 클 수 없습니다.', 'error'); return false;
                 }
                 break;
             case 5:
                 const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
                 const totalZoneArea = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
                 if (totalZoneArea !== areaToDivide) {
-                    showToast(`구역 면적의 합계(${numberWithCommas(totalZoneArea)}m²)가 목표 면적(${numberWithCommas(areaToDivide)}m²)과 일치해야 합니다.`, 'error');
+                    showToast(`구역 면적의 합계(${numberWithCommas(totalZoneArea)}m²)가 목표 면적(${numberWithCommas(areaToDivide)}m²)과 일치해야 합니다.`, 'error'); // [!code focus]
                     return false;
                 }
                 if (state.zones.some(z => !z.name.trim())) {
-                    showToast('모든 구역의 이름을 입력해주세요.', 'error');
-                    return false;
+                    showToast('모든 구역의 이름을 입력해주세요.', 'error'); return false;
                 }
                 break;
         }
         return true;
     };
 
-
     const submitConstructionProject = async () => {
         let finalZones = state.zones;
-        // 1층 복사 옵션이 활성화된 경우, 모든 층에 구역을 복제
         if (state.copyFirstFloor_enabled && state.floors > 1) {
             finalZones = [];
             for (let i = 1; i <= state.floors; i++) {
                 state.zones.forEach(zone => {
-                    finalZones.push({
-                        ...zone,
-                        name: `${i}층 - ${zone.name}`, // 각 층에 맞는 이름 부여
-                    });
+                    finalZones.push({ ...zone, name: `${i}층 - ${zone.name}` });
                 });
             }
-            // 면적 합계가 총면적과 맞는지 다시 한번 확인
             const totalZoneArea = finalZones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
             if (totalZoneArea !== state.totalAreaM2) {
-                showToast(`[오류] 복사된 구역의 총면적(${numberWithCommas(totalZoneArea)}m²)이 건물 총면적(${numberWithCommas(state.totalAreaM2)}m²)과 일치하지 않습니다.`, 'error');
+                showToast(`[오류] 복사된 구역의 총면적(${numberWithCommas(totalZoneArea)}m²)이 건물 총면적(${numberWithCommas(state.totalAreaM2)}m²)과 일치하지 않습니다.`, 'error'); // [!code focus]
                 return;
             }
         }
-
         const payload = {
             plotId: plotDocId,
             design: {
-                type: 'building',
-                name: state.buildingName,
-                purposeId: state.purposeId,
-                styleId: state.styleId,
-                materialId: state.materialId,
-                floors: state.floors,
-                baseAreaM2: state.baseAreaM2,
-                totalAreaM2: state.totalAreaM2,
-                zones: finalZones.map(z => ({ // finalZones 사용
-                    name: z.name,
-                    areaM2: z.areaM2,
-                    rooms: [] // 방 배치는 나중에
-                })),
+                type: 'building', name: state.buildingName, purposeId: state.purposeId,
+                styleId: state.styleId, materialId: state.materialId, floors: state.floors,
+                baseAreaM2: state.baseAreaM2, totalAreaM2: state.totalAreaM2,
+                zones: finalZones.map(z => ({ name: z.name, areaM2: z.areaM2, rooms: [] })),
             },
             costs: state.finalCosts,
         };
-
         try {
-            const startConstruction = httpsCallable(functions, 'startConstructionProject');
+            const startConstruction = fx.httpsCallable(functions, 'startConstructionProject'); // [!code focus]
             showToast('건설 프로젝트를 서버에 제출 중입니다...', 'info');
             const result = await startConstruction(payload);
             closeModal();
@@ -584,75 +476,36 @@ function openCustomConstructionModal(plotDocId, plotData) {
 }
 
 function calculateDesignCosts(designSummary) {
-    const {
-        purpose,
-        style,
-        material,
-        totalAreaM2
-    } = designSummary;
-    const summary = [{
-            label: '이름',
-            value: esc(designSummary.name)
-        },
-        {
-            label: '용도',
-            value: esc(purpose.name)
-        },
-        {
-            label: '건축 양식',
-            value: esc(style.name)
-        },
-        {
-            label: '주 자재',
-            value: esc(material.name)
-        },
-        {
-            label: '규모',
-            value: `${designSummary.floors}층, 총 ${numberWithCommas(totalAreaM2)}m²`
-        },
-        {
-            label: '구역 설정',
-            value: `${designSummary.zones.length}개 구역 ${designSummary.copyFirstFloor ? '(1층 설계 복사됨)' : ''}`
-        },
+    const { purpose, style, material, totalAreaM2 } = designSummary;
+    const summary = [
+        { label: '이름', value: esc(designSummary.name) },
+        { label: '용도', value: esc(purpose.name) },
+        { label: '건축 양식', value: esc(style.name) },
+        { label: '주 자재', value: esc(material.name) },
+        { label: '규모', value: `${designSummary.floors}층, 총 ${numberWithCommas(totalAreaM2)}m²` }, // [!code focus]
+        { label: '구역 설정', value: `${designSummary.zones.length}개 구역 ${designSummary.copyFirstFloor ? '(1층 설계 복사됨)' : ''}` },
     ];
-
-    // 비용 계산 로직 (functions/construction.js와 유사하게)
-    const baseCostPerM2 = 100; // m²당 기본 비용
+    const baseCostPerM2 = 100;
     const cost = Math.round(totalAreaM2 * baseCostPerM2 * style.costModifier * material.costModifier);
-
-    // 자재 계산 로직
     const materials = {};
     const primaryMaterial = material.id;
-    materials[primaryMaterial] = (materials[primaryMaterial] || 0) + totalAreaM2 * 2; // m²당 2단위
+    materials[primaryMaterial] = (materials[primaryMaterial] || 0) + totalAreaM2 * 2;
     style.requiredMaterials.forEach(mat => {
         materials[mat.id] = (materials[mat.id] || 0) + totalAreaM2 * mat.amountPerM2;
     });
-
     const costs = {
         money: cost,
-        items: Object.entries(materials).map(([id, amount]) => ({
-            id,
-            amount: Math.ceil(amount)
-        })),
-        labor: Math.ceil(totalAreaM2 * 5), // m²당 5 노동력
+        items: Object.entries(materials).map(([id, amount]) => ({ id, amount: Math.ceil(amount) })),
+        labor: Math.ceil(totalAreaM2 * 5),
     };
-
-    return {
-        summary,
-        costs
-    };
+    return { summary, costs };
 }
 
-
 function cleanup() {
-    if (unsubscribePlot) {
-        unsubscribePlot();
-        unsubscribePlot = null;
-    }
-    if (unsubscribePlayer) {
-        unsubscribePlayer();
-        unsubscribePlayer = null;
-    }
+    if (unsubscribePlot) unsubscribePlot();
+    if (unsubscribePlayer) unsubscribePlayer();
+    unsubscribePlot = null;
+    unsubscribePlayer = null;
     currentPlotData = null;
     currentPlotDocId = null;
     allCharacters = [];
