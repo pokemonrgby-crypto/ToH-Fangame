@@ -1,55 +1,102 @@
+// /functions/assets/building_materials.json (전체 교체)
 {
   "wood": {
     "name": "목재",
+    "description": "가장 기초적인 건축 자재입니다. 가공이 쉽지만 내구성은 약합니다.",
     "type": "main",
     "grade": "normal",
-    "basePrice": 5,
-    "description": "가공되지 않은 기본 목재입니다. 건축의 가장 기초적인 재료로 사용됩니다.",
     "effects": {
-      "stability_bonus": 2,
-      "grade_prob_bonus": { "C": 5, "B": -5 }
+      "stabilityBonus": 2,
+      "gradeProbBonus": { "D": 10, "C": 5, "B": -5 }
     }
   },
   "stone": {
     "name": "석재",
+    "description": "목재보다 견고하고 불에 강한 건축 자재입니다.",
     "type": "main",
     "grade": "normal",
-    "basePrice": 8,
-    "description": "가공되지 않은 기본 석재입니다. 목재보다 견고한 건물을 지을 수 있습니다.",
     "effects": {
-      "stability_bonus": 4,
-      "grade_prob_bonus": { "B": 5, "A": -5 }
+      "stabilityBonus": 5,
+      "gradeProbBonus": { "C": 10, "B": 5, "A": -5 }
     }
   },
-  "iron_ore": {
-    "name": "철광석",
+  "brick": {
+    "name": "벽돌",
+    "description": "흙을 구워 만들어 크기가 균일하고 쌓기 좋은 건축 자재입니다.",
     "type": "main",
     "grade": "normal",
-    "basePrice": 15,
-    "description": "제련하여 철근이나 철제 구조물을 만들 수 있는 귀한 광물입니다.",
     "effects": {
-      "stability_bonus": 8,
-      "grade_prob_bonus": { "A": 5, "S": -5 }
+      "stabilityBonus": 4,
+      "gradeProbBonus": { "C": 8, "B": 6 }
     }
   },
-  "gold_bar": {
-    "name": "금괴",
+  "iron_frame": {
+    "name": "철골 구조물",
+    "description": "건물의 뼈대를 이루는 철제 구조물입니다. 더 높고 튼튼한 건물을 지을 수 있게 해줍니다.",
+    "type": "main",
+    "grade": "rare",
+    "effects": {
+      "stabilityBonus": 12,
+      "gradeProbBonus": { "B": 10, "A": 5, "S": -5 }
+    }
+  },
+  "reinforced_concrete": {
+    "name": "철근 콘크리트",
+    "description": "콘크리트 속에 철근을 넣어 강도를 극대화한 현대적인 건축 자재입니다.",
+    "type": "main",
+    "grade": "epic",
+    "effects": {
+      "stabilityBonus": 20,
+      "gradeProbBonus": { "A": 15, "S": 5 }
+    }
+  },
+  "arcane_infused_stone": {
+    "name": "마력이 깃든 석재",
+    "description": "마법적인 힘으로 강화되어 물리적, 마법적 충격에 모두 강한 신비한 석재입니다.",
+    "type": "main",
+    "grade": "epic",
+    "effects": {
+      "stabilityBonus": 15,
+      "gradeProbBonus": { "A": 10, "S": 8, "SS": -2 },
+      "aestheticBonus": 50
+    }
+  },
+  "glass_panel": {
+    "name": "유리판",
+    "description": "건물 외벽에 사용하여 채광을 좋게 하고 현대적인 느낌을 줍니다.",
+    "type": "sub",
+    "grade": "normal",
+    "effects": {
+      "aestheticBonus": 20
+    }
+  },
+  "gold_leaf": {
+    "name": "금박",
+    "description": "건물의 특정 부분을 장식하여 화려함과 부유함을 과시합니다.",
     "type": "sub",
     "grade": "epic",
-    "basePrice": 500,
-    "description": "건물의 외관을 화려하게 장식하는 데 사용되는 귀금속입니다.",
     "effects": {
-      "aesthetic_modifier": 1.5
+      "aestheticBonus": 150
     }
   },
-  "silver_bar": {
-    "name": "은괴",
+  "marble": {
+    "name": "대리석",
+    "description": "아름다운 무늬를 가진 고급 석재로, 건물의 품격을 높여줍니다.",
     "type": "sub",
     "grade": "rare",
-    "basePrice": 250,
-    "description": "건물의 외관을 우아하게 장식하는 데 사용되는 귀금속입니다.",
     "effects": {
-      "aesthetic_modifier": 1.2
+      "stabilityBonus": 2,
+      "aestheticBonus": 80
+    }
+  },
+  "obsidian": {
+    "name": "흑요석",
+    "description": "칠흑같이 검고 예리한 화산암. 위압적이고 신비로운 분위기를 연출합니다.",
+    "type": "sub",
+    "grade": "epic",
+    "effects": {
+      "stabilityBonus": 5,
+      "aestheticBonus": 120
     }
   }
 }
