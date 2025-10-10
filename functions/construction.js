@@ -1,364 +1,442 @@
-// /functions/construction.js (전체 교체)
-
+// /functions/construction.js
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { FieldValue } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
 const db = admin.firestore();
 const { v4: uuidv4 } = require('uuid');
 
-// 에셋 로더와 유틸리티 함수를 불러옵니다.
+// 에셋 로더와 유틸리티
 const { buildingMaterials, researchTree } = require('./assets');
 const { deductItemsFromInventory, ensureCharacterSkills } = require('./utils');
 
-const MATERIAL_BUYOUT_MULTIPLIER = 2.5; // 자재 긴급 구매 시 가격 배수
+const MATERIAL_BUYOUT_MULTIPLIER = 2.5; // 자재 긴급 구매 배수
 
 /**
- * [NEW] 커스텀 설계도 기반으로 요구사항 동적 계산
- * @param {object} params - { design, constructionLevel, artStat }
- * @returns {object} { materials, cost, duration, aestheticValue }
+ * 커스텀 설계 요구량/비용/시간/미관 계산
  */
 function calculateCustomRequirements({ design, constructionLevel = 1, artStat = 1 }) {
-    const materialsData = buildingMaterials();
-    if (!materialsData) throw new Error("Building materials asset not found.");
+  const materialsData = buildingMaterials();
+  if (!materialsData) throw new Error('Building materials asset not found.');
 
-    const { totalArea, materials: designMaterials } = design;
+  const { totalArea = 0, materials: designMaterials = {} } = design;
 
-    const requiredMaterials = {};
-    if (designMaterials.main) {
-        requiredMaterials[designMaterials.main] = (requiredMaterials[designMaterials.main] || 0) + Math.floor(totalArea * 1.8);
+  const requiredMaterials = {};
+  if (designMaterials.main) {
+    requiredMaterials[designMaterials.main] = (requiredMaterials[designMaterials.main] || 0) + Math.floor(totalArea * 1.8);
+  }
+  if (designMaterials.secondary) {
+    requiredMaterials[designMaterials.secondary] =
+      (requiredMaterials[designMaterials.secondary] || 0) + Math.floor(totalArea * 1.2);
+  }
+  (designMaterials.special || []).forEach((matId) => {
+    requiredMaterials[matId] = (requiredMaterials[matId] || 0) + Math.floor(totalArea / 50); // 50m²당 1개
+  });
+
+  let baseCost = 0;
+  let aestheticValue = 0;
+  for (const matId in requiredMaterials) {
+    const matInfo = materialsData[matId];
+    if (!matInfo) continue;
+    baseCost += (matInfo.basePrice || 1) * requiredMaterials[matId];
+    if (matInfo.aesthetic_modifier) {
+      aestheticValue += requiredMaterials[matId] * (matInfo.aesthetic_modifier - 1) * 10;
     }
-    if (designMaterials.secondary) {
-        requiredMaterials[designMaterials.secondary] = (requiredMaterials[designMaterials.secondary] || 0) + Math.floor(totalArea * 1.2);
-    }
-    (designMaterials.special || []).forEach(matId => {
-        requiredMaterials[matId] = (requiredMaterials[matId] || 0) + Math.floor(totalArea / 50); // 특별 재료는 50m^2당 1개
-    });
+  }
+  const constructionCost = Math.floor(baseCost * 1.2);
 
-    let baseCost = 0;
-    let aestheticValue = 0;
-    for (const matId in requiredMaterials) {
-        const materialInfo = materialsData[matId];
-        if (materialInfo) {
-            baseCost += (materialInfo.basePrice || 1) * requiredMaterials[matId];
-            if (materialInfo.aesthetic_modifier) {
-                aestheticValue += requiredMaterials[matId] * (materialInfo.aesthetic_modifier - 1) * 10;
-            }
-        }
-    }
-    const constructionCost = Math.floor(baseCost * 1.2);
+  const aestheticChance = artStat * 0.005;
+  if (Math.random() < aestheticChance) {
+    aestheticValue *= 1.5 + Math.random();
+    aestheticValue += 100;
+  }
+  aestheticValue = Math.floor(aestheticValue + totalArea * 0.1);
 
-    const aestheticChance = artStat * 0.005;
-    if (Math.random() < aestheticChance) {
-        aestheticValue *= (1.5 + Math.random());
-        aestheticValue += 100;
-    }
-    aestheticValue = Math.floor(aestheticValue + totalArea * 0.1);
+  // duration: 분 단위
+  const baseDuration = Math.floor(totalArea * 0.5);
+  const durationMultiplier = 1 / (1 + (constructionLevel - 1) * 0.05);
+  const durationMinutes = Math.max(10, Math.floor(baseDuration * durationMultiplier));
 
-    const baseDuration = Math.floor(totalArea * 0.5);
-    const durationMultiplier = 1 / (1 + (constructionLevel - 1) * 0.05);
-    const duration = Math.max(10, Math.floor(baseDuration * durationMultiplier));
-
-    return { materials: requiredMaterials, cost: constructionCost, duration, aestheticValue };
+  return { materials: requiredMaterials, cost: constructionCost, durationMinutes, aestheticValue };
 }
 
 /**
- * [V3] 커스텀 건물 건설 시작
+ * 건설 시작
+ * 입력: { plotId, design{ name,type,style,scale,heightM,totalArea,zones[],materials{main,secondary,special[]}}, contractor{ type,id?,level? }, allowMaterialBuyout }
+ * 응답: { success:true, projectId, message }
  */
 exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const {
+  const {
+    plotId,
+    design,
+    contractor,
+    allowMaterialBuyout = false,
+  } = req.data || {};
+
+  // 기본 검증
+  if (
+    !plotId || !design || !contractor ||
+    !(Number(design.totalArea) > 0) ||
+    !Array.isArray(design.zones) || design.zones.length < 1 ||
+    !design.type || !design.style || !design.scale ||
+    !design.materials || !design.materials.main
+  ) {
+    throw new HttpsError('invalid-argument', '필수 설계 정보가 누락되었습니다.');
+  }
+
+  let constructionLevel = 1;
+  let artStat = 1;
+  let laborCost = 0;
+
+  try {
+    const result = await db.runTransaction(async (tx) => {
+      const userRef = db.collection('users').doc(uid);
+      const userSnap = await tx.get(userRef);
+      if (!userSnap.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+      const userData = userSnap.data();
+
+      // 부지 검증(면적 한도)
+      const plotRef = db.collection('land_plots').doc(plotId);
+      const plotSnap = await tx.get(plotRef);
+      if (!plotSnap.exists) throw new HttpsError('not-found', '부지를 찾을 수 없습니다.');
+      const plot = plotSnap.data() || {};
+      const totalArea = Number(plot.totalArea || 10000);
+      const usedArea = Number(plot.usedArea || 0);
+      const availableArea = Math.max(0, totalArea - usedArea);
+      if (Number(design.totalArea) > availableArea) {
+        throw new HttpsError('failed-precondition', `남은 면적(${availableArea}m²)을 초과했습니다.`);
+      }
+
+      // 선행 지식 체크(예시)
+      const needKnowledge = new Set();
+      for (const z of design.zones) {
+        if (z.purpose === 'laboratory') needKnowledge.add('basic_chemistry');
+      }
+      if (needKnowledge.size) {
+        const knowRef = db.collection('knowledge').doc(uid);
+        const knowSnap = await tx.get(knowRef);
+        const know = knowSnap.exists ? knowSnap.data() : {};
+        for (const k of needKnowledge) {
+          if (!know[k] || Number(know[k].understanding || 0) < 100) {
+            const techName = (researchTree().projects?.[k]?.name) || k;
+            throw new HttpsError('failed-precondition', `필요한 기술(${techName})이 부족합니다.`);
+          }
+        }
+      }
+
+      // 시공 주체(캐릭터/NPC/기타)
+      if (contractor.type === 'character' && contractor.id) {
+        const charRef = db.collection('chars').doc(contractor.id);
+        const charSnap = await tx.get(charRef);
+        const charData = charSnap.exists ? charSnap.data() : null;
+        if (!charData || charData.owner_uid !== uid) {
+          throw new HttpsError('permission-denied', '유효하지 않은 캐릭터입니다.');
+        }
+        const ensured = await ensureCharacterSkills(tx, charRef, charData);
+        constructionLevel = ensured.skills?.construction?.level || 1;
+        artStat = ensured.skills?.art?.level || 1;
+        tx.update(charRef, { status: 'constructing' });
+      } else if (contractor.type === 'npc' && contractor.level) {
+        constructionLevel = Math.max(1, Math.min(100, Number(contractor.level)));
+        artStat = Math.floor(constructionLevel / 2);
+        laborCost = Math.floor(50 * Math.pow(constructionLevel, 1.5));
+      } else {
+        // self/player/company 등: 레벨 1 기본치
+        constructionLevel = 1;
+        artStat = 1;
+      }
+
+      // 요구량/비용/시간 계산
+      const { materials: reqMats, cost, durationMinutes, aestheticValue } =
+        calculateCustomRequirements({ design, constructionLevel, artStat });
+
+      // 재고/긴급구매 처리
+      const matsAsset = buildingMaterials();
+      let materialBuyoutCost = 0;
+      const toDeduct = {};
+      const items = userData.items_all || [];
+
+      for (const matId in reqMats) {
+        const need = reqMats[matId];
+        const inv = items.find(it => (it.id === matId) || (it.itemId === matId));
+        const have = inv ? Number(inv.count || inv.quantity || 0) : 0;
+
+        if (have < need) {
+          if (!allowMaterialBuyout) {
+            const name = matsAsset?.[matId]?.name || matId;
+            throw new HttpsError('failed-precondition', `자재(${name})가 부족합니다.`);
+          }
+          const miss = need - have;
+          materialBuyoutCost += miss * (matsAsset?.[matId]?.basePrice || 1) * MATERIAL_BUYOUT_MULTIPLIER;
+          if (have > 0) toDeduct[matId] = have;
+        } else {
+          toDeduct[matId] = need;
+        }
+      }
+
+      // 최종 비용 차감
+      const finalCost = Math.ceil(cost + laborCost + materialBuyoutCost);
+      if ((userData.coins || 0) < finalCost) {
+        throw new HttpsError('failed-precondition', `비용이 부족합니다. (필요: ${finalCost})`);
+      }
+      tx.update(userRef, { coins: FieldValue.increment(-finalCost) });
+
+      // 자재 차감
+      if (Object.keys(toDeduct).length > 0) {
+        await deductItemsFromInventory(tx, uid, toDeduct);
+      }
+
+      // 프로젝트 생성
+      const projectId = uuidv4();
+      const projectRef = db.collection('construction_projects').doc(projectId);
+      const serverNow = admin.firestore.Timestamp.now(); // 레퍼런스용
+      const completionTime = new Date(Date.now() + durationMinutes * 60 * 1000);
+
+      tx.set(projectRef, {
+        ownerId: uid,
         plotId,
-        design, // { name, totalArea, zones: [...], materials: {...} }
-        contractor, // { type, id?, level? }
-        allowMaterialBuyout = false,
-    } = req.data;
+        projectId,
+        design,                 // 설계 전문 저장
+        contractor,
+        status: 'inprogress',
+        startTime: FieldValue.serverTimestamp(),
+        completionTime,         // Date 저장(나중에 .toDate()로 사용 가능)
+        baseAestheticValue: aestheticValue,
+        estimatedCost: finalCost,
+      });
 
-    if (!plotId || !design || !contractor || !(design.totalArea > 0) ||
-        !Array.isArray(design.zones) || design.zones.length < 1 ||
-        !design.type || !design.style || !design.scale ||
-        !design.materials || !design.materials.main) {
-      throw new HttpsError('invalid-argument','필수 설계 정보가 누락되었습니다.');
-    }
+      return { success: true, projectId, message: `'${design.name}' 건설을 시작합니다!` };
+    });
 
-
-    let constructionLevel = 1;
-    let artStat = 1;
-    let laborCost = 0;
-
-    try {
-        const result = await db.runTransaction(async (transaction) => {
-            const userRef = db.collection('users').doc(uid);
-            const userDoc = await transaction.get(userRef);
-            if (!userDoc.exists) throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
-            const userData = userDoc.data();
-
-            // 1. 기술(지식) 선행 조건 확인 (예시: 특정 용도의 방을 지으려면 기술 필요)
-            const requiredKnowledge = new Set();
-            design.zones.forEach(zone => {
-                if (zone.purpose === 'laboratory') requiredKnowledge.add('basic_chemistry');
-            });
-            if (requiredKnowledge.size > 0) {
-                const knowledgeDoc = await transaction.get(db.collection('knowledge').doc(uid));
-                const userKnowledge = knowledgeDoc.exists ? knowledgeDoc.data() : {};
-                for (const techId of requiredKnowledge) {
-                    if (!userKnowledge[techId] || userKnowledge[techId].understanding < 100) {
-                        const techName = researchTree().projects[techId]?.name || techId;
-                        throw new HttpsError('failed-precondition', `필요한 기술(${techName})이 부족합니다.`);
-                    }
-                }
-            }
-
-            // 2. 노동력(건축가) 정보 확정
-            if (contractor.type === 'character' && contractor.id) {
-                const charRef = db.collection('chars').doc(contractor.id);
-                let charData = (await transaction.get(charRef)).data();
-                if (!charData || charData.owner_uid !== uid) throw new HttpsError('permission-denied', '유효하지 않은 캐릭터입니다.');
-                charData = await ensureCharacterSkills(transaction, charRef, charData);
-                constructionLevel = charData.skills.construction.level;
-                artStat = charData.skills.art.level;
-                transaction.update(charRef, { status: 'constructing' });
-            } else if (contractor.type === 'npc' && contractor.level) {
-                constructionLevel = Math.max(1, Math.min(100, contractor.level));
-                artStat = Math.floor(constructionLevel / 2);
-                laborCost = Math.floor(50 * Math.pow(constructionLevel, 1.5));
-            }
-
-            // 3. 커스텀 요구사항 계산
-            const { materials, cost, duration, aestheticValue } = calculateCustomRequirements({ design, constructionLevel, artStat });
-            
-            // 4. 자재 확인 및 긴급 구매 처리
-            let materialBuyoutCost = 0;
-            const materialsToDeduct = {};
-            const userItems = userData.items_all || [];
-            for (const matId in materials) {
-                const requiredQty = materials[matId];
-                const userItem = userItems.find(item => item.id === matId);
-                const userQty = userItem ? (userItem.count || 1) : 0;
-                if (userQty < requiredQty) {
-                    if (!allowMaterialBuyout) throw new HttpsError('failed-precondition', `자재(${buildingMaterials()[matId]?.name || matId})가 부족합니다.`);
-                    const missingQty = requiredQty - userQty;
-                    materialBuyoutCost += missingQty * (buildingMaterials()[matId]?.basePrice || 1) * MATERIAL_BUYOUT_MULTIPLIER;
-                    if (userQty > 0) materialsToDeduct[matId] = userQty;
-                } else {
-                    materialsToDeduct[matId] = requiredQty;
-                }
-            }
-            
-            // 5. 최종 비용 확인 및 차감
-            const finalCost = cost + laborCost + materialBuyoutCost;
-            if ((userData.coins || 0) < finalCost) throw new HttpsError('failed-precondition', `비용이 부족합니다. (필요: ${Math.ceil(finalCost)})`);
-            transaction.update(userRef, { coins: FieldValue.increment(-finalCost) });
-            
-            // 6. 자재 차감
-            if (Object.keys(materialsToDeduct).length > 0) {
-                 await deductItemsFromInventory(transaction, uid, materialsToDeduct);
-            }
-
-            // 7. 건설 프로젝트 문서 생성
-            const projectId = uuidv4();
-            const projectRef = db.collection('construction_projects').doc(projectId);
-            transaction.set(projectRef, {
-                ownerId: uid,
-                plotId,
-                projectId,
-                design,
-                contractor,
-                status: 'inprogress',
-                startTime: FieldValue.serverTimestamp(),
-                completionTime: new Date(Date.now() + duration * 60 * 1000),
-                baseAestheticValue: aestheticValue,
-            });
-
-            return { projectId, message: `'${design.name}' 건설을 시작합니다!` };
-        });
-        return result;
-    } catch (error) {
-        console.error("Custom construction start failed:", error);
-        if (error instanceof HttpsError) throw error;
-        throw new HttpsError('internal', '건설 시작 중 예상치 못한 오류가 발생했습니다.');
-    }
+    return result;
+  } catch (err) {
+    console.error('startConstruction failed:', err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', '건설 시작 중 오류가 발생했습니다.');
+  }
 });
 
 /**
- * 건설 프로젝트 완료
+ * 건설 완료
+ * 입력: { projectId }
+ * 완공 처리: buildings(임베디드: land_plots.facilities)에 건물 추가 + usedArea 증가 + 프로젝트 삭제
  */
 exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const { projectId } = req.data;
-    if (!projectId) throw new HttpsError('invalid-argument', '프로젝트 ID가 필요합니다.');
-    
-    const projectRef = db.collection('construction_projects').doc(projectId);
-    
-    try {
-        const result = await db.runTransaction(async (transaction) => {
-            const projectDoc = await transaction.get(projectRef);
-            if (!projectDoc.exists) throw new HttpsError('not-found', '진행중인 건설 프로젝트를 찾을 수 없습니다.');
-            
-            const projectData = projectDoc.data();
-            if (projectData.ownerId !== uid) throw new HttpsError('permission-denied', '프로젝트 소유주가 아닙니다.');
-            if (new Date() < projectData.completionTime.toDate()) throw new HttpsError('failed-precondition', '아직 건설이 완료되지 않았습니다.');
-            
-            const plotRef = db.collection('land_plots').doc(projectData.plotId);
-            
-            const newBuilding = {
-                id: uuidv4(),
-                name: projectData.buildingName,
-                type: projectData.buildingType,
-                style: projectData.architecturalStyle,
-                scale: projectData.scale,
-                height: projectData.height,
-                contractor: projectData.contractor,
-                completionDate: projectData.completionTime,
-                
-                // 관리 정보
-                manager: null,
-                collapseChance: 1.0, 
-                lastInspection: null,
-                safetyLevel: '안전', 
-                profitability: 0,
-                baseAestheticValue: projectData.baseAestheticValue,
-                finalAestheticGrade: 'F', // 초기 등급
-                
-                // 시설 및 용도 정보
-                purpose: null,
-                placed_facilities: [],
-            };
-            
-            transaction.update(plotRef, {
-                facilities: FieldValue.arrayUnion(newBuilding),
-                await db.runTransaction(async (tx)=>{
-                  const plotRef = db.collection('land_plots').doc(project.plotId);
-                  const plotSnap = await tx.get(plotRef);
-                  if (!plotSnap.exists) throw new HttpsError('not-found','부지를 찾을 수 없습니다.');
-                  const usedArea = Number(plotSnap.get('usedArea')||0);
-                  const addArea = Number(project.design.totalArea||0);
-                  tx.update(plotRef, { usedArea: usedArea + addArea });
-                });
+  const { projectId } = req.data || {};
+  if (!projectId) throw new HttpsError('invalid-argument', 'projectId가 필요합니다.');
 
-            });
-            transaction.delete(projectRef);
-            return newBuilding;
-        });
+  const projectRef = db.collection('construction_projects').doc(projectId);
 
-        return { success: true, message: `'${result.name}' 건물이 완공되었습니다!`, building: result };
-    } catch (error) {
-        console.error("Construction completion failed:", error);
-        throw new HttpsError('internal', '건물 완공 처리에 실패했습니다.');
-    }
-});
+  try {
+    const building = await db.runTransaction(async (tx) => {
+      const pSnap = await tx.get(projectRef);
+      if (!pSnap.exists) throw new HttpsError('not-found', '건설 프로젝트를 찾을 수 없습니다.');
+      const p = pSnap.data();
+      if (p.ownerId !== uid) throw new HttpsError('permission-denied', '프로젝트 소유주가 아닙니다.');
+      const now = new Date();
+      const finishAt = p.completionTime?.toDate ? p.completionTime.toDate() : new Date(p.completionTime);
+      if (now < finishAt) throw new HttpsError('failed-precondition', '아직 건설이 완료되지 않았습니다.');
 
+      const plotRef = db.collection('land_plots').doc(p.plotId);
+      const plotSnap = await tx.get(plotRef);
+      if (!plotSnap.exists) throw new HttpsError('not-found', '부지를 찾을 수 없습니다.');
+      const plot = plotSnap.data() || {};
 
-exports.assignManager = onCall(async (req) => {
-  const { buildingId, charId } = req.data || {};
-  if (!buildingId || !charId) throw new HttpsError('invalid-argument','buildingId/charId 필요');
+      // 설계에서 필드 꺼내기
+      const d = p.design || {};
+      const buildingId = uuidv4();
 
-  const bRef = db.collection('buildings').doc(buildingId);
-  const bSnap = await bRef.get();
-  if (!bSnap.exists) throw new HttpsError('not-found','건물을 찾을 수 없습니다.');
+      const newBuilding = {
+        id: buildingId,
+        name: d.name,
+        type: d.type,
+        style: d.style,
+        scale: d.scale,                 // 'small'|'medium'|'large'|'xlarge'
+        heightM: Number(d.heightM || 0),
+        totalArea: Number(d.totalArea || 0),
+        zones: Array.isArray(d.zones) ? d.zones : [],
+        materials: d.materials || {},
+        contractor: p.contractor,
+        completedAt: finishAt,
 
-  await bRef.update({ managerCharId: charId });
-  return { ok: true };
+        // 관리/표시용 초기값
+        managerCharId: null,
+        collapseChance: 1.0,
+        safetyLevel: '안전',
+        profitability: 0,
+        baseAestheticValue: p.baseAestheticValue || 0,
+        finalAestheticGrade: 'F',
+        placed_facilities: [],
+        status: 'active',
+      };
+
+      // usedArea 증가 + 시설 추가(배열 갱신)
+      const prevFacilities = Array.isArray(plot.facilities) ? plot.facilities : [];
+      const nextFacilities = prevFacilities.concat([newBuilding]);
+      const nextUsedArea = Number(plot.usedArea || 0) + Number(d.totalArea || 0);
+
+      tx.update(plotRef, {
+        facilities: nextFacilities,
+        usedArea: nextUsedArea,
+      });
+
+      // 프로젝트 삭제
+      tx.delete(projectRef);
+
+      return newBuilding;
+    });
+
+    return { success: true, message: `'${building.name}' 건물이 완공되었습니다!`, building };
+  } catch (err) {
+    console.error('completeConstruction failed:', err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', '건물 완공 처리 중 오류가 발생했습니다.');
+  }
 });
 
 /**
- * 건물 관리
+ * 건물 관리자 지정 (임베디드 건물 업데이트)
+ * 입력: { plotId, buildingId, charId }
+ */
+exports.assignManager = onCall({ region: 'us-central1' }, async (req) => {
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+  const { plotId, buildingId, charId } = req.data || {};
+  if (!plotId || !buildingId) throw new HttpsError('invalid-argument', 'plotId/buildingId가 필요합니다.');
+
+  try {
+    await db.runTransaction(async (tx) => {
+      const plotRef = db.collection('land_plots').doc(plotId);
+      const snap = await tx.get(plotRef);
+      if (!snap.exists) throw new HttpsError('not-found', '부지를 찾을 수 없습니다.');
+
+      // TODO: 소유권 검증 필요시 추가 (uid vs plot.ownerUid)
+
+      const data = snap.data() || {};
+      const facs = Array.isArray(data.facilities) ? data.facilities.slice() : [];
+      const idx = facs.findIndex((f) => f.id === buildingId);
+      if (idx < 0) throw new HttpsError('not-found', '해당 건물을 찾을 수 없습니다.');
+
+      facs[idx] = { ...facs[idx], managerCharId: charId || null };
+      tx.update(plotRef, { facilities: facs });
+    });
+
+    return { success: true };
+  } catch (err) {
+    console.error('assignManager failed:', err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', '관리자 지정 중 오류가 발생했습니다.');
+  }
+});
+
+/**
+ * 건물 관리 액션
+ * 입력: { plotId, buildingId, action, payload }
  */
 exports.manageBuilding = onCall({ region: 'us-central1' }, async (req) => {
-    const uid = req.auth?.uid;
-    if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+  const uid = req.auth?.uid;
+  if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-    const { plotId, buildingId, action, payload } = req.data; // payload 추가
-    if (!plotId || !buildingId || !action) {
-        throw new HttpsError('invalid-argument', '필수 정보(plotId, buildingId, action)가 누락되었습니다.');
-    }
-    
-    const plotRef = db.collection('land_plots').doc(plotId);
+  const { plotId, buildingId, action, payload } = req.data || {};
+  if (!plotId || !buildingId || !action) {
+    throw new HttpsError('invalid-argument', '필수 정보(plotId, buildingId, action)가 누락되었습니다.');
+  }
+
+  try {
     let resultMessage = '';
+    await db.runTransaction(async (tx) => {
+      const plotRef = db.collection('land_plots').doc(plotId);
+      const snap = await tx.get(plotRef);
+      if (!snap.exists) throw new HttpsError('not-found', '부지를 찾을 수 없습니다.');
 
-    try {
-        await db.runTransaction(async (transaction) => {
-            const plotDoc = await transaction.get(plotRef);
-            if (!plotDoc.exists) throw new HttpsError('not-found', '부지 정보를 찾을 수 없습니다.');
-            
-            // TODO: 부지 소유권 확인 로직 추가
+      // TODO: 소유권 검증 (uid vs plot.ownerUid)
+      const data = snap.data() || {};
+      const facs = Array.isArray(data.facilities) ? data.facilities.slice() : [];
+      const idx = facs.findIndex((f) => f.id === buildingId);
+      if (idx < 0) throw new HttpsError('not-found', '해당 건물을 찾을 수 없습니다.');
 
-            const plotData = plotDoc.data();
-            const facilities = plotData.facilities || [];
-            const buildingIndex = facilities.findIndex(f => f.id === buildingId);
+      let b = { ...facs[idx] };
 
-            if (buildingIndex === -1) throw new HttpsError('not-found', '해당 건물을 찾을 수 없습니다.');
-            
-            let building = facilities[buildingIndex];
+      const height = Number(b.heightM || b.height || 0);
+      const isXL = (b.scale === 'xlarge' || b.scale === '초대형');
 
-            switch (action) {
-                case 'inspect_collapse':
-                    // 시간이 지날수록, 높고 클수록 붕괴도가 높아질 확률 증가
-                    building.collapseChance += Math.random() * (building.height / 100) + (building.scale === '초대형' ? 1 : 0);
-                    if (building.collapseChance > 100) building.collapseChance = 100;
-                    
-                    if (building.collapseChance > 90) building.safetyLevel = '붕괴 직전';
-                    else if (building.collapseChance > 70) building.safetyLevel = '위급';
-                    else if (building.collapseChance > 40) building.safetyLevel = '위험';
-                    else if (building.collapseChance > 15) building.safetyLevel = '불안';
-                    else building.safetyLevel = '안전';
-                    
-                    building.lastInspection = new Date();
-                    resultMessage = `[${building.name}] 붕괴도 조사 완료. 현재 안전도: ${building.safetyLevel} (${building.collapseChance.toFixed(2)}%)`;
-                    break;
+      if (action === 'inspect_collapse') {
+        b.collapseChance = Number(b.collapseChance || 1.0);
+        b.collapseChance += Math.random() * (height / 100) + (isXL ? 1 : 0);
+        if (b.collapseChance > 100) b.collapseChance = 100;
 
-                case 'repair':
-                    if (!['불안', '위험', '위급'].includes(building.safetyLevel)) {
-                        throw new HttpsError('failed-precondition', '보수 작업은 안전도가 \'불안\', \'위험\', \'위급\'일 때만 가능합니다.');
-                    }
-                    // TODO: 보수에 필요한 자원 및 비용 계산 및 차감 로직 추가
-                    building.collapseChance -= (Math.random() * 15 + 10); // 10~25%p 랜덤 감소
-                    if (building.collapseChance < 1) building.collapseChance = 1.0;
-                    // 보수 후 안전도 재평가 (위 inspect_collapse 로직 재사용)
-                    resultMessage = `[${building.name}] 보수 작업 완료. 붕괴도가 개선되었습니다.`;
-                    break;
-                
-                case 'rebuild':
-                     if (building.safetyLevel !== '붕괴 직전') {
-                        throw new HttpsError('failed-precondition', '재건축은 \'붕괴 직전\' 상태에서만 가능합니다.');
-                     }
-                     // TODO: 재건축 비용 계산 및 자원 차감. startConstruction 로직 일부 재활용 가능.
-                     // 재건축은 건설 프로젝트를 새로 생성하는 방식으로 구현.
-                     resultMessage = `[${building.name}] 재건축이 필요합니다.`;
-                     break;
+        // 안전도 재평가
+        const cc = b.collapseChance;
+        b.safetyLevel =
+          cc > 90 ? '붕괴 직전' :
+          cc > 70 ? '위급' :
+          cc > 40 ? '위험' :
+          cc > 15 ? '불안' : '안전';
 
-                case 'inspect_aesthetic':
-                    // 기본 미관 점수 + 내부 시설(facilities.json) + 가구(items.json)의 미관 점수 합산
-                    let totalAesthetic = building.baseAestheticValue || 0;
-                    // TODO: 배치된 시설/가구의 aestheticValue 합산 로직 추가
-                    
-                    // 등급 판정 (예시)
-                    if (totalAesthetic > 1000) building.finalAestheticGrade = 'SSS';
-                    else if (totalAesthetic > 700) building.finalAestheticGrade = 'SS';
-                    else if (totalAesthetic > 500) building.finalAestheticGrade = 'S';
-                    else if (totalAesthetic > 300) building.finalAestheticGrade = 'A';
-                    else if (totalAesthetic > 150) building.finalAestheticGrade = 'B';
-                    else if (totalAesthetic > 50) building.finalAestheticGrade = 'C';
-                    else building.finalAestheticGrade = 'F';
+        b.lastInspection = new Date();
+        resultMessage = `[${b.name}] 붕괴도 조사 완료. 현재 안전도: ${b.safetyLevel} (${cc.toFixed(2)}%)`;
+      }
+      else if (action === 'repair') {
+        if (!['불안', '위험', '위급'].includes(b.safetyLevel)) {
+          throw new HttpsError('failed-precondition', "보수 작업은 '불안', '위험', '위급'일 때만 가능합니다.");
+        }
+        b.collapseChance = Math.max(1.0, Number(b.collapseChance || 1.0) - (Math.random() * 15 + 10));
+        // 안전도 재평가
+        const cc = b.collapseChance;
+        b.safetyLevel =
+          cc > 90 ? '붕괴 직전' :
+          cc > 70 ? '위급' :
+          cc > 40 ? '위험' :
+          cc > 15 ? '불안' : '안전';
+        resultMessage = `[${b.name}] 보수 작업 완료. 현재 안전도: ${b.safetyLevel} (${cc.toFixed(2)}%)`;
+      }
+      else if (action === 'rebuild') {
+        if (b.safetyLevel !== '붕괴 직전') {
+          throw new HttpsError('failed-precondition', "재건축은 '붕괴 직전' 상태에서만 가능합니다.");
+        }
+        // 실제 재건축은 별도의 startConstruction 흐름으로 새 프로젝트를 만드는 편이 안전.
+        b.status = 'rebuild_required';
+        resultMessage = `[${b.name}] 재건축 플래그가 설정되었습니다.`;
+      }
+      else if (action === 'inspect_aesthetic') {
+        let totalAesthetic = Number(b.baseAestheticValue || 0);
+        // TODO: placed_facilities/items의 미관 가산 로직
+        b.finalAestheticGrade =
+          totalAesthetic > 1000 ? 'SSS' :
+          totalAesthetic > 700 ? 'SS' :
+          totalAesthetic > 500 ? 'S' :
+          totalAesthetic > 300 ? 'A' :
+          totalAesthetic > 150 ? 'B' :
+          totalAesthetic > 50 ? 'C' : 'F';
+        resultMessage = `[${b.name}] 미관도 조사 완료. 최종 등급: ${b.finalAestheticGrade} (${totalAesthetic}점)`;
+      }
+      else if (action === 'inspect_profit') {
+        // 간단 계산 예시: 타입/면적/미관 보정
+        const basePer100 = 20; // TODO: building_types 에셋 적용
+        const area = Number(b.totalArea || 0);
+        const aesthetic = Number(b.baseAestheticValue || 0);
+        const gph = basePer100 * (area / 100) * (1 + aesthetic / 200);
+        b.profitability = Math.round(gph);
+        resultMessage = `[${b.name}] 추정 수익성: ${b.profitability} G/h`;
+      }
+      else {
+        throw new HttpsError('invalid-argument', '알 수 없는 관리 명령입니다.');
+      }
 
-                    resultMessage = `[${building.name}] 미관도 조사 완료. 최종 등급: ${building.finalAestheticGrade} (${totalAesthetic}점)`;
-                    break;
+      facs[idx] = b;
+      tx.update(plotRef, { facilities: facs });
+    });
 
-                default:
-                    throw new HttpsError('invalid-argument', '알 수 없는 관리 명령입니다.');
-            }
-
-            facilities[buildingIndex] = building;
-            transaction.update(plotRef, { facilities: facilities });
-        });
-        
-        return { success: true, message: resultMessage };
-
-    } catch (error) {
-        console.error(`Building management failed (Action: ${action}):`, error);
-        throw new HttpsError('internal', error.message || '건물 관리 명령 수행에 실패했습니다.');
-    }
+    return { success: true, message: resultMessage };
+  } catch (err) {
+    console.error(`manageBuilding failed:`, err);
+    if (err instanceof HttpsError) throw err;
+    throw new HttpsError('internal', err.message || '건물 관리 명령 수행 중 오류가 발생했습니다.');
+  }
 });
