@@ -21,8 +21,8 @@ function parseLandPlotInfo() {
   };
 }
 
-// [NEW] 다단계 커스텀 건축 모달 UI
-async function openCustomConstructionModal(characters, userItems, availableArea, materialsAsset) {
+// [MODIFIED] 다단계 커스텀 건축 모달 UI
+async function openCustomConstructionModal(characters, userItems, availableArea, materialsAsset, plotDocId) {
     ensureModalCss();
     return new Promise(resolve => {
         const back = document.createElement('div');
@@ -204,8 +204,9 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                                 isCustom: true
                             };
                             try {
-                                const result = await window.startCustomConstruction(getCurrentLandId(), buildingData);
-                                if (result.success) {
+                                // [FIX] startConstruction 함수를 올바른 인자와 함께 호출합니다.
+                                const result = await startConstruction({ plotId: plotDocId, ...buildingData });
+                                if (result && result.success) { // 'success' 필드가 있다고 가정
                                     showToast('새로운 건물 건설을 시작했습니다!', 'success');
                                     resolve(result); // 성공 결과와 함께 Promise 해결
                                 } else {
@@ -379,22 +380,35 @@ async function openCharacterPickerModal(characters) {
     });
 }
 
+// [MODIFIED] attachEvents 함수
 function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
     root.querySelector('#btn-new-building').onclick = async () => {
         const userData = (await fx.getDoc(fx.doc(db, 'users', auth.currentUser.uid))).data();
         const userItems = userData.items_all || [];
-        const materialsAsset = await fetch('/assets/building_materials.json').then(res => res.json());
 
-        const result = await openCustomConstructionModal(characters, userItems, availableArea, materialsAsset);
-        if (!result) return;
+        // [FIX] 필요한 모든 에셋 파일을 불러와 하나의 객체로 합칩니다.
+        const [materials, purposes, stylesArray] = await Promise.all([
+            fetch('/assets/building_materials.json').then(res => res.json()),
+            fetch('/assets/building_purposes.json').then(res => res.json()),
+            fetch('/assets/architectural_styles.json').then(res => res.json())
+        ]).catch(err => {
+            console.error("Failed to fetch building assets:", err);
+            showToast('건축 데이터를 불러오는 데 실패했습니다.', 'error');
+            return [null, null, null];
+        });
+
+        if (!materials || !purposes || !stylesArray) return;
+
+        // architectural_styles.json은 배열이므로 코드가 사용하기 편한 객체 형태로 변환합니다.
+        const styles = stylesArray.reduce((acc, style) => {
+            acc[style.id] = style;
+            return acc;
+        }, {});
+
+        const materialsAsset = { materials, purposes, styles };
         
-        try {
-            const apiResult = await startConstruction({ plotId: plotDocId, ...result });
-            showToast(apiResult.message || '건설을 시작합니다.');
-        } catch (e) {
-            console.error(e);
-            showToast(`건설 시작 실패: ${e.message}`, 'error');
-        }
+        // [FIX] plotDocId를 모달에 전달하고, 중복 API 호출을 제거합니다.
+        await openCustomConstructionModal(characters, userItems, availableArea, materialsAsset, plotDocId);
     };
     
     root.querySelector('#btn-new-farmland').onclick = async () => {
@@ -453,7 +467,7 @@ export async function showLandManagement() {
             const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [] };
             // 캐릭터 목록은 자주 바뀌지 않으므로 최초 한 번만 불러오거나, 필요 시 다시 불러오도록 최적화 가능
             if (!root.characters) {
-                const { characters } = await getUserCharacters();
+                const characters = await getUserCharacters();
                 root.characters = characters || [];
             }
             render(root, plotInfo, plotData, root.characters, plotDocId);
