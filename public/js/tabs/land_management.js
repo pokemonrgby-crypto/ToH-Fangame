@@ -136,7 +136,7 @@ function render(root, plotData, characters, plotDocId) {
     // 부지 기본 정보 렌더링
     root.querySelector('#plot-name').textContent = plotData.name || '이름 없는 부지';
     root.querySelector('#plot-description').textContent = plotData.description || '설명 없음';
-    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`;
+    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`; // [!code focus]
     root.querySelector('#plot-owner').textContent = plotData.ownerName || '소유주 정보 없음';
 
     // 시설 목록 렌더링
@@ -297,12 +297,12 @@ function openCustomConstructionModal(plotDocId, plotData) {
         </div>
 
         <div class="kv-card" style="margin-top:8px;">
-            <div class="kv-label">부지 점유 면적 (1층 면적) — 남은 면적: ${formatNumber(availableArea)}m²</div>
-            <div><b id="baseAreaM2View">${formatNumber(state.baseAreaM2 || 100)}</b> m²</div>
+            <div class="kv-label">부지 점유 면적 (1층 면적) — 남은 면적: ${numberWithCommas(availableArea)}m²</div>
+            <div><b id="baseAreaM2View">${numberWithCommas(state.baseAreaM2 || 100)}</b> m²</div>
         </div>
         <div class="kv-card" style="margin-top:8px;">
             <div class="kv-label">건물 총면적 (비용/자재 계산용)</div>
-            <div><b id="totalAreaM2View">${formatNumber((state.floors || 1) * (state.baseAreaM2 || 100))}</b> m²</div>
+            <div><b id="totalAreaM2View">${numberWithCommas((state.floors || 1) * (state.baseAreaM2 || 100))}</b> m²</div>
         </div>
     `;
     // ▲▲▲ [수정된 부분] ▲▲▲
@@ -310,13 +310,13 @@ function openCustomConstructionModal(plotDocId, plotData) {
     const step5 = () => {
         // ▼▼▼ [수정된 부분] ▼▼▼
         const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
-        const areaLabel = state.copyFirstFloor_enabled ? `1층 면적(${formatNumber(areaToDivide)}m²)` : `건물 총면적(${formatNumber(areaToDivide)}m²)`;
+        const areaLabel = state.copyFirstFloor_enabled ? `1층 면적(${numberWithCommas(areaToDivide)}m²)` : `건물 총면적(${numberWithCommas(areaToDivide)}m²)`;
         const currentSum = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
         // ▲▲▲ [수정된 부분] ▲▲▲
 
         return `
             <h2>새 건물 설계 - 5단계: 구역 분할</h2>
-            <p>${areaLabel}에 맞춰 구역을 나눠주세요. 합계는 ${formatNumber(areaToDivide)}m²와 같아야 합니다.</p>
+            <p>${areaLabel}에 맞춰 구역을 나눠주세요. 합계는 ${numberWithCommas(areaToDivide)}m²와 같아야 합니다.</p>
             <div id="zone-list">
                 ${state.zones.map((zone, index) => `
                     <div class="zone-row" data-index="${index}">
@@ -328,7 +328,7 @@ function openCustomConstructionModal(plotDocId, plotData) {
             </div>
             <button id="add-zone-btn" class="btn secondary small" style="margin-top:8px;">구역 추가</button>
             <div style="margin-top:16px;">
-                <b>현재 합계: <span id="zone-sum">${formatNumber(currentSum)}</span> m² / ${formatNumber(areaToDivide)} m²</b>
+                <b>현재 합계: <span id="zone-sum">${numberWithCommas(currentSum)}</span> m² / ${numberWithCommas(areaToDivide)} m²</b>
             </div>
         `;
     };
