@@ -16,7 +16,7 @@ import {
 import {
     renderResourceCosts,
     esc,
-    formatNumber
+    numberWithCommas // formatNumber 대신 numberWithCommas를 가져옵니다.
 } from '../ui/utils.js';
 
 /**
@@ -28,7 +28,7 @@ import {
  */
 export function renderBuildingCard(building, characters, plotDocId) {
     const assignedChar = characters.find(c => building.assignedCharIds && building.assignedCharIds.includes(c.id));
-    const areaTxt = formatNumber(building.design.totalAreaM2 || 0);
+    const areaTxt = numberWithCommas(building.design.totalAreaM2 || 0);
 
     const card = document.createElement('div');
     card.className = 'kv-card';
