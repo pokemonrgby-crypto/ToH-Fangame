@@ -1,59 +1,7 @@
-{
-  "library": {
-    "name": "서재",
-    "type": "연구",
-    "description": "간단한 이론 연구를 진행할 수 있습니다.",
-    "requirements": [
-      { "facilityId": "study_desk", "quantity": 1 }
-    ],
-    "effects": {
-      "enables_research_facility": "서재"
-    }
-  },
-  "basic_laboratory": {
-    "name": "기초 연구소",
-    "type": "연구",
-    "description": "과학의 기초를 다지는 연구를 수행합니다.",
-    "requirements": [
-      { "facilityId": "basic_lab_bench", "quantity": 1 }
-    ],
-    "effects": {
-      "enables_research_facility": "기초 연구소"
-    }
-  },
-  "laboratory": {
-    "name": "연구소",
-    "type": "연구",
-    "description": "더 복잡하고 심도 있는 응용 과학 연구를 진행합니다.",
-    "requirements": [
-      { "facilityId": "research_lab_bench", "quantity": 1 },
-      { "facilityId": "study_desk", "quantity": 2 }
-    ],
-    "effects": {
-      "enables_research_facility": "연구소"
-    }
-  },
-  "biology_laboratory": {
-    "name": "생물학 연구소",
-    "type": "연구",
-    "description": "생명의 신비를 파헤치는 유전학, 생물학 연구의 중심지입니다.",
-    "requirements": [
-      { "facilityId": "biology_lab_station", "quantity": 1 },
-      { "facilityId": "research_lab_bench", "quantity": 1 }
-    ],
-    "effects": {
-      "enables_research_facility": "생물학 연구소"
-    }
-  },
-    "alchemical_laboratory": {
-    "name": "연금술 실험실",
-    "type": "연구",
-    "description": "물질의 변환과 창조를 연구하는 신비로운 공간입니다.",
-    "requirements": [
-      { "facilityId": "alchemy_lab", "quantity": 1 }
-    ],
-    "effects": {
-      "enables_research_facility": "연금술 실험실"
-    }
-  }
-}
+[
+  { "id": "residential", "name": "주거 시설", "description": "캐릭터들이 거주하며 휴식을 취하는 공간입니다." },
+  { "id": "commercial", "name": "상업 시설", "description": "상업 활동을 통해 수익을 창출하는 공간입니다." },
+  { "id": "industrial", "name": "공업 시설", "description": "원자재를 가공하거나 새로운 아이템을 생산하는 공간입니다." },
+  { "id": "educational", "name": "교육 시설", "description": "캐릭터의 지식과 능력을 향상시키는 연구 및 교육 공간입니다." },
+  { "id": "cultural", "name": "문화 시설", "description": "예술, 공연 등 문화 활동을 통해 만족도와 미관 점수를 높이는 공간입니다." }
+]
