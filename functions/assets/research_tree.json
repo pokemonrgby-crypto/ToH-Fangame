@@ -220,7 +220,7 @@
         "name": "구조 공학", "tags": ["건축", "물리학"], "description": "건축물이 자체 무게와 외부 압력을 견디도록 설계하는 방법을 연구합니다.",
         "prerequisites": ["basic_physics", "woodworking"], "requiredStats": { "research": 8, "construction": 6 }, "requiredFacility": "설계실",
         "stages": [{ "description": "아치와 트러스 구조 연구", "time": 240, "successRate": 0.8, "expPerMinute": 9 }],
-        "results": { "knowledge": ["knowledge_structural_engineering_1"] }
+        "results": { "knowledge": ["knowledge_structural_engineering_1"], "unlocks": { "maxFloors": 5 } }
     },
     "brick_and_mortar": {
         "name": "벽돌과 모르타르", "tags": ["건축"], "description": "흙을 구워 벽돌을 만들고, 석회와 모래를 섞어 접착제인 모르타르를 만드는 기술입니다.",
@@ -256,13 +256,13 @@
         "name": "철골 구조 건축", "tags": ["건축", "공학"], "description": "강철 빔을 뼈대로 사용하여 이전보다 훨씬 높고 튼튼한 건물을 짓습니다.",
         "prerequisites": ["alloy_creation", "structural_engineering"], "requiredStats": { "research": 28, "construction": 25 }, "requiredFacility": "공학 연구소",
         "stages": [{ "description": "철골 구조 설계 및 조립", "time": 1200, "successRate": 0.45, "expPerMinute": 45 }],
-        "results": { "knowledge": ["knowledge_steel_frame_1"] }
+        "results": { "knowledge": ["knowledge_steel_frame_1"], "unlocks": { "maxFloors": 20 } }
     },
     "skyscrapers": {
         "name": "마천루", "tags": ["건축", "공학"], "description": "하늘에 닿을 듯한 초고층 빌딩을 건설하는 모든 기술의 집약체입니다.",
         "prerequisites": ["steel_frame_construction", "concrete_production", "precision_engineering"], "requiredStats": { "research": 50, "construction": 50, "crafting": 40 }, "requiredFacility": "도시 계획 연구소",
         "stages": [{ "description": "초고층 빌딩 설계", "time": 7200, "successRate": 0.2, "expPerMinute": 150 }],
-        "results": { "unlockedBuildings": ["building_skyscraper"] }
+        "results": { "unlockedBuildings": ["building_skyscraper"], "unlocks": { "maxFloors": 100 } }
     },
     "textile_weaving": {
         "name": "직물", "tags": ["제작"], "description": "식물 섬유나 동물 털로 실을 만들고 옷감을 짜는 기술입니다.",
