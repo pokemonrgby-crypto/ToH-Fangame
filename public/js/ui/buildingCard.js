@@ -16,7 +16,7 @@ import {
 import {
     renderResourceCosts,
     esc,
-    numberWithCommas // formatNumber 대신 numberWithCommas를 가져옵니다.
+    numberWithCommas // 수정된 부분 1: formatNumber -> numberWithCommas
 } from '../ui/utils.js';
 
 /**
@@ -28,6 +28,7 @@ import {
  */
 export function renderBuildingCard(building, characters, plotDocId) {
     const assignedChar = characters.find(c => building.assignedCharIds && building.assignedCharIds.includes(c.id));
+    // 수정된 부분 2: formatNumber -> numberWithCommas
     const areaTxt = numberWithCommas(building.design.totalAreaM2 || 0);
 
     const card = document.createElement('div');
