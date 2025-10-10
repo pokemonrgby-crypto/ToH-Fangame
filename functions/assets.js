@@ -1,4 +1,4 @@
-// /functions/assets.js  (전체 교체)
+// /functions/assets.js (전체 교체)
 const fs = require('fs');
 const path = require('path');
 
@@ -19,15 +19,16 @@ function loadAsset(assetName) {
 }
 
 // 개별 에셋 로더
-const items             = () => loadAsset('items');
-const recipes           = () => loadAsset('recipes');
-const researchTree      = () => loadAsset('research_tree');
+const items = () => loadAsset('items');
+const recipes = () => loadAsset('recipes');
+const researchTree = () => loadAsset('research_tree');
 const buildingMaterials = () => loadAsset('building_materials');
-const facilities        = () => loadAsset('facilities');
-const buildingPurposes  = () => loadAsset('building_purposes');
-const jobs              = () => loadAsset('jobs');
-const landmarks         = () => loadAsset('landmarks');
-const roomsCatalog      = () => loadAsset('rooms'); // ✅ rooms.json은 /functions/assets/rooms.json
+const facilities = () => loadAsset('facilities');
+const buildingPurposes = () => loadAsset('building_purposes');
+const jobs = () => loadAsset('jobs');
+const landmarks = () => loadAsset('landmarks');
+const roomsCatalog = () => loadAsset('rooms');
+const architecturalStyles = () => loadAsset('architectural_styles'); // ✅ 추가
 
 module.exports = {
   items,
@@ -38,5 +39,6 @@ module.exports = {
   buildingPurposes,
   jobs,
   landmarks,
-  roomsCatalog, // ✅ 꼭 export에 포함
+  roomsCatalog,
+  architecturalStyles, // ✅ 꼭 export에 포함
 };
