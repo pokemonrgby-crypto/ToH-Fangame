@@ -75,9 +75,13 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         allowMaterialBuyout = false,
     } = req.data;
 
-    if (!plotId || !design || !contractor || !design.totalArea > 0) {
-        throw new HttpsError('invalid-argument', '필수 설계 정보가 누락되었습니다.');
+    if (!plotId || !design || !contractor || !(design.totalArea > 0) ||
+        !Array.isArray(design.zones) || design.zones.length < 1 ||
+        !design.type || !design.style || !design.scale ||
+        !design.materials || !design.materials.main) {
+      throw new HttpsError('invalid-argument','필수 설계 정보가 누락되었습니다.');
     }
+
 
     let constructionLevel = 1;
     let artStat = 1;
@@ -226,7 +230,15 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
             
             transaction.update(plotRef, {
                 facilities: FieldValue.arrayUnion(newBuilding),
-                // TODO: 부지의 usedArea 업데이트 로직 추가
+                await db.runTransaction(async (tx)=>{
+                  const plotRef = db.collection('land_plots').doc(project.plotId);
+                  const plotSnap = await tx.get(plotRef);
+                  if (!plotSnap.exists) throw new HttpsError('not-found','부지를 찾을 수 없습니다.');
+                  const usedArea = Number(plotSnap.get('usedArea')||0);
+                  const addArea = Number(project.design.totalArea||0);
+                  tx.update(plotRef, { usedArea: usedArea + addArea });
+                });
+
             });
             transaction.delete(projectRef);
             return newBuilding;
@@ -237,6 +249,19 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
         console.error("Construction completion failed:", error);
         throw new HttpsError('internal', '건물 완공 처리에 실패했습니다.');
     }
+});
+
+
+exports.assignManager = onCall(async (req) => {
+  const { buildingId, charId } = req.data || {};
+  if (!buildingId || !charId) throw new HttpsError('invalid-argument','buildingId/charId 필요');
+
+  const bRef = db.collection('buildings').doc(buildingId);
+  const bSnap = await bRef.get();
+  if (!bSnap.exists) throw new HttpsError('not-found','건물을 찾을 수 없습니다.');
+
+  await bRef.update({ managerCharId: charId });
+  return { ok: true };
 });
 
 /**
