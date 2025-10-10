@@ -231,15 +231,16 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
       // 부지
       const plotRef = db.collection('land_plots').doc(plotId);
       let plotSnap = await tx.get(plotRef);
+      let plot;
       if (!plotSnap.exists) {
         if (!AUTO_CREATE_PLOT_IF_MISSING) {
           throw new HttpsError('not-found', '부지를 찾을 수 없습니다.');
         }
-        // 없으면 자동 생성(남은 면적 10,000m²)
-        tx.set(plotRef, { totalArea: 10000, usedArea: 0, facilities: [], tasks: [], ownerId: uid });
-        plotSnap = await tx.get(plotRef);
+        // 트랜잭션 규칙상, 여기서 쓰기(tx.set) 하지 말고 메모리 기본값만 준비해.
+        plot = { totalArea: 10000, usedArea: 0, facilities: [], tasks: [], ownerId: uid };
+      } else {
+        plot = plotSnap.data() || {};
       }
-      const plot = plotSnap.data() || {};
       const totalArea = Number(plot.totalArea || 10000);
       const usedArea = Number(plot.usedArea || 0);
       const availableArea = Math.max(0, totalArea - usedArea);
@@ -281,12 +282,8 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         artStat += npcTeam.reduce((s, m) => s + m.level * m.count, 0) * 0.2; // 레벨 총합의 20%를 아트 보정으로
       }
       if (charRefs.length) {
-        // 스킬 보장 + 합산
-        let chars = [];
-        for (const cr of charRefs) {
-          const ensured = await ensureCharacterSkills(tx, cr.ref, cr.data);
-          chars.push(ensured);
-        }
+        // 트랜잭션 내 추가 쓰기 없이 현재 데이터만 사용
+        const chars = charRefs.map(c => c.data);
         const { power, artSum } = charsLaborStats(chars);
         laborPower += power;
         artStat += artSum;
@@ -318,17 +315,16 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         }
       }
 
-      // 최종 비용(자재+NPC 팀)
-      const finalCost = Math.ceil(buildCost + buyoutCost + extraLaborCost);
       if (Number(user.coins || 0) < finalCost) {
         throw new HttpsError('failed-precondition', `비용이 부족합니다. (필요: ${finalCost})`);
       }
-      tx.update(userRef, { coins: FieldValue.increment(-finalCost) });
 
-      // 자재 차감
+      // ⚠️ 트랜잭션은 '모든 읽기'가 끝난 후에 '첫 쓰기'가 시작돼야 해.
+      // 1) 인벤토리 차감(내부에서 읽어도 OK: 아직 다른 쓰기 안 했으니까) → 2) 코인 차감 → 3) 나머지 쓰기들
       if (Object.keys(toDeduct).length) {
         await deductItemsFromInventory(tx, uid, toDeduct);
       }
+      tx.update(userRef, { coins: FieldValue.increment(-finalCost) });
 
       // 작업 유닛/예상 시간
       const unitsTotal = baseUnits;
@@ -390,8 +386,14 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         taskId
       });
 
-      // 부지 문서 업데이트(tasks만)
-      tx.update(plotRef, { tasks: prevTasks });
+      // 부지 문서 업데이트/생성 (merge)
+      tx.set(plotRef, {
+        totalArea: Number(plot.totalArea || 10000),
+        usedArea: Number(plot.usedArea || 0),
+        facilities: Array.isArray(plot.facilities) ? plot.facilities : [],
+        ownerId: plot.ownerId || uid,
+        tasks: prevTasks
+      }, { merge: true });
 
       return { success: true, projectId, taskId, message: `'${design.name}' 건설을 시작합니다!` };
     });
@@ -464,7 +466,8 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
 
       // 부지 반영: usedArea 증가 + 시설 추가
       const nextFacilities = (Array.isArray(plot.facilities) ? plot.facilities.slice() : []).concat([newBuilding]);
-      const nextUsedArea = Number(plot.usedArea || 0) + Number(d.totalArea || 0);
+      const nextUsedArea = Number(plot.usedArea || 0) + Number(d.totalAreaM2 || (d.baseAreaM2 * d.floors) || 0);
+
 
       // 태스크 정리(완료 및 제거)
       let nextTasks = Array.isArray(plot.tasks) ? plot.tasks.slice() : [];
