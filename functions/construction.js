@@ -227,11 +227,10 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
       const totalArea = Number(plot.totalArea || 10000);
       const usedArea = Number(plot.usedArea || 0);
       const availableArea = Math.max(0, totalArea - usedArea);
-      const requestedArea = Number(design.totalAreaM2 || (design.baseAreaM2 * design.floors));
+      const requestedArea = Number(design.baseAreaM2 || 0); // ✨ 건물 발자국(1층 면적)으로 변경
       if (requestedArea > availableArea) {
-        throw new HttpsError('failed-precondition', `남은 면적(${availableArea}m²)을 초과했습니다.`);
+        throw new HttpsError('failed-precondition', `부지에 건물을 지을 면적이 부족합니다. (필요: ${requestedArea}m², 남은 면적: ${availableArea}m²)`);
       }
-
 
       // 시공 주체 정리
       let npcTeam = [];
