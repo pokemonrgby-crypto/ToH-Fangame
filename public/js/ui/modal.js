@@ -1,5 +1,4 @@
-// public/js/ui/modal.js
-// [전체 교체]
+// /public/js/ui/modal.js
 
 function esc(s){ return String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
@@ -62,6 +61,28 @@ export function createModal(options = {}) {
     // card element를 반환하여 내용을 채울 수 있도록 하고, modal(back) element는 z-index 계산 등에 사용
     return { modal: back, card };
 }
+
+/**
+ * [추가된 함수] 다른 파일에서 import하여 사용할 수 있도록 openModal 함수를 추가합니다.
+ * 이 함수는 모달을 열고 내용을 채운 후 콜백을 실행합니다.
+ * @param {string} content - 모달 카드에 들어갈 HTML 내용
+ * @param {function} onOpen - 모달이 열린 후 실행할 콜백 함수
+ */
+export function openModal(content, onOpen) {
+    const { modal, card } = createModal();
+    card.innerHTML = content;
+
+    // 닫기 버튼에 이벤트 리스너 추가 (모달 내부에 id="close-modal" 버튼이 있다고 가정)
+    const closeButton = card.querySelector('#close-modal');
+    if (closeButton) {
+        closeButton.onclick = () => modal.remove();
+    }
+
+    if (typeof onOpen === 'function') {
+        onOpen(modal, card);
+    }
+}
+
 
 /**
  * [추가] 모달 내부의 버튼 등에서 모달을 닫을 때 사용합니다.
