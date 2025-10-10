@@ -602,3 +602,62 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
         transform: translateY(0);
     }
 }
+
+
+/* 새 건물 설계 모달 반응형 그리드 */
+.radio-grid, .checkbox-grid {
+    display: grid;
+    grid-template-columns: 1fr; /* 모바일에서는 1열로 시작 */
+    gap: 10px;
+}
+
+/* 화면 폭이 550px 이상일 때 2열로 변경 */
+@media (min-width: 550px) {
+    .radio-grid, .checkbox-grid {
+        grid-template-columns: 1fr 1fr;
+    }
+}
+
+.radio-grid label, .checkbox-grid label {
+    display: flex;
+    flex-direction: row;
+    align-items: flex-start;
+    padding: 12px;
+    border: 1px solid var(--bd);
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color 0.2s;
+    text-align: left;
+}
+
+.radio-grid label:hover, .checkbox-grid label:hover {
+    background: rgba(255, 255, 255, 0.04);
+}
+
+.radio-grid label.disabled, .checkbox-grid label.disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.radio-grid label input, .checkbox-grid label input {
+    margin-top: 4px;
+    flex-shrink: 0;
+}
+
+.radio-grid label div, .checkbox-grid label div {
+    display: flex;
+    flex-direction: column;
+    margin-left: 8px;
+}
+
+.radio-grid label span, .checkbox-grid label span {
+    font-weight: bold;
+}
+
+.radio-grid label small, .checkbox-grid label small {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+    line-height: 1.4;
+    word-break: keep-all; /* 한글 단어 깨짐 방지 */
+}
