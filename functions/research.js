@@ -7,6 +7,25 @@ const { v4: uuidv4 } = require('uuid');
 const { researchTree } = require('./assets');
 const { deductItemsFromInventory } = require('./utils');
 
+
+async function upsertKnowledge(tx, charId, researchId, { understandingDelta = 0, progressSet = null }) {
+  const ref = db.collection('knowledge_files').doc(charId);
+  const snap = await tx.get(ref);
+  const base = snap.exists ? (snap.data() || {}) : { charId, entries: {}, createdAt: admin.firestore.FieldValue.serverTimestamp() };
+  const entries = base.entries || {};
+  const cur = entries[researchId] || {};
+  const newUnderstanding = Math.max(0, Math.min(100, Number(cur.understanding || 0) + Number(understandingDelta || 0)));
+  const newProgress = progressSet == null ? Number(cur.progress || 0) : Number(progressSet);
+  entries[researchId] = {
+    understanding: newUnderstanding,
+    progress: newProgress,
+    createdAt: cur.createdAt || admin.firestore.FieldValue.serverTimestamp(),
+    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    source: cur.source || 'study'
+  };
+  tx.set(ref, { charId, entries }, { merge: true });
+}
+
 /**
  * 클라이언트에 전체 연구 트리 데이터를 전송
  */
