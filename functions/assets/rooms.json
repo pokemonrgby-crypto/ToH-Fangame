@@ -1,13 +1,7 @@
 {
-  "bedroom":   { "label": "침실",   "forTypes": ["residential"] },
-  "living_room": { "label": "거실", "forTypes": ["residential"] },
-  "kitchen":   { "label": "주방",   "forTypes": ["residential", "commercial"] },
-  "bathroom":  { "label": "화장실", "forTypes": ["residential", "commercial", "educational", "cultural"] },
-  "warehouse": { "label": "창고",   "forTypes": ["residential", "commercial", "industrial"] },
-  "balcony":   { "label": "발코니", "forTypes": ["residential", "cultural"] },
-  "lab":       { "label": "연구실", "forTypes": ["educational"] },
-  "office":    { "label": "사무실", "forTypes": ["commercial", "educational"] },
-  "workshop":  { "label": "작업장", "forTypes": ["industrial"] },
-  "gallery":   { "label": "전시실", "forTypes": ["cultural"] },
-  "stage":     { "label": "무대",   "forTypes": ["cultural"] }
+  "kitchen":  { "label": "주방",   "forTypes": ["residential","commercial"], "aesthetic": 4, "areaHint": 20 },
+  "bedroom":  { "label": "안방",   "forTypes": ["residential"],              "aesthetic": 3, "areaHint": 15 },
+  "storage":  { "label": "창고",   "forTypes": ["residential","commercial","industrial"], "aesthetic": 1, "areaHint": 10 },
+  "office":   { "label": "사무실", "forTypes": ["commercial","industrial","research"], "aesthetic": 2, "areaHint": 18 },
+  "lab":      { "label": "실험실", "forTypes": ["research"],                 "aesthetic": 5, "areaHint": 25 }
 }
