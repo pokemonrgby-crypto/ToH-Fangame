@@ -12,9 +12,6 @@ import {
     httpsCallable
 } from "https://www.gstatic.com/firebasejs/10.12.2/firebase-functions.js";
 import {
-    state
-} from '../app.js';
-import {
     showToast
 } from '../ui/toast.js';
 import {
@@ -27,14 +24,12 @@ import {
     numberWithCommas,
     listenToPlayerState
 } from '../ui/utils.js';
-// ▼▼▼ [수정된 부분] ▼▼▼
 import {
     renderBuildingCard
 } from '../ui/buildingCard.js';
 import {
     renderFarmCard
 } from '../ui/farmCard.js';
-// ▲▲▲ [수정된 부분] ▲▲▲
 
 const db = getFirestore();
 const functions = getFunctions();
@@ -131,12 +126,11 @@ function init(plotDocId) {
     });
 }
 
-// ▼▼▼ [수정된 부분] ▼▼▼
 function render(root, plotData, characters, plotDocId) {
     // 부지 기본 정보 렌더링
     root.querySelector('#plot-name').textContent = plotData.name || '이름 없는 부지';
     root.querySelector('#plot-description').textContent = plotData.description || '설명 없음';
-    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`; // [!code focus]
+    root.querySelector('#plot-area').textContent = `${numberWithCommas(plotData.totalAreaM2)} m² (사용 가능: ${numberWithCommas(plotData.availableAreaM2)} m²)`;
     root.querySelector('#plot-owner').textContent = plotData.ownerName || '소유주 정보 없음';
 
     // 시설 목록 렌더링
@@ -161,7 +155,6 @@ function render(root, plotData, characters, plotDocId) {
         }
     });
 }
-// ▲▲▲ [수정된 부분] ▲▲▲
 
 
 function openCustomConstructionModal(plotDocId, plotData) {
@@ -183,8 +176,8 @@ function openCustomConstructionModal(plotDocId, plotData) {
         state.totalAreaM2 = (state.floors || 1) * (state.baseAreaM2 || 0);
         const totalAreaView = document.getElementById('totalAreaM2View');
         const baseAreaView = document.getElementById('baseAreaM2View');
-        if (totalAreaView) totalAreaView.textContent = `${formatNumber(state.totalAreaM2)} m²`;
-        if (baseAreaView) baseAreaView.textContent = `${formatNumber(state.baseAreaM2)} m²`;
+        if (totalAreaView) totalAreaView.textContent = `${numberWithCommas(state.totalAreaM2)} m²`;
+        if (baseAreaView) baseAreaView.textContent = `${numberWithCommas(state.baseAreaM2)} m²`;
     };
 
     const renderStep = () => {
@@ -274,7 +267,6 @@ function openCustomConstructionModal(plotDocId, plotData) {
         </div>
     `;
 
-    // ▼▼▼ [수정된 부분] ▼▼▼
     const step4 = (availableArea) => `
         <h2>새 건물 설계 - 4단계: 층수 & 면적</h2>
         <div class="grid2" style="gap:12px;">
@@ -305,14 +297,11 @@ function openCustomConstructionModal(plotDocId, plotData) {
             <div><b id="totalAreaM2View">${numberWithCommas((state.floors || 1) * (state.baseAreaM2 || 100))}</b> m²</div>
         </div>
     `;
-    // ▲▲▲ [수정된 부분] ▲▲▲
 
     const step5 = () => {
-        // ▼▼▼ [수정된 부분] ▼▼▼
         const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
         const areaLabel = state.copyFirstFloor_enabled ? `1층 면적(${numberWithCommas(areaToDivide)}m²)` : `건물 총면적(${numberWithCommas(areaToDivide)}m²)`;
         const currentSum = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
-        // ▲▲▲ [수정된 부분] ▲▲▲
 
         return `
             <h2>새 건물 설계 - 5단계: 구역 분할</h2>
@@ -422,14 +411,12 @@ function openCustomConstructionModal(plotDocId, plotData) {
                 state.baseAreaM2 = parseInt(baseAreaInput.value, 10) || 0;
                 updateTotalArea();
             });
-            // ▼▼▼ [수정된 부분] ▼▼▼
             back.querySelector('#copyFirstFloor')?.addEventListener('change', e => {
                 state.copyFirstFloor_enabled = e.target.checked;
                 showToast(state.copyFirstFloor_enabled ? '1층 설계 복사 활성화' : '1층 설계 복사 비활성화', 'info');
                 // 옵션 변경 시 5단계 구역 설정을 초기화
                 state.zones = [];
             });
-            // ▲▲▲ [수정된 부분] ▲▲▲
         }
 
         if (state.step === 5) {
@@ -439,7 +426,7 @@ function openCustomConstructionModal(plotDocId, plotData) {
 
             const updateZoneSum = () => {
                 const currentSum = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
-                sumEl.textContent = formatNumber(currentSum);
+                sumEl.textContent = numberWithCommas(currentSum);
                 if (currentSum === areaToDivide) {
                     sumEl.parentElement.style.color = 'var(--color-success)';
                 } else {
@@ -524,11 +511,10 @@ function openCustomConstructionModal(plotDocId, plotData) {
                 }
                 break;
             case 5:
-                // ▼▼▼ [수정된 부분] ▼▼▼
                 const areaToDivide = state.copyFirstFloor_enabled ? state.baseAreaM2 : state.totalAreaM2;
                 const totalZoneArea = state.zones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
                 if (totalZoneArea !== areaToDivide) {
-                    showToast(`구역 면적의 합계(${formatNumber(totalZoneArea)}m²)가 목표 면적(${formatNumber(areaToDivide)}m²)과 일치해야 합니다.`, 'error');
+                    showToast(`구역 면적의 합계(${numberWithCommas(totalZoneArea)}m²)가 목표 면적(${numberWithCommas(areaToDivide)}m²)과 일치해야 합니다.`, 'error');
                     return false;
                 }
                 if (state.zones.some(z => !z.name.trim())) {
@@ -536,14 +522,12 @@ function openCustomConstructionModal(plotDocId, plotData) {
                     return false;
                 }
                 break;
-                // ▲▲▲ [수정된 부분] ▲▲▲
         }
         return true;
     };
 
 
     const submitConstructionProject = async () => {
-        // ▼▼▼ [수정된 부분] ▼▼▼
         let finalZones = state.zones;
         // 1층 복사 옵션이 활성화된 경우, 모든 층에 구역을 복제
         if (state.copyFirstFloor_enabled && state.floors > 1) {
@@ -559,11 +543,10 @@ function openCustomConstructionModal(plotDocId, plotData) {
             // 면적 합계가 총면적과 맞는지 다시 한번 확인
             const totalZoneArea = finalZones.reduce((sum, z) => sum + Number(z.areaM2 || 0), 0);
             if (totalZoneArea !== state.totalAreaM2) {
-                showToast(`[오류] 복사된 구역의 총면적(${formatNumber(totalZoneArea)}m²)이 건물 총면적(${formatNumber(state.totalAreaM2)}m²)과 일치하지 않습니다.`, 'error');
+                showToast(`[오류] 복사된 구역의 총면적(${numberWithCommas(totalZoneArea)}m²)이 건물 총면적(${numberWithCommas(state.totalAreaM2)}m²)과 일치하지 않습니다.`, 'error');
                 return;
             }
         }
-        // ▲▲▲ [수정된 부분] ▲▲▲
 
         const payload = {
             plotId: plotDocId,
@@ -625,14 +608,12 @@ function calculateDesignCosts(designSummary) {
         },
         {
             label: '규모',
-            value: `${designSummary.floors}층, 총 ${formatNumber(totalAreaM2)}m²`
+            value: `${designSummary.floors}층, 총 ${numberWithCommas(totalAreaM2)}m²`
         },
-        // ▼▼▼ [수정된 부분] ▼▼▼
         {
             label: '구역 설정',
             value: `${designSummary.zones.length}개 구역 ${designSummary.copyFirstFloor ? '(1층 설계 복사됨)' : ''}`
         },
-        // ▲▲▲ [수정된 부분] ▲▲▲
     ];
 
     // 비용 계산 로직 (functions/construction.js와 유사하게)
