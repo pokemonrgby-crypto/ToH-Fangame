@@ -3,7 +3,6 @@ import { auth, db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal, promptModal } from '../ui/modal.js';
 
-// real_estate.js에서 startConstruction 함수를 가져옵니다.
 import { assignCharacterToFacility, createFarmland, startConstruction } from '../api/real_estate.js';
 import { getUserCharacters } from '../api/char.js';
 
@@ -21,7 +20,6 @@ function parseLandPlotInfo() {
   };
 }
 
-// [MODIFIED] 다단계 커스텀 건축 모달 UI
 async function openCustomConstructionModal(characters, userItems, availableArea, materialsAsset, plotDocId) {
     ensureModalCss();
     return new Promise(resolve => {
@@ -35,7 +33,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             style: null,
             materials: [],
             totalCost: 0,
-            requiredArea: 1
+            requiredArea: 10 // 기본 면적 10m²로 설정
         };
 
         const render = () => {
@@ -45,7 +43,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                     contentHtml = `
                         <h2>새 건물 설계 - 1단계: 이름</h2>
                         <p>건물의 이름을 입력하세요.</p>
-                        <input type="text" id="building-name" value="${state.name}" placeholder="예: 대장간, 연금술사의 탑">
+                        <input type="text" id="building-name" value="${esc(state.name)}" placeholder="예: 대장간, 연금술사의 탑">
                     `;
                     break;
                 case 2:
@@ -53,11 +51,13 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                         <h2>새 건물 설계 - 2단계: 용도</h2>
                         <p>건물의 주된 용도를 선택하세요.</p>
                         <div class="radio-grid">
-                            ${Object.values(materialsAsset.purposes).map(p => `
+                            ${Object.entries(materialsAsset.purposes).map(([id, p]) => `
                                 <label>
-                                    <input type="radio" name="building-purpose" value="${p.id}" ${state.purpose === p.id ? 'checked' : ''}>
-                                    <span>${p.name}</span>
-                                    <small>${p.description}</small>
+                                    <input type="radio" name="building-purpose" value="${id}" ${state.purpose === id ? 'checked' : ''}>
+                                    <div>
+                                        <span>${esc(p.name)}</span>
+                                        <small>${esc(p.description)}</small>
+                                    </div>
                                 </label>
                             `).join('')}
                         </div>
@@ -71,28 +71,33 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                             ${Object.values(materialsAsset.styles).map(s => `
                                 <label>
                                     <input type="radio" name="architectural-style" value="${s.id}" ${state.style === s.id ? 'checked' : ''}>
-                                    <span>${s.name}</span>
-                                    <small>${s.description}</small>
+                                    <div>
+                                        <span>${esc(s.name)}</span>
+                                        <small>${esc(s.description)}</small>
+                                    </div>
                                 </label>
                             `).join('')}
                         </div>
                     `;
                     break;
                 case 4:
-                    const materialOptions = Object.values(materialsAsset.materials);
+                    const materialEntries = Object.entries(materialsAsset.materials);
                     contentHtml = `
                         <h2>새 건물 설계 - 4단계: 주 자재</h2>
                         <p>건설에 사용할 주요 자재를 선택하세요. (복수 선택 가능)</p>
                         <div class="checkbox-grid">
-                            ${materialOptions.map(m => {
-                                const userMaterial = userItems.find(i => i.id === m.id);
-                                const possessed = userMaterial ? userMaterial.quantity : 0;
-                                const disabled = possessed === 0;
+                            ${materialEntries.map(([id, m]) => {
+                                const userMaterial = userItems.find(i => i.id === id || i.itemId === id);
+                                const possessed = userMaterial ? (userMaterial.quantity || userMaterial.count || 0) : 0;
+                                const needsPurchase = possessed === 0;
                                 return `
-                                    <label class="${disabled ? 'disabled' : ''}">
-                                        <input type="checkbox" name="building-material" value="${m.id}" ${state.materials.includes(m.id) ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
-                                        <span>${m.name} (보유: ${possessed})</span>
-                                        <small>${m.description}</small>
+                                    <label>
+                                        <input type="checkbox" name="building-material" value="${id}" ${state.materials.includes(id) ? 'checked' : ''}>
+                                        <div>
+                                            <span>${esc(m.name)} (보유: ${possessed})</span>
+                                            <small>${esc(m.description)}</small>
+                                            ${needsPurchase ? `<small style="color:#f59e0b; font-weight:bold; margin-top:4px;">※ 보유량이 없어 구매가 필요합니다.</small>` : ''}
+                                        </div>
                                     </label>
                                 `;
                             }).join('')}
@@ -102,35 +107,58 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                 case 5:
                     const selectedPurpose = materialsAsset.purposes[state.purpose];
                     const selectedStyle = materialsAsset.styles[state.style];
-                    const selectedMaterials = state.materials.map(id => materialsAsset.materials[id]);
+                    const selectedMaterialsInfo = state.materials.map(id => ({ id, ...materialsAsset.materials[id] }));
 
-                    let totalCost = 0;
-                    selectedMaterials.forEach(m => {
-                        const materialInfo = materialsAsset.materials[m.id];
-                        if (materialInfo) {
-                            totalCost += materialInfo.cost || 0;
+                    let buyoutCost = 0;
+                    const materialsSummary = [];
+                    // NOTE: 자재 요구량은 예시이며, 실제 게임에서는 설계에 따라 더 복잡한 계산이 필요합니다.
+                    const DUMMY_REQUIRED_QTY_PER_AREA = 10;
+
+                    selectedMaterialsInfo.forEach(material => {
+                        const requiredQty = state.requiredArea * DUMMY_REQUIRED_QTY_PER_AREA;
+                        const userMaterial = userItems.find(i => i.id === material.id || i.itemId === material.id);
+                        const possessed = userMaterial ? (userMaterial.quantity || userMaterial.count || 0) : 0;
+                        const missingQty = Math.max(0, requiredQty - possessed);
+
+                        if (missingQty > 0) {
+                            const price = material.basePrice || 1;
+                            buyoutCost += missingQty * price * 2.5; // 긴급 구매 배수 2.5 적용
                         }
+                        materialsSummary.push(`<li>${esc(material.name)} ${requiredQty}개 (보유: ${possessed})${missingQty > 0 ? ` - <b style="color:#f59e0b;">${missingQty}개 구매</b>` : ''}</li>`);
                     });
                     
-                    state.totalCost = totalCost;
+                    state.totalCost = Math.ceil(buyoutCost);
 
                     contentHtml = `
                         <h2>새 건물 설계 - 최종 확인</h2>
                         <p>아래 내용으로 건설을 시작하시겠습니까?</p>
                         <ul>
-                            <li><strong>이름:</strong> ${state.name}</li>
-                            <li><strong>용도:</strong> ${selectedPurpose.name}</li>
-                            <li><strong>건축 양식:</strong> ${selectedStyle.name}</li>
-                            <li><strong>주 자재:</strong> ${selectedMaterials.map(m => m.name).join(', ')}</li>
-                            <li><strong>필요 면적:</strong> ${state.requiredArea}</li>
-                            <li><strong>총 비용:</strong> ${state.totalCost.toLocaleString()} G</li>
+                            <li><strong>이름:</strong> ${esc(state.name)}</li>
+                            <li><strong>용도:</strong> ${esc(selectedPurpose.name)}</li>
+                            <li><strong>건축 양식:</strong> ${esc(selectedStyle.name)}</li>
+                            <li><strong>필요 면적:</strong> ${state.requiredArea} m²</li>
                         </ul>
+                        <div class="kv-card" style="margin-top:8px;">
+                          <div class="kv-label">필요 자재</div>
+                          <ul style="padding-left: 20px; margin: 0; font-size: 13px;">
+                              ${materialsSummary.join('')}
+                          </ul>
+                          <hr style="margin: 12px 0; border-color: #2a2f36;">
+                          <div class="row" style="justify-content:space-between;">
+                            <span>자재 구매 비용:</span>
+                            <b style="color:#f59e0b;">🪙 ${buyoutCost.toLocaleString()} G</b>
+                          </div>
+                        </div>
+                        <div class="row" style="justify-content:space-between; margin-top:12px; font-size: 16px;">
+                          <b>총 비용:</b>
+                          <b>🪙 ${state.totalCost.toLocaleString()} G</b>
+                        </div>
                     `;
                     break;
             }
 
             back.innerHTML = `
-                <div class="modal-card col" style="gap: 16px; min-width: 500px;">
+                <div class="modal-card col" style="gap: 16px; max-width: 720px; width: 90vw;">
                     ${contentHtml}
                     <div class="row" style="justify-content: space-between; margin-top: 16px;">
                         <button class="btn ghost" id="prev-step" ${state.step === 1 ? 'disabled' : ''}>이전</button>
@@ -165,35 +193,20 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             const nextStepBtn = document.getElementById('next-step');
             if (nextStepBtn) {
                 nextStepBtn.addEventListener('click', async () => {
-                    // 각 단계별 유효성 검사 및 상태 업데이트
                     switch (state.step) {
                         case 1:
-                            if (!state.name.trim()) {
-                                showToast('건물 이름을 입력해주세요.', 'error');
-                                return;
-                            }
+                            if (!state.name.trim()) { showToast('건물 이름을 입력해주세요.', 'error'); return; }
                             break;
                         case 2:
-                            if (!state.purpose) {
-                                showToast('건물 용도를 선택해주세요.', 'error');
-                                return;
-                            }
+                            if (!state.purpose) { showToast('건물 용도를 선택해주세요.', 'error'); return; }
                             break;
                         case 3:
-                            if (!state.style) {
-                                showToast('건축 양식을 선택해주세요.', 'error');
-                                return;
-                            }
+                            if (!state.style) { showToast('건축 양식을 선택해주세요.', 'error'); return; }
                             break;
                         case 4:
-                            if (state.materials.length === 0) {
-                                showToast('주 자재를 하나 이상 선택해주세요.', 'error');
-                                return;
-                            }
+                            if (state.materials.length === 0) { showToast('주 자재를 하나 이상 선택해주세요.', 'error'); return; }
                             break;
                         case 5:
-                            // 건설 시작 로직
-                            showToast('건설을 시작합니다...', 'info');
                             const buildingData = {
                                 name: state.name,
                                 purpose: state.purpose,
@@ -201,28 +214,26 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                                 materials: state.materials,
                                 requiredArea: state.requiredArea,
                                 cost: state.totalCost,
-                                isCustom: true
+                                isCustom: true,
+                                allowMaterialBuyout: true // 부족한 자재 구매 허용 플래그
                             };
                             try {
-                                // [FIX] startConstruction 함수를 올바른 인자와 함께 호출합니다.
                                 const result = await startConstruction({ plotId: plotDocId, ...buildingData });
-                                if (result && result.success) { // 'success' 필드가 있다고 가정
+                                if (result && result.success) {
                                     showToast('새로운 건물 건설을 시작했습니다!', 'success');
-                                    resolve(result); // 성공 결과와 함께 Promise 해결
+                                    resolve(result);
                                 } else {
                                     showToast(result.error || '건설 시작에 실패했습니다.', 'error');
-                                    resolve(null); // 실패 시 null로 해결
+                                    resolve(null);
                                 }
                             } catch (err) {
-                                console.error('Error starting custom construction:', err);
                                 showToast(err.message || '알 수 없는 오류로 건설에 실패했습니다.', 'error');
                                 resolve(null);
                             }
                             closeModal();
-                            return; // 다음 단계로 넘어가지 않도록 여기서 함수 종료
+                            return;
                     }
 
-                    // 다음 단계로 이동
                     if (state.step < 5) {
                         state.step++;
                         render();
@@ -230,39 +241,21 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                 });
             }
 
-            // 각 단계별 입력 필드에 이벤트 리스너 추가
             switch (state.step) {
                 case 1:
-                    document.getElementById('building-name').addEventListener('input', e => {
-                        state.name = e.target.value;
-                    });
+                    document.getElementById('building-name').addEventListener('input', e => { state.name = e.target.value; });
                     break;
                 case 2:
-                    document.querySelectorAll('input[name="building-purpose"]').forEach(radio => {
-                        radio.addEventListener('change', e => {
-                            state.purpose = e.target.value;
-                        });
-                    });
+                    document.querySelectorAll('input[name="building-purpose"]').forEach(r => r.addEventListener('change', e => { state.purpose = e.target.value; }));
                     break;
                 case 3:
-                    document.querySelectorAll('input[name="architectural-style"]').forEach(radio => {
-                        radio.addEventListener('change', e => {
-                            state.style = e.target.value;
-                        });
-                    });
+                    document.querySelectorAll('input[name="architectural-style"]').forEach(r => r.addEventListener('change', e => { state.style = e.target.value; }));
                     break;
                 case 4:
-                    document.querySelectorAll('input[name="building-material"]').forEach(checkbox => {
-                        checkbox.addEventListener('change', e => {
-                            if (e.target.checked) {
-                                if (!state.materials.includes(e.target.value)) {
-                                    state.materials.push(e.target.value);
-                                }
-                            } else {
-                                state.materials = state.materials.filter(m => m !== e.target.value);
-                            }
-                        });
-                    });
+                    document.querySelectorAll('input[name="building-material"]').forEach(c => c.addEventListener('change', e => {
+                        if (e.target.checked) !state.materials.includes(e.target.value) && state.materials.push(e.target.value);
+                        else state.materials = state.materials.filter(m => m !== e.target.value);
+                    }));
                     break;
             }
         };
@@ -380,13 +373,11 @@ async function openCharacterPickerModal(characters) {
     });
 }
 
-// [MODIFIED] attachEvents 함수
 function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
     root.querySelector('#btn-new-building').onclick = async () => {
         const userData = (await fx.getDoc(fx.doc(db, 'users', auth.currentUser.uid))).data();
         const userItems = userData.items_all || [];
-
-        // [FIX] 필요한 모든 에셋 파일을 불러와 하나의 객체로 합칩니다.
+        
         const [materials, purposes, stylesArray] = await Promise.all([
             fetch('/assets/building_materials.json').then(res => res.json()),
             fetch('/assets/building_purposes.json').then(res => res.json()),
@@ -399,15 +390,13 @@ function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
 
         if (!materials || !purposes || !stylesArray) return;
 
-        // architectural_styles.json은 배열이므로 코드가 사용하기 편한 객체 형태로 변환합니다.
         const styles = stylesArray.reduce((acc, style) => {
             acc[style.id] = style;
             return acc;
         }, {});
 
         const materialsAsset = { materials, purposes, styles };
-        
-        // [FIX] plotDocId를 모달에 전달하고, 중복 API 호출을 제거합니다.
+
         await openCustomConstructionModal(characters, userItems, availableArea, materialsAsset, plotDocId);
     };
     
@@ -465,10 +454,8 @@ export async function showLandManagement() {
 
         const unsub = fx.onSnapshot(plotRef, async (plotSnap) => {
             const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [] };
-            // 캐릭터 목록은 자주 바뀌지 않으므로 최초 한 번만 불러오거나, 필요 시 다시 불러오도록 최적화 가능
             if (!root.characters) {
-                const characters = await getUserCharacters();
-                root.characters = characters || [];
+                root.characters = await getUserCharacters() || [];
             }
             render(root, plotInfo, plotData, root.characters, plotDocId);
         }, (error) => {
