@@ -1,4 +1,4 @@
-// /public/js/tabs/land_management.js  (전체 교체)
+// /public/js/tabs/land_management.js (전체 교체)
 import { auth, db, fx } from '../api/firebase.js';
 import { showToast } from '../ui/toast.js';
 import { ensureModalCss, confirmModal, promptModal } from '../ui/modal.js';
@@ -56,10 +56,10 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       secondaryMaterials: [],
       totalCost: 0,
       // 시공사(서버 규격에 맞춤)
-      contractorType: 'self',         // 'self' = 모집(퀘스트), 'player'|'company'|'npc_team'|'characters'
-      contractorId: null,             // player/company일 때 사용
+      contractorType: 'self',       // 'self' = 모집(퀘스트), 'player'|'company'|'npc_team'|'characters'
+      contractorId: null,           // player/company일 때 사용
       npcTeam: [{ level: 1, count: 1 }], // npc_team 구성
-      selectedCharIds: []             // characters 구성
+      selectedCharIds: []           // characters 구성
     };
 
     const closeModal = (val = null) => {
@@ -121,7 +121,11 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
           </div>
         </div>
         <div class="kv-card" style="margin-top:8px;">
-          <div class="kv-label">총면적 (자동 계산) — 남은 면적: ${availableArea.toLocaleString()}m²</div>
+            <div class="kv-label">부지 점유 면적 (1층 면적) — 남은 면적: ${availableArea.toLocaleString()}m²</div>
+            <div><b id="baseAreaM2View">${(state.baseAreaM2||10).toLocaleString()}</b> m²</div>
+        </div>
+        <div class="kv-card" style="margin-top:8px;">
+          <div class="kv-label">건물 총면적 (비용/자재 계산용)</div>
           <div><b id="totalAreaM2View">${((state.floors||1) * (state.baseAreaM2||10)).toLocaleString()}</b> m²</div>
         </div>
       `;
@@ -158,7 +162,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
 
         return `
           <h2>새 건물 설계 - 5단계: 구역 분할</h2>
-          <p>총면적을 구역으로 나눠줘. 합계는 총면적(${state.totalAreaM2}m²)과 같아야 해.</p>
+          <p>총면적을 구역으로 나눠줘. 합계는 건물 총면적(${state.totalAreaM2}m²)과 같아야 해.</p>
           <div class="kv-card">
             <table class="kv-table">
               <thead><tr><th>구역명</th><th>용도</th><th>방</th><th>면적(m²)</th><th></th></tr></thead>
@@ -276,8 +280,8 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             <li><strong>유형:</strong> ${esc(selectedPurpose?.name || state.purpose)}</li>
             <li><strong>양식:</strong> ${esc(selectedStyle?.name || state.style)}</li>
             <li><strong>층수:</strong> ${state.floors}층</li>
-            <li><strong>한 층 면적:</strong> ${state.baseAreaM2} m²</li>
-            <li><strong>총면적:</strong> ${state.totalAreaM2} m²</li>
+            <li><strong>한 층 면적 (부지 점유):</strong> ${state.baseAreaM2} m²</li>
+            <li><strong>건물 총면적:</strong> ${state.totalAreaM2} m²</li>
             <li><strong>구역 합계:</strong> ${zonesSum} m²</li>
             <li><strong>주재료(≤4):</strong> ${matsPrimary.join(', ') || '-'}</li>
             <li><strong>부재료:</strong> ${matsSecondary.join(', ') || '-'}</li>
@@ -342,19 +346,23 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
             const ba = Number(back.querySelector('#baseAreaM2')?.value || 0);
             if (!Number.isFinite(f) || f < 1) { showToast('층수는 1층 이상이야.', 'error'); return; }
             if (!Number.isFinite(ba) || ba <= 0) { showToast('한 층 면적을 올바르게 입력해줘.', 'error'); return; }
-            const total = f * ba;
-            if (total > availableArea) { showToast(`남은 면적(${availableArea}m²)을 넘을 수 없어.`, 'error'); return; }
+            if (ba > availableArea) { showToast(`남은 면적(${availableArea}m²)을 넘을 수 없어.`, 'error'); return; }
             state.floors = f;
             state.baseAreaM2 = ba;
-            state.totalAreaM2 = total;
-            if (!state.zones.length) state.zones = [{ name:'본관', purpose: state.purpose, roomId:'', areaM2: total }];
+            state.totalAreaM2 = f * ba;
+            if (!state.zones.length || state.zones.length === 1) {
+                state.zones = [{ name:'본관', purpose: state.purpose, roomId:'', areaM2: state.totalAreaM2 }];
+            } else {
+                // 구역이 여러개면 면적 재조정 필요 알림
+                showToast('총면적이 변경되었으니, 5단계에서 구역 면적을 다시 확인해줘!', 'info');
+            }
             break;
           }
 
           case 5: {
             const sum = (state.zones||[]).reduce((a,b)=>a+Number(b.areaM2||0),0);
             if (sum !== Number(state.totalAreaM2)) {
-              showToast(`구역 면적 합계(${sum})가 총면적(${state.totalAreaM2})과 같아야 해.`, 'error'); 
+              showToast(`구역 면적 합계(${sum})가 건물 총면적(${state.totalAreaM2})과 같아야 해.`, 'error'); 
               return;
             }
             break;
@@ -408,7 +416,7 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
                 name: state.name,
                 type: state.purpose,
                 style: state.style,
-                scale: state.scale || 'small',
+                scale: 'custom', // scale은 이제 사용하지 않지만 호환성을 위해 남김
                 floors: Number(state.floors || 1),
                 baseAreaM2: Number(state.baseAreaM2 || 0),
                 totalAreaM2: Number(state.totalAreaM2 || 0),
@@ -468,12 +476,14 @@ async function openCustomConstructionModal(characters, userItems, availableArea,
       if (state.step === 4) {
         const floorsEl = back.querySelector('#floors');
         const baseEl = back.querySelector('#baseAreaM2');
+        const baseView = back.querySelector('#baseAreaM2View');
         const totalView = back.querySelector('#totalAreaM2View');
 
         const recalc = () => {
           state.floors = Math.max(1, Number(floorsEl.value || 1));
           state.baseAreaM2 = Math.max(1, Number(baseEl.value || 1));
           state.totalAreaM2 = state.floors * state.baseAreaM2;
+          baseView.textContent = state.baseAreaM2.toLocaleString();
           totalView.textContent = state.totalAreaM2.toLocaleString();
         };
         floorsEl.addEventListener('input', recalc);
@@ -680,21 +690,21 @@ function render(root, plotInfo, plotData, characters, plotDocId) {
   const usedArea = plotData.usedArea || 0;
   const availableArea = Math.max(0, totalArea - usedArea);
   const facilities = Array.isArray(plotData.facilities) ? plotData.facilities : [];
+  const tasks = Array.isArray(plotData.tasks) ? plotData.tasks : [];
 
   const facilityCardsHtml = facilities.map(fac => {
-    const assignedChar = characters.find(c => c.id === fac.assignedCharId);
-    const isBuilding = fac.type === 'building';
-    const areaTxt = (fac.area || fac.totalArea || 'N/A');
-    const heightTxt = (fac.height || fac.heightM || 'N/A');
+    const assignedChar = characters.find(c => c.id === fac.managerCharId);
+    const isBuilding = !fac.type || fac.type === 'building' || !!fac.style;
+    const areaTxt = (fac.totalArea || 'N/A');
 
     const cardContent = isBuilding ? `
       <div class="row" style="justify-content:space-between">
         <b>${esc(fac.name || '건물')} (건물)</b>
-        <span>${areaTxt}m² / ${heightTxt}m</span>
+        <span>${areaTxt}m² / ${fac.floors}층</span>
       </div>
       <div class="text-dim" style="font-size:12px;">스타일: ${esc(fac.style || '-')} | 안전도: ${esc(fac.safetyLevel || '-')}</div>
       <div class="kv-card" style="margin-top:8px; padding:8px;">
-        담당: ${assignedChar ? `${esc(assignedChar.name)} (건설 Lv.${assignedChar.skills?.construction?.level || 0})` : '없음'}
+        관리자: ${assignedChar ? `${esc(assignedChar.name)} (건설 Lv.${assignedChar.skills?.construction?.level || 0})` : '없음'}
       </div>
     ` : `
       <div class="row" style="justify-content:space-between">
@@ -710,10 +720,39 @@ function render(root, plotInfo, plotData, characters, plotDocId) {
       <div class="kv-card">
         ${cardContent}
         <div class="row" style="justify-content:flex-end; gap:8px; margin-top:8px;">
-          <button class="btn small" data-facility-id="${fac.id}" data-action="assign-char">캐릭터 배치</button>
-          <button class="btn small" data-facility-id="${fac.id}" data-action="manage-${fac.type}">관리</button>
+          <button class="btn small" data-facility-id="${fac.id}" data-action="assign-char">관리자 배정</button>
+          <button class="btn small" data-facility-id="${fac.id}" data-action="manage-${isBuilding ? 'building' : 'farm'}">관리</button>
         </div>
       </div>
+    `;
+  }).join('');
+
+  const taskCardsHtml = tasks.map(task => {
+    const progress = (task.unitsDone || 0) / (task.unitsTotal || 1);
+    const progressPercent = Math.floor(progress * 100);
+    // recruitmentUntil 필드가 존재하면 남은 시간을 계산
+    let timeRemaining = '';
+    if (task.recruitmentUntil && task.recruitmentUntil.toDate) {
+        const untilDate = task.recruitmentUntil.toDate();
+        const diff = untilDate.getTime() - new Date().getTime();
+        if (diff > 0) {
+            const minutes = Math.floor(diff / 60000);
+            const seconds = Math.floor((diff % 60000) / 1000);
+            timeRemaining = ` | ${minutes}분 ${seconds}초 남음`;
+        }
+    }
+      
+    return `
+    <div class="kv-card">
+        <div class="row" style="justify-content:space-between">
+            <b>'${task.projectId.substring(0, 8)}...' 프로젝트</b>
+            <span class="text-dim">${task.status === 'recruiting' ? `모집 중${timeRemaining}` : '건설 중'}</span>
+        </div>
+        <div class="progress-bar" style="margin-top: 8px;">
+            <div class="progress" style="width: ${progressPercent}%;"></div>
+        </div>
+        <div class="text-dim" style="font-size: 12px; text-align: right;">${progressPercent}% (${task.unitsDone || 0}/${task.unitsTotal || 0})</div>
+    </div>
     `;
   }).join('');
 
@@ -736,8 +775,14 @@ function render(root, plotInfo, plotData, characters, plotDocId) {
           <button id="btn-new-building" class="btn primary">새 건물 건설</button>
           <button id="btn-new-farmland" class="btn">새 밭 경작</button>
         </div>
+        
+        ${tasks.length > 0 ? '<h4 style="margin-top:24px; margin-bottom:12px;">진행 중인 작업</h4>' : ''}
+        <div id="tasks-list" class="col" style="gap:12px;">
+            ${taskCardsHtml}
+        </div>
 
-        <div id="facilities-list" class="col" style="gap:12px; margin-top:16px;">
+        <h4 style="margin-top:24px; margin-bottom:12px;">완공된 시설</h4>
+        <div id="facilities-list" class="col" style="gap:12px;">
           ${facilityCardsHtml || '<div class="text-dim kv-card">아직 건설된 시설이 없습니다.</div>'}
         </div>
       </div>
@@ -771,8 +816,9 @@ function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
     }
     if (!materials || !purposes || !stylesArray) { showToast('건축 데이터가 비어 있어.', 'error'); return; }
 
+    const purposesMap = purposes.reduce((acc, p) => { acc[p.id] = p; return acc; }, {});
     const styles = stylesArray.reduce((acc, style) => { acc[style.id] = style; return acc; }, {});
-    const assets = { materials, purposes, styles, rooms };
+    const assets = { materials, purposes: purposesMap, styles, rooms };
 
     await openCustomConstructionModal(characters, userItems, availableArea, assets, plotDocId);
   };
@@ -806,8 +852,8 @@ function attachEvents(root, plotInfo, plotDocId, availableArea, characters) {
       const selectedChar = await openCharacterPickerModal(characters);
       if (selectedChar === undefined) return; // 닫기
       try {
-        await assignCharacterToFacility({ plotId: plotDocId, facilityId, charId: selectedChar ? selectedChar.id : null });
-        showToast('캐릭터 배치가 완료되었어.', 'success');
+        await assignCharacterToFacility({ plotId: plotDocId, buildingId: facilityId, charId: selectedChar ? selectedChar.id : null });
+        showToast('관리자 배치가 완료되었어.', 'success');
       } catch (e) {
         showToast(`배치 실패: ${e.message}`, 'error');
       }
@@ -841,7 +887,7 @@ export async function showLandManagement() {
     const plotRef = fx.doc(db, 'land_plots', plotDocId);
 
     const unsub = fx.onSnapshot(plotRef, async (plotSnap) => {
-      const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [] };
+      const plotData = plotSnap.exists() ? plotSnap.data() : { totalArea: 10000, usedArea: 0, facilities: [], tasks: [] };
       if (!root.characters) {
         root.characters = await getUserCharacters() || [];
       }
@@ -851,7 +897,9 @@ export async function showLandManagement() {
       root.innerHTML = `<section class="container narrow"><div class="kv-card error">데이터를 불러오는 데 실패했어.</div></section>`;
     });
     
-    root.closest('#view').__cleanup = () => {
+    // 뷰가 바뀔 때 리스너를 정리하는 클린업 함수 등록
+    const viewElement = root.closest('#router-view') || root;
+    viewElement.__cleanup = () => {
       if (root.characters) delete root.characters;
       unsub();
     };
