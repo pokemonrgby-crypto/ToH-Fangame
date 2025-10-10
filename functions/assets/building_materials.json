@@ -1,59 +1,55 @@
 {
   "wood": {
     "name": "목재",
+    "type": "main",
     "grade": "normal",
     "basePrice": 5,
-    "description": "가공되지 않은 기본적인 목재입니다."
+    "description": "가공되지 않은 기본 목재입니다. 건축의 가장 기초적인 재료로 사용됩니다.",
+    "effects": {
+      "stability_bonus": 2,
+      "grade_prob_bonus": { "C": 5, "B": -5 }
+    }
   },
   "stone": {
     "name": "석재",
+    "type": "main",
     "grade": "normal",
     "basePrice": 8,
-    "description": "가공되지 않은 기본적인 석재입니다."
+    "description": "가공되지 않은 기본 석재입니다. 목재보다 견고한 건물을 지을 수 있습니다.",
+    "effects": {
+      "stability_bonus": 4,
+      "grade_prob_bonus": { "B": 5, "A": -5 }
+    }
   },
   "iron_ore": {
     "name": "철광석",
-    "grade": "normal",
-    "basePrice": 20,
-    "description": "제련하여 철을 얻을 수 있는 광물입니다."
-  },
-  "processed_wood": {
-    "name": "가공된 목재",
-    "grade": "normal",
-    "basePrice": 10,
-    "description": "건축에 바로 사용할 수 있도록 가공된 목재입니다."
-  },
-  "stone_brick": {
-    "name": "석재 벽돌",
+    "type": "main",
     "grade": "normal",
     "basePrice": 15,
-    "description": "건축에 사용하기 좋게 다듬어진 석재 벽돌입니다."
-  },
-  "iron_ingot": {
-    "name": "철 주괴",
-    "grade": "rare",
-    "basePrice": 50,
-    "description": "다양한 도구와 건축 자재를 만드는 데 사용되는 제련된 철입니다."
-  },
-  "glass": {
-    "name": "유리",
-    "grade": "rare",
-    "basePrice": 40,
-    "description": "건물의 창문이나 장식에 사용되는 투명한 재료입니다.",
-    "aesthetic_modifier": 1.1
+    "description": "제련하여 철근이나 철제 구조물을 만들 수 있는 귀한 광물입니다.",
+    "effects": {
+      "stability_bonus": 8,
+      "grade_prob_bonus": { "A": 5, "S": -5 }
+    }
   },
   "gold_bar": {
     "name": "금괴",
+    "type": "sub",
     "grade": "epic",
     "basePrice": 500,
-    "description": "화려한 장식이나 특별한 시설 제작에 사용되는 귀금속입니다.",
-    "aesthetic_modifier": 2.0
+    "description": "건물의 외관을 화려하게 장식하는 데 사용되는 귀금속입니다.",
+    "effects": {
+      "aesthetic_modifier": 1.5
+    }
   },
-  "gemstone": {
-    "name": "보석",
-    "grade": "legend",
-    "basePrice": 1000,
-    "description": "건물의 미관을 크게 향상시키는 희귀하고 아름다운 보석입니다.",
-    "aesthetic_modifier": 3.0
+  "silver_bar": {
+    "name": "은괴",
+    "type": "sub",
+    "grade": "rare",
+    "basePrice": 250,
+    "description": "건물의 외관을 우아하게 장식하는 데 사용되는 귀금속입니다.",
+    "effects": {
+      "aesthetic_modifier": 1.2
+    }
   }
 }
