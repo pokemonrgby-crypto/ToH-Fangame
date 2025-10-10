@@ -24,7 +24,7 @@ import {
 import {
     renderResourceCosts,
     esc,
-    formatNumber,
+    numberWithCommas,
     listenToPlayerState
 } from '../ui/utils.js';
 // ▼▼▼ [수정된 부분] ▼▼▼
