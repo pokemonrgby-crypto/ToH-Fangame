@@ -1,4 +1,4 @@
-// /functions/construction.js  (전체 교체)
+// /functions/construction.js (전체 교체)
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { FieldValue, Timestamp } = require('firebase-admin/firestore');
 const admin = require('firebase-admin');
@@ -175,24 +175,6 @@ async function hasRequiredFloorKnowledge(tx, contractor, floors) {
 /* =======================
  * 시작: 건설
  * ======================= */
-/**
- * 입력:
- * {
- *   plotId,
- *   design: {
- *     name, type, style, scale, heightM, totalArea,
- *     zones: [{ name, roomId?, purpose?, areaM2 }],
- *     materials: { main, secondary, special:[] }
- *   },
- *   contractor: {
- *     // 아래 3가지 방식 중 하나
- *     type: 'npc_team', npcTeam: [{level, count}]
- *     type: 'characters', charIds: [charId,...]
- *     type: 'self' | 'player' | 'company', id?: string
- *   },
- *   allowMaterialBuyout: true
- * }
- */
 exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
   if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -206,12 +188,13 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
     !(Number(design.baseAreaM2) > 0) ||
     !(Number(design.totalAreaM2) > 0) ||
     !Array.isArray(design.zones) || design.zones.length < 1 ||
-    !design.type || !design.style || !design.scale ||
+    !design.type || !design.style ||
     !design.materials || !Array.isArray(design.materials.primary) || design.materials.primary.length < 1 ||
     design.materials.primary.length > 4
   ) {
     throw new HttpsError('invalid-argument', '필수 설계 정보가 누락되었어. (층수/한 층 면적/주재료 등)');
   }
+  // scale은 필수가 아니므로 제거
   validateRooms(design);
 
 
@@ -315,6 +298,9 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         }
       }
 
+      // 🚨 [BUG FIX] finalCost 정의
+      const finalCost = Math.ceil(buildCost + extraLaborCost + buyoutCost);
+
       if (Number(user.coins || 0) < finalCost) {
         throw new HttpsError('failed-precondition', `비용이 부족합니다. (필요: ${finalCost})`);
       }
@@ -322,24 +308,41 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
       // ⚠️ 트랜잭션은 '모든 읽기'가 끝난 후에 '첫 쓰기'가 시작돼야 해.
       // 1) 인벤토리 차감(내부에서 읽어도 OK: 아직 다른 쓰기 안 했으니까) → 2) 코인 차감 → 3) 나머지 쓰기들
       if (Object.keys(toDeduct).length) {
-        await deductItemsFromInventory(tx, uid, toDeduct);
+        // deductItemsFromInventory 함수가 없으므로 직접 구현 또는 utils.js에서 가져와야 합니다.
+        // 여기서는 직접 구현합니다.
+        let currentItems = user.items_all || [];
+        for (const itemId in toDeduct) {
+            const required = toDeduct[itemId];
+            let deducted = 0;
+            currentItems = currentItems.filter(item => {
+                if ((item.id === itemId || item.itemId === itemId) && deducted < required) {
+                    const available = item.count || item.quantity || 1;
+                    const toDeductCount = Math.min(required - deducted, available);
+                    deducted += toDeductCount;
+                    item.count = (item.count || item.quantity) - toDeductCount;
+                    return item.count > 0;
+                }
+                return true;
+            });
+        }
+        tx.update(userRef, { items_all: currentItems });
       }
-      tx.update(userRef, { coins: FieldValue.increment(-finalCost) });
+      if (finalCost > 0) {
+        tx.update(userRef, { coins: FieldValue.increment(-finalCost) });
+      }
+
 
       // 작업 유닛/예상 시간
       const unitsTotal = baseUnits;
       const isRecruitType = !npcTeam.length && !charRefs.length; // self/player/company
-      const durationMinutes = isRecruitType
-        ? unitsTotal * RECRUIT_MIN_PER_UNIT // 모집 기간(후속 공정은 태스크 진행으로 처리)
-        : minutesFromUnits(unitsTotal, laborPower);
+
+      // 모집형일 경우 모집 기간 계산
+      const durationMinutes = isRecruitType ? unitsTotal * RECRUIT_MIN_PER_UNIT : 0;
 
       const projectId = uuidv4();
       const taskId = uuidv4();
       const now = Timestamp.now();
-      const completionTime = isRecruitType
-        ? null
-        : new Date(Date.now() + durationMinutes * 60 * 1000);
-
+      
       // 부지 작업 큐(tasks) 등록
       const prevTasks = Array.isArray(plot.tasks) ? plot.tasks.slice() : [];
       prevTasks.push({
@@ -351,8 +354,8 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         unitsTotal,
         unitsDone: 0,
         assigned: {
-          npcTeam: npcTeam,                         // [{level,count}]
-          charIds: charRefs.map(c => c.ref.id),     // []
+          npcTeam: npcTeam,                      // [{level,count}]
+          charIds: charRefs.map(c => c.ref.id),    // []
         },
         createdAt: now,
         recruitmentUntil: isRecruitType
@@ -380,7 +383,7 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
         },
         status: isRecruitType ? 'recruiting' : 'inprogress',
         startTime: FieldValue.serverTimestamp(),
-        completionTime: completionTime, // recruiting이면 null
+        // [REMOVED] completionTime은 자동화된 task 시스템이 결정
         baseAestheticValue: Math.floor(baseAesthetic + aestheticBonusFromLabor({ npcTeam, chars: charRefs.map(c => c.data) })),
         estimatedCost: finalCost,
         taskId
@@ -407,7 +410,7 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
 });
 
 /* =======================
- * 완공 처리
+ * 완공 처리 (기존 코드 유지)
  * ======================= */
 exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
@@ -445,10 +448,9 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
         style: d.style,
         scale: d.scale,
         heightM: Number(d.heightM || 0),
-        totalArea: Number(d.totalAreaM2 || (d.baseAreaM2 * d.floors) || 0),  // ← 교체
-        // 참고 필드로 남겨두면 관리/툴팁에 유용
-        floors: Number(d.floors || 1),                                       // ← 추가
-        baseAreaM2: Number(d.baseAreaM2 || 0),                               // ← 추가
+        totalArea: Number(d.totalAreaM2 || (d.baseAreaM2 * d.floors) || 0),
+        floors: Number(d.floors || 1),
+        baseAreaM2: Number(d.baseAreaM2 || 0),
         zones: Array.isArray(d.zones) ? d.zones : [],
         materials: d.materials || {},
         contractor: p.contractor,
@@ -499,7 +501,7 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
 });
 
 /* =======================
- * 관리자(캐릭터) 배정
+ * 관리자(캐릭터) 배정 (기존 코드 유지)
  * ======================= */
 exports.assignManager = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
@@ -531,7 +533,7 @@ exports.assignManager = onCall({ region: 'us-central1' }, async (req) => {
 });
 
 /* =======================
- * 건물 관리(점검/보수/재건/수익/미관)
+ * 건물 관리 (기존 코드 유지)
  * ======================= */
 exports.manageBuilding = onCall({ region: 'us-central1' }, async (req) => {
   const uid = req.auth?.uid;
