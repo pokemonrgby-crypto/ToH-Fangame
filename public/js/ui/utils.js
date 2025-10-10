@@ -118,3 +118,26 @@ export function numberWithCommas(x) {
     }
     return x.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ",");
 }
+
+/**
+ * [추가] 현재 플레이어(사용자)의 캐릭터 목록을 실시간으로 감지하는 리스너 함수
+ * @param {function} callback - 캐릭터 목록이 변경될 때마다 호출될 콜백 함수
+ * @returns {function} - Firestore 리스너를 중지하는 unsubscribe 함수
+ */
+export function listenToPlayerState(callback) {
+  const user = auth.currentUser;
+  if (!user) {
+    // 로그인하지 않은 경우 빈 배열로 콜백하고, 아무것도 하지 않는 함수를 반환합니다.
+    callback({ characters: [] });
+    return () => {};
+  }
+  // 사용자의 UID와 일치하는 캐릭터들을 실시간으로 가져옵니다.
+  const q = fx.query(fx.collection(db, 'chars'), fx.where('owner_uid', '==', user.uid));
+  const unsubscribe = fx.onSnapshot(q, (snapshot) => {
+    const characters = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    // 콜백 함수에 { characters: [...] } 형태의 객체를 전달합니다.
+    callback({ characters });
+  });
+  // 리스너를 중지할 수 있는 함수를 반환합니다.
+  return unsubscribe;
+}
