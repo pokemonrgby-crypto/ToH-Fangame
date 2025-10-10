@@ -74,41 +74,66 @@ function aestheticBonusFromLabor({ npcTeam = [], chars = [] }) {
 }
 
 /* =======================
- * 요구량/비용/시간/미관 계산
+ * 요구량/비용/시간/미관 계산 (v2)
  * ======================= */
 function calculateCustomRequirements({ design, constructionLevel = 1, artStat = 0 }) {
   const mats = safeAssets(buildingMaterials, {});
-  const { totalArea = 0, materials: dm = {} } = design || {};
+  const floors = Number(design?.floors || 1);
+  const baseArea = Number(design?.baseAreaM2 || 0);
+  const totalArea = Number(design?.totalAreaM2 || (baseArea * floors));
+  const dm = design?.materials || {};
+
+  const primary = Array.isArray(dm.primary) ? dm.primary.slice(0, 4) : [];
+  const secondary = Array.isArray(dm.secondary) ? dm.secondary : [];
 
   const req = {};
-  if (dm.main) req[dm.main] = (req[dm.main] || 0) + Math.floor(totalArea * 1.8);
-  if (dm.secondary) req[dm.secondary] = (req[dm.secondary] || 0) + Math.floor(totalArea * 1.2);
-  (dm.special || []).forEach(id => { req[id] = (req[id] || 0) + Math.floor(totalArea / 50); });
+  // 주재료: 구조 요구량 (면적×층수 기반)
+  const perPrimary = Math.max(1, Math.floor(baseArea * floors * 1.2));
+  primary.forEach(id => { req[id] = (req[id] || 0) + perPrimary; });
+  // 부재료: 미관 전용, 요구량은 작게
+  const perSecondary = Math.max(0, Math.floor(baseArea * floors * 0.5));
+  secondary.forEach(id => { req[id] = (req[id] || 0) + perSecondary; });
 
-  let baseCost = 0, aestheticValue = 0;
+  let baseCost = 0, aestheticValue = 0, stability = 0, gradeProb = 0;
+
   for (const id in req) {
-    const info = mats[id];
-    const price = Number(info?.basePrice || 1);
+    const info = mats[id] || {};
+    const price = Number(info.basePrice || 1);
     baseCost += price * req[id];
-    if (info?.aesthetic_modifier) {
-      aestheticValue += req[id] * (info.aesthetic_modifier - 1) * 10;
+
+    if (secondary.includes(id) && info.aesthetic_modifier) {
+      aestheticValue += req[id] * (Number(info.aesthetic_modifier) - 1) * 10;
+    }
+    if (primary.includes(id)) {
+      stability += Number(info.stability_bonus || 0);
+      gradeProb += Number(info.grade_prob_bonus || 0);
     }
   }
-  const buildCost = Math.floor(baseCost * 1.2);
 
-  // 미관: 아트 스탯 보정
+  // 작업량(단위) = 면적 기반 × 숙련 보정(최소 0.6배)
+  const baseUnits = workUnits(totalArea) * Math.max(0.6, 1 - constructionLevel * 0.03);
+
+  const buildCost = Math.floor(baseCost * 1.2);
   aestheticValue = Math.floor(aestheticValue + (totalArea * 0.1) + artStat * 2);
 
-  // durationMinutes는 외부에서 laborPower로 재산정
-  const baseUnits = workUnits(totalArea);
-  return { materials: req, cost: buildCost, baseUnits, aestheticValue };
+  return { materials: req, cost: buildCost, baseUnits, aestheticValue, stability, gradeProb, totalAreaM2: totalArea };
 }
+
+
 
 /* =======================
  * 유효성 보강(방/룸 검증)
  * ======================= */
 function validateRooms(design) {
   const rooms = safeAssets(roomsCatalog, null);
+  for (const z of (design?.zones || [])) {
+    const cap = Math.floor(Number(z.areaM2 || 0) / 4);
+    const itemCount = (z.items || []).reduce((s, it) => s + Number(it.count || 1), 0);
+    if (itemCount > cap) {
+      const name = z.name || z.roomId || '구역';
+      throw new HttpsError('invalid-argument', `'${name}'에는 최대 ${cap}개까지만 배치할 수 있어. (4m²당 1개 규칙)`);
+    }
+  }
   if (!rooms) return; // 에셋 없으면 스킵(호환)
   const type = design?.type;
   for (const z of (design?.zones || [])) {
@@ -120,6 +145,32 @@ function validateRooms(design) {
     }
   }
 }
+
+
+// 3층 이상 건설 시 지식 보유자(캐릭 or NPC) 최소 1명 필요
+async function hasRequiredFloorKnowledge(tx, contractor, floors) {
+  if (floors < 3) return true;
+  const needId = 'struct_3f'; // 일단 3층 이상 공통 지식 키로 사용 (추후 확장 여지)
+
+  // NPC 팀이 지식을 명시한 경우 바로 통과
+  if (contractor?.type === 'npc_team') {
+    return (contractor.npcTeam || []).some(m => (m.knowledge || []).includes(needId));
+  }
+
+  // 캐릭터 참여 시 knowledge_files/{charId}.entries[needId].progress > 0 검사
+  if (contractor?.type === 'characters') {
+    const ids = contractor.charIds || [];
+    for (const charId of ids) {
+      const ref = db.collection('knowledge_files').doc(charId);
+      const snap = await tx.get(ref);
+      const entries = snap.exists ? (snap.data().entries || {}) : {};
+      if (entries[needId]?.progress > 0) return true;
+    }
+  }
+  return false;
+}
+
+
 
 /* =======================
  * 시작: 건설
@@ -149,19 +200,28 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
   const { plotId, design, contractor, allowMaterialBuyout = false } = req.data || {};
 
   // 필수 설계 검증
-  if (
+    if (
     !plotId || !design || !contractor ||
-    !(Number(design.totalArea) > 0) ||
+    !(Number(design.floors) >= 1) ||
+    !(Number(design.baseAreaM2) > 0) ||
+    !(Number(design.totalAreaM2) > 0) ||
     !Array.isArray(design.zones) || design.zones.length < 1 ||
     !design.type || !design.style || !design.scale ||
-    !design.materials || !design.materials.main
+    !design.materials || !Array.isArray(design.materials.primary) || design.materials.primary.length < 1 ||
+    design.materials.primary.length > 4
   ) {
-    throw new HttpsError('invalid-argument', '필수 설계 정보가 누락되었습니다.');
+    throw new HttpsError('invalid-argument', '필수 설계 정보가 누락되었어. (층수/한 층 면적/주재료 등)');
   }
   validateRooms(design);
 
+
   try {
     const result = await db.runTransaction(async (tx) => {
+      const floors = Number(design.floors || 1);
+      const okKnowledge = await hasRequiredFloorKnowledge(tx, contractor, floors);
+      if (!okKnowledge) {
+        throw new HttpsError('failed-precondition', `${floors}층 건설에는 관련 지식을 가진 참여자가 최소 1명 필요해.`);
+      }
       // 유저
       const userRef = db.collection('users').doc(uid);
       const userSnap = await tx.get(userRef);
@@ -183,9 +243,11 @@ exports.startConstruction = onCall({ region: 'us-central1' }, async (req) => {
       const totalArea = Number(plot.totalArea || 10000);
       const usedArea = Number(plot.usedArea || 0);
       const availableArea = Math.max(0, totalArea - usedArea);
-      if (Number(design.totalArea) > availableArea) {
+      const requestedArea = Number(design.totalAreaM2 || (design.baseAreaM2 * design.floors));
+      if (requestedArea > availableArea) {
         throw new HttpsError('failed-precondition', `남은 면적(${availableArea}m²)을 초과했습니다.`);
       }
+
 
       // 시공 주체 정리
       let npcTeam = [];
@@ -381,7 +443,10 @@ exports.completeConstruction = onCall({ region: 'us-central1' }, async (req) => 
         style: d.style,
         scale: d.scale,
         heightM: Number(d.heightM || 0),
-        totalArea: Number(d.totalArea || 0),
+        totalArea: Number(d.totalAreaM2 || (d.baseAreaM2 * d.floors) || 0),  // ← 교체
+        // 참고 필드로 남겨두면 관리/툴팁에 유용
+        floors: Number(d.floors || 1),                                       // ← 추가
+        baseAreaM2: Number(d.baseAreaM2 || 0),                               // ← 추가
         zones: Array.isArray(d.zones) ? d.zones : [],
         materials: d.materials || {},
         contractor: p.contractor,
