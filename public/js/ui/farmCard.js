@@ -19,7 +19,7 @@ export function renderFarmCard(farm, characters, plotDocId) {
     card.className = 'kv-card';
     card.dataset.facilityId = farm.id;
 
-    const areaTxt = formatNumber(farm.areaM2 || 0);
+    const areaTxt = numberWithCommas(farm.areaM2 || 0);
     const assignedChar = characters.find(c => farm.assignedCharIds && farm.assignedCharIds.includes(c.id));
 
     // TODO: 현재 경작 중인 작물 정보 표시
