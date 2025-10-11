@@ -165,6 +165,7 @@ function attachAllActionEvents(logId, myChars) {
             e.preventDefault();
             const btn = commentForm.querySelector('button[type="submit"]');
             const rawComment = document.getElementById('comment-text').value;
+            const pickerBtn = document.getElementById('comment-char-picker'); // pickerBtn 정의 추가
 
             if (!selectedCharForComment) {
                 showToast('리뷰를 작성할 캐릭터를 선택해주세요.', 'error'); return;
@@ -172,7 +173,6 @@ function attachAllActionEvents(logId, myChars) {
             if (rawComment.length < 5) {
                 showToast('리뷰는 5자 이상 입력해주세요.', 'error'); return;
             }
-            // ✨ [추가] 별점을 하나라도 선택했는지 확인
             if (Object.keys(pendingRatings).length === 0) {
                 showToast('캐릭터에게 별점을 매겨주세요.', 'error'); return;
             }
@@ -181,30 +181,30 @@ function attachAllActionEvents(logId, myChars) {
             btn.textContent = 'AI 변환 및 제출 중...';
 
             try {
-                // 1. 댓글 등록
-                const commentPromise = call('commentOnEncounter')({ logId, actingCharId: selectedCharForComment.id, rawComment });
+                // ▼▼▼ [수정된 부분] ▼▼▼
+                // 기존의 여러 함수 호출을 새로운 단일 함수 호출로 변경합니다.
+                const submitReview = call('submitEncounterReview');
+                const result = await submitReview({
+                    logId,
+                    actingCharId: selectedCharForComment.id,
+                    rawComment,
+                    ratings: pendingRatings // 임시 저장된 별점 객체를 함께 전송
+                });
 
-                // 2. 별점 등록
-                const ratingPromises = Object.entries(pendingRatings).map(([charId, rating]) => 
-                    call('rateEncounter')({ logId, targetCharId: charId, rating })
-                );
-
-                // 3. 댓글과 별점 등록을 동시에 처리
-                const [commentResult] = await Promise.all([commentPromise, ...ratingPromises]);
-
-                if (commentResult.data.ok) {
+                if (result.data.ok) {
                     showToast('리뷰와 별점이 성공적으로 등록되었습니다.');
                     const list = document.getElementById('comments-list');
                     if (list.innerHTML.includes('아직 댓글이 없습니다.')) list.innerHTML = '';
-                    list.insertAdjacentHTML('afterbegin', renderComment(commentResult.data.comment));
+                    list.insertAdjacentHTML('afterbegin', renderComment(result.data.comment));
                     
                     // 성공 후 폼 초기화
                     commentForm.reset();
                     document.querySelectorAll('.star-rating-enhanced input').forEach(radio => radio.checked = false);
                     pendingRatings = {};
                     selectedCharForComment = null;
-                    pickerBtn.innerHTML = `<span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>`;
+                    if(pickerBtn) pickerBtn.innerHTML = `<span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>`;
                 }
+                // ▲▲▲ [수정된 부분] ▲▲▲
             } catch (err) {
                 showToast(`등록 실패: ${err.message}`, 'error');
             } finally {
