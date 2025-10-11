@@ -1,12 +1,42 @@
 // functions/story.js
 
-// [추가] Firestore 타임스탬프 가져오기
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { Timestamp } = require('firebase-admin/firestore');
+const { logger } = require('firebase-functions');
 
-module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
+// Gemini API 호출을 위한 헬퍼 함수
+async function callGemini(apiKey, model, systemText, userText) {
+    const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+    const body = {
+      systemInstruction: { role: 'system', parts: [{ text: systemText }] },
+      contents: [{ role: 'user', parts: [{ text: userText }] }],
+      generationConfig: {
+        temperature: 0.9,
+        maxOutputTokens: 2048,
+        // JSON 응답을 강제하지 않고, 텍스트로 자유롭게 서술하도록 설정
+      }
+    };
+    const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    if (!res.ok) {
+        const txt = await res.text();
+        throw new HttpsError('internal', `Gemini API Error (${res.status}): ${txt}`);
+    }
+    const json = await res.json();
+    const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+    if (!text) throw new HttpsError('internal', 'Gemini response was empty.');
+    return text;
+}
+
+
+module.exports = (admin, { GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
-    // ... (hasStoryAccess 함수는 이전과 동일)
+    /**
+     * 유저가 스토리 기능에 접근할 수 있는지 확인합니다. (어드민 또는 베타테스터)
+     * @param {string} uid - 확인할 사용자 UID
+     * @returns {Promise<boolean>} 접근 가능 여부
+     */
     async function hasStoryAccess(uid) {
         if (!uid) return false;
         try {
@@ -16,7 +46,7 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
             ]);
 
             const adminConfig = adminSnap.exists ? adminSnap.data() : {};
-            const betaConfig = betaSnap.exists ? betaSnap.data() : {};
+            const betaConfig = betaSnap.exists ? betaConfig.data() : {};
 
             const allowUids = new Set([
                 ...(adminConfig.allow || []),
@@ -42,7 +72,6 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         }
     }
 
-
     /**
      * 스토리 초안(스케치)을 생성합니다.
      */
@@ -56,14 +85,12 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         const userDoc = await userRef.get();
         const userData = userDoc.data() || {};
         
-        // 1분 쿨타임 체크
         const now = Timestamp.now();
         const lastSketchTime = userData.lastStorySketchTime;
-        if (lastSketchTime && now.seconds - lastSketchTime.seconds < 60) {
-            throw new HttpsError('resource-exhausted', `잠시 후 다시 시도해주세요. (${60 - (now.seconds - lastSketchTime.seconds)}초 남음)`);
+        if (lastSketchTime && now.seconds - lastSketchTime.seconds < 15) { // 쿨타임 15초
+            throw new HttpsError('resource-exhausted', `잠시 후 다시 시도해주세요. (${15 - (now.seconds - lastSketchTime.seconds)}초 남음)`);
         }
 
-        // 이미 스토리가 진행중인지 확인
         if (userData.storyInProgress) {
             throw new HttpsError('failed-precondition', `이미 진행 중인 이야기("${userData.storyInProgress}")가 있습니다.`);
         }
@@ -72,22 +99,57 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
         if (!charId || !keywords || !worldId) {
             throw new HttpsError('invalid-argument', '캐릭터, 키워드, 세계관 정보는 필수입니다.');
         }
-
-        // 쿨타임 기록 업데이트
-        await userRef.update({ lastStorySketchTime: now });
         
-        // TODO: Gemini API를 호출하여 스토리 스케치를 생성하는 로직 구현
-        // 1. charId로 캐릭터의 최신 서사 정보를 가져옵니다.
-        // 2. keywords, worldId와 서사 정보를 조합하여 AI 프롬프트를 만듭니다.
-        // 3. AI를 호출하고 결과를 반환합니다.
+        await userRef.update({ lastStorySketchTime: now });
 
-        // 임시 더미 데이터 반환
-        return {
-            ok: true,
-            sketch: `세계관 [${worldId}]에서 "${keywords}" 키워드와 관련된 이야기가 곧 시작됩니다...\n\n(AI 생성 로직 추가 예정)`
-        };
+        // --- Gemini API 호출 로직 ---
+        try {
+            // 1. 캐릭터 및 세계관 정보 가져오기
+            const charSnap = await db.doc(`chars/${charId}`).get();
+            if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+            const charData = charSnap.data();
+
+            const worldsSnap = await db.doc('configs/worlds').get();
+            const worldData = (worldsSnap.data()?.worlds || []).find(w => w.id === worldId);
+            if (!worldData) throw new HttpsError('not-found', '세계관 정보를 찾을 수 없습니다.');
+
+            // 2. 최신 서사 추출
+            const latestNarrative = (charData.narratives || [])
+                .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long 
+                || charData.summary 
+                || '새롭게 시작하는 캐릭터';
+
+            // 3. AI 프롬프트 구성
+            const systemPrompt = `당신은 주어진 캐릭터와 세계관, 핵심 키워드를 바탕으로 흥미로운 이야기의 도입부(프롤로그)를 생성하는 전문 스토리 작가입니다. 웹소설처럼 독자의 흥미를 유발할 수 있는 흡입력 있는 문체로 3~5문단의 짧은 글을 작성해주세요.`;
+            
+            const userPrompt = `
+                ## 세계관 설정
+                - 이름: ${worldData.name}
+                - 소개: ${worldData.intro}
+                - 상세: ${worldData.detail?.lore_long || worldData.detail?.lore}
+
+                ## 캐릭터 정보
+                - 이름: ${charData.name}
+                - 배경 서사: ${latestNarrative}
+
+                ## 이야기 핵심 키워드
+                ${keywords}
+
+                ## 지시사항
+                위 정보를 바탕으로, "${charData.name}" 캐릭터가 주인공인 이야기의 도입부를 작성해주세요.
+            `;
+
+            // 4. AI 호출
+            const sketch = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-flash', systemPrompt, userPrompt);
+
+            return { ok: true, sketch };
+
+        } catch (error) {
+            logger.error("Error generating story sketch with AI:", error);
+            if (error instanceof HttpsError) throw error;
+            throw new HttpsError('internal', 'AI로 이야기 초안을 생성하는 데 실패했습니다.');
+        }
     });
-
 
     /**
      * 새로운 스토리를 시작하고 문서를 생성합니다.
@@ -113,35 +175,30 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
 
             const now = Timestamp.now();
             
-            // 7일 쿨타임 체크
             const lastStoryStartTime = userData.lastStoryStartTime;
             if (lastStoryStartTime && now.seconds - lastStoryStartTime.seconds < 7 * 24 * 60 * 60) {
                 throw new HttpsError('resource-exhausted', '새 이야기는 7일에 한 번만 시작할 수 있습니다.');
             }
 
-            // 이미 진행중인 스토리가 있는지 다시 한번 확인
             if (userData.storyInProgress) {
                 throw new HttpsError('failed-precondition', `이미 진행 중인 이야기("${userData.storyInProgress}")가 있습니다.`);
             }
             
-            // 해당 캐릭터로 생성된 스토리가 이미 있는지 확인 (중복 방지)
             if (storyDoc.exists) {
                 throw new HttpsError('already-exists', '이 캐릭터는 이미 생성된 이야기가 있습니다.');
             }
             
-            // 1. 유저 문서 업데이트
             tx.update(userRef, {
                 storyInProgress: charId,
                 lastStoryStartTime: now
             });
             
-            // 2. 새로운 스토리 문서 생성
             tx.set(storyRef, {
                 owner: uid,
                 charId: charId,
                 worldId: worldId,
                 createdAt: now,
-                status: 'ongoing', // 진행중
+                status: 'ongoing',
                 narrative: [
                     { type: 'sketch', content: initialSketch, timestamp: now }
                 ]
@@ -154,6 +211,5 @@ module.exports = (admin, { onCall, HttpsError, logger, GEMINI_API_KEY }) => {
     return {
         generateStorySketch,
         startStory,
-        // 나중에 추가될 함수들...
     };
 };
