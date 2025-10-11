@@ -118,6 +118,7 @@ export function confirmModal(opts){
     card.querySelector('[data-ok]').onclick = ()=> close(true);
   });
 }
+window.closeModal = closeModal;
 
 /**
  * 텍스트 프롬프트를 입력받는 새로운 모달
