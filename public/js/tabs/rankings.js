@@ -1,11 +1,13 @@
 // /public/js/tabs/rankings.js
 import { App, loadRankingsFromServer, restoreRankingCache } from '../api/store.js';
 import { el } from '../ui/components.js';
+// [추가] 조우 랭킹 관련 함수를 가져옵니다.
+import { showEncounterRankings, showRecentEncounters } from './rankings_encounter.js';
 
 // 탭/캐시 상태
 const State = {
-  tab: 'weekly',     // 'weekly'|'total'|'elo'
-  subTab: 'recent',  // 'ranking'|'recent' (조우 탭 전용)  
+  tab: 'weekly',     // 'weekly'|'total'|'elo'|'elo_low'|'encounter'
+  subTab: 'recent',  // 'ranking'|'recent' (조우 탭 전용)
   lastLoaded: 0,
 };
 const STALE_MS = 60 * 1000; // 60초 지나면 새로 불러오기
@@ -22,11 +24,11 @@ function tabs(){
     make('total','누적 좋아요'),
     make('elo','Elo'),
     make('elo_low','Elo(역순)'),
-    make('encounter', '🌟조우') // [추가]
+    make('encounter', '🌟조우')
   );
 }
 
-// [추가] 조우 하위 탭
+// 조우 하위 탭
 function encounterSubTabs() {
     const make = (id, label) => el('button', {
         className: 'btn tab' + (State.subTab === id ? ' active' : ''),
@@ -41,10 +43,8 @@ function encounterSubTabs() {
 function rankCard(c, i){
   const open = () => location.hash = `#/char/${c.id}`;
 
-  // ✅ KV/CDN 전환 대응: thumb_url 최우선, 없으면 b64, 마지막에 기존 url
   const imgSrc = c.thumb_url || c.image_b64 || c.image_url || '';
 
-  // onerror 시 빈 틀로 교체(깨진 링크 대비)
   const thumb = imgSrc
     ? (() => {
         const img = el('img', { className: 'rank-thumb', src: imgSrc, alt: c.name || '' });
@@ -57,8 +57,8 @@ function rankCard(c, i){
     : el('div', { className: 'rank-thumb' });
 
   const stat = (State.tab==='weekly') ? (c.likes_weekly||0)
-            : (State.tab==='total')  ? (c.likes_total||0)
-            : (c.elo||0);
+             : (State.tab==='total')  ? (c.likes_total||0)
+             : (c.elo||0);
   const statLabel = (State.tab==='elo' || State.tab==='elo_low') ? 'Elo' : '❤';
 
   return el('div',{className:'rank-card', onclick:open, style:'cursor:pointer'},
@@ -74,14 +74,35 @@ function rankCard(c, i){
 
 export async function showRankings(force=false){
   const v = document.getElementById('view');
+  v.innerHTML = `<div class="container narrow"><div class="spin-center"></div></div>`;
+  const container = el('div', { className: 'container narrow' });
 
-  // 데이터가 없거나 오래됐거나 강제 갱신이면 서버에서 재로딩
+  // [수정된 핵심 로직]
+  // '조우' 탭일 경우, 별도의 렌더링 함수를 호출하고 실행을 종료합니다.
+  if (State.tab === 'encounter') {
+      container.append(
+          el('div', { className: 'title' }, '랭킹'),
+          tabs(),
+          encounterSubTabs(), // 조우 탭의 하위 탭 추가
+          el('div', { id: 'ranking-content' })
+      );
+      v.replaceChildren(container);
+      
+      const contentEl = document.getElementById('ranking-content');
+      // 하위 탭 상태에 따라 다른 내용을 표시합니다.
+      if (State.subTab === 'ranking') {
+          showEncounterRankings(contentEl);
+      } else {
+          showRecentEncounters(contentEl);
+      }
+      return; // 여기서 함수 실행을 종료해야 아래의 기존 랭킹 로직이 실행되지 않습니다.
+  }
+
+  // --- 이하 기존 랭킹(주간, 누적, Elo) 표시 로직 ---
   const now = Date.now();
   const needReload = force || !App.rankings || (now - State.lastLoaded > STALE_MS);
   if (needReload) {
     try {
-      v.replaceChildren(el('div',{className:'muted'}, '랭킹 불러오는 중…'));
-      // 서버에서 세 종류 모두 갱신하는 로더(프로젝트 기존 시그니처 유지)
       await loadRankingsFromServer(50);
       State.lastLoaded = now;
     } catch (e) {
@@ -89,18 +110,16 @@ export async function showRankings(force=false){
     }
   }
 
-  const src = App.rankings || {weekly:[], total:[], elo:[]};
+  const src = App.rankings || {weekly:[], total:[], elo:[], elo_low:[]};
   const list = State.tab==='weekly' ? (src.weekly||[])
              : State.tab==='total'  ? (src.total||[])
              : State.tab==='elo_low'? (src.elo_low||[])
              : (src.elo||[]);
 
-
-  v.replaceChildren(
-    el('div',{className:'container narrow'},
-      el('div',{className:'title'}, '랭킹'),
-      tabs(),
-      el('div',{className:'rank-grid'}, ...list.map((c,i)=>rankCard(c,i)))
-    )
+  container.append(
+    el('div',{className:'title'}, '랭킹'),
+    tabs(),
+    el('div',{className:'rank-grid'}, ...list.map((c,i)=>rankCard(c,i)))
   );
+  v.replaceChildren(container);
 }
