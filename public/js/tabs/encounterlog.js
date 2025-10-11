@@ -9,17 +9,57 @@ import { openCharacterPickerModal } from '../ui/character_picker.js';
 
 const call = (name) => httpsCallable(func, name);
 
-// ✨ 댓글 및 평가를 위해 상태를 저장할 변수들
 let selectedCharForComment = null;
-let pendingRatings = {}; // ✨ [추가] 제출 전 별점을 임시로 저장할 객체
+let pendingRatings = {};
 
-// (기존 코드와 동일)
 function parseLogId(){const h=location.hash||'';const m=h.match(/^#\/encounter-log\/([^/]+)$/);return m?m[1]:null}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const rarityColors={normal:'#c8d0dc',rare:'#cfe4ff',epic:'#e6dcff',legend:'#ffe9ad',myth:'#ffc9ce',aether:'#d6fff7'};
 function renderRichLog(logText='',party=[]){if(typeof logText!=='string')logText=String(logText??'');let txt=logText.replace(/\r\n?/g,'\n').replace(/\\n/g,'\n');const dialogues=[];txt=txt.replace(/\[대사:(\d)\]([\s\S]*?)\[\/대사\]/g,(match,charIndex,line)=>{dialogues.push({charIndex:parseInt(charIndex,10),line});return `__DIALOGUE_PLACEHOLDER_${dialogues.length-1}__`});let narrativeBody=esc(txt).replace(/\[내면\]([\s\S]*?)\[\/내면\]/g,'<div class="rich-thought">$1</div>').replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g,(_m,r,n)=>{const color=rarityColors[r.toLowerCase()]||'#fff';return `<strong class="item-highlight" style="color:${color};text-shadow:0 0 6px ${color}80;">${n}</strong>`});dialogues.forEach((dialogue,index)=>{const character=party[dialogue.charIndex];if(!character)return;const side=dialogue.charIndex===0?'left':'right';const bubbleHtml=`
 <div class="dialogue-bubble-wrap" data-side="${side}"><img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'"><div class="dialogue-bubble"><div class="dialogue-name">${esc(character.name)}</div><div class="dialogue-text">${esc(dialogue.line).replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>')}</div></div></div>`;narrativeBody=narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`,bubbleHtml)});return narrativeBody.split(/\n{2,}/).map(p=>p.trim()).filter(p=>p).map(p=>p.startsWith('<div class="dialogue-bubble-wrap"')?p:`<div class="log-paragraph">${p.replace(/\n/g,'<br>')}</div>`).join('')}
 function setupScrollAnimations(){const observer=new IntersectionObserver((entries)=>{entries.forEach(entry=>{if(entry.isIntersecting){entry.target.classList.add('is-visible');observer.unobserve(entry.target)}})},{threshold:0.1});document.querySelectorAll('.log-paragraph, .dialogue-bubble-wrap').forEach(el=>observer.observe(el))}
+
+/**
+ * [신규] 평가 횟수 충전 모달을 여는 함수
+ * @returns {Promise<number|null>} 충전할 횟수 또는 취소 시 null
+ */
+async function openRechargeModal() {
+    return new Promise(resolve => {
+        const back = document.createElement('div');
+        back.className = 'modal-back';
+        back.style.zIndex = '10001'; // 다른 모달 위에 표시
+        back.innerHTML = `
+            <div class="modal-card" style="max-width: 420px;">
+                <div style="font-weight:900; font-size:18px;">평가 횟수 충전</div>
+                <p class="text-dim" style="font-size:13px; margin-top:4px;">오늘 평가/댓글 작성 횟수를 모두 사용했습니다. 100코인당 1회씩 충전할 수 있습니다.</p>
+                <div style="margin-top:12px;">
+                    <label class="kv-label">충전할 횟수 (최소: 1, 최대: 10)</label>
+                    <input id="recharge-count" class="input" type="number" min="1" max="10" value="1">
+                </div>
+                <div class="row" style="justify-content:flex-end; gap:8px; margin-top:12px;">
+                    <button id="modal-cancel" class="btn ghost">취소</button>
+                    <button id="modal-ok" class="btn primary">충전하기</button>
+                </div>
+            </div>
+        `;
+        document.body.appendChild(back);
+        const close = (val) => { back.remove(); resolve(val); };
+        
+        const countInput = back.querySelector('#recharge-count');
+
+        back.querySelector('#modal-cancel').onclick = () => close(null);
+        back.querySelector('#modal-ok').onclick = () => {
+            const count = parseInt(countInput.value, 10);
+            if (isNaN(count) || count < 1 || count > 10) {
+                showToast('1에서 10 사이의 숫자를 입력해주세요.', 'error');
+                return;
+            }
+            close(count);
+        };
+        back.addEventListener('click', e => { if (e.target === back) close(null); });
+        countInput.focus();
+    });
+}
 
 
 export async function showEncounterLog() {
@@ -31,7 +71,6 @@ export async function showEncounterLog() {
     }
     root.innerHTML = `<section class="container narrow"><div class="spin-center" style="margin-top: 40px;"></div></section>`;
     try {
-        // ✨ [수정] 페이지에 들어올 때마다 선택된 캐릭터와 임시 별점을 초기화합니다.
         selectedCharForComment = null;
         pendingRatings = {};
 
@@ -57,7 +96,6 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
 
     root.innerHTML = `
     <style>
-      /* (기존 스타일은 그대로 유지) */
       .star-rating-enhanced { display: flex; flex-direction: row-reverse; justify-content: center; font-size: 2rem; }
       .star-rating-enhanced input { display: none; }
       .star-rating-enhanced label { color: #4b5563; cursor: pointer; transition: color 0.2s ease-out, transform 0.1s ease; padding: 0 2px; }
@@ -95,7 +133,7 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
             <span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>
           </button>
 
-          <textarea id="comment-text" class="form-control" placeholder="캐릭터의 입장에서 리뷰를 작성하면 AI가 서사를 반영하여 변환합니다... (필수)" required minlength="5"></textarea>
+          <textarea id="comment-text" class="input" placeholder="캐릭터의 입장에서 리뷰를 작성하면 AI가 서사를 반영하여 변환합니다... (필수)" required minlength="5"></textarea>
           <button type="submit" class="btn">AI 리뷰 등록 (별점 포함)</button>
         </form>
 
@@ -114,7 +152,6 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
 }
 
 function renderRatingControl(char, side) {
-    // 0.5점 단위로 10개의 라디오 버튼 생성
     return `
       <div class="col" style="align-items: center; gap: 12px; flex: 1;">
         <img src="${esc(char.thumb_url)}" class="elog-avatar" style="width: 64px; height: 64px;">
@@ -134,7 +171,6 @@ function renderComment(comment) {
 }
 
 function attachAllActionEvents(logId, myChars) {
-    // 별점 선택 시 즉시 제출 대신 임시 객체에 저장
     document.querySelectorAll('.star-rating-enhanced input').forEach(radio => {
         radio.addEventListener('change', (e) => {
             if (!auth.currentUser) {
@@ -165,30 +201,21 @@ function attachAllActionEvents(logId, myChars) {
             e.preventDefault();
             const btn = commentForm.querySelector('button[type="submit"]');
             const rawComment = document.getElementById('comment-text').value;
-            const pickerBtn = document.getElementById('comment-char-picker'); // pickerBtn 정의 추가
 
-            if (!selectedCharForComment) {
-                showToast('리뷰를 작성할 캐릭터를 선택해주세요.', 'error'); return;
-            }
-            if (rawComment.length < 5) {
-                showToast('리뷰는 5자 이상 입력해주세요.', 'error'); return;
-            }
-            if (Object.keys(pendingRatings).length === 0) {
-                showToast('캐릭터에게 별점을 매겨주세요.', 'error'); return;
-            }
+            if (!selectedCharForComment) { showToast('리뷰를 작성할 캐릭터를 선택해주세요.', 'error'); return; }
+            if (rawComment.length < 5) { showToast('리뷰는 5자 이상 입력해주세요.', 'error'); return; }
+            if (Object.keys(pendingRatings).length === 0) { showToast('캐릭터에게 별점을 매겨주세요.', 'error'); return; }
 
             btn.disabled = true;
             btn.textContent = 'AI 변환 및 제출 중...';
 
             try {
-                // ▼▼▼ [수정된 부분] ▼▼▼
-                // 기존의 여러 함수 호출을 새로운 단일 함수 호출로 변경합니다.
                 const submitReview = call('submitEncounterReview');
                 const result = await submitReview({
                     logId,
                     actingCharId: selectedCharForComment.id,
                     rawComment,
-                    ratings: pendingRatings // 임시 저장된 별점 객체를 함께 전송
+                    ratings: pendingRatings
                 });
 
                 if (result.data.ok) {
@@ -197,16 +224,27 @@ function attachAllActionEvents(logId, myChars) {
                     if (list.innerHTML.includes('아직 댓글이 없습니다.')) list.innerHTML = '';
                     list.insertAdjacentHTML('afterbegin', renderComment(result.data.comment));
                     
-                    // 성공 후 폼 초기화
                     commentForm.reset();
                     document.querySelectorAll('.star-rating-enhanced input').forEach(radio => radio.checked = false);
                     pendingRatings = {};
                     selectedCharForComment = null;
                     if(pickerBtn) pickerBtn.innerHTML = `<span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>`;
                 }
-                // ▲▲▲ [수정된 부분] ▲▲▲
             } catch (err) {
-                showToast(`등록 실패: ${err.message}`, 'error');
+                if (err.code === 'functions/resource-exhausted' && err.message.includes('하루에')) {
+                    const rechargeCount = await openRechargeModal();
+                    if (rechargeCount) {
+                        try {
+                            const rechargeFn = call('rechargeEncounterRating');
+                            await rechargeFn({ count: rechargeCount });
+                            showToast(`${rechargeCount}회 충전 완료! 댓글을 다시 등록해주세요.`);
+                        } catch (rechargeErr) {
+                            showToast(`충전 실패: ${rechargeErr.message}`, 'error');
+                        }
+                    }
+                } else {
+                    showToast(`등록 실패: ${err.message}`, 'error');
+                }
             } finally {
                 btn.disabled = false;
                 btn.textContent = 'AI 리뷰 등록 (별점 포함)';
