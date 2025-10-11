@@ -140,7 +140,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             `;
 
             // 4. AI 호출
-            const sketch = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-flash', systemPrompt, userPrompt);
+            const sketch = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash-lite', systemPrompt, userPrompt);
 
             return { ok: true, sketch };
 
