@@ -80,26 +80,23 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
       
       <div class="elog-comments-wrap">
         <h2>댓글 및 평가 (${comments.length})</h2>
-        <div id="rating-area" class="kv-card" style="margin-bottom: 1rem;">
-          <p style="margin:0; font-weight:500;">이 조우의 캐릭터들에게 별점을 매겨주세요. (각 1회)</p>
-          <div class="row" style="justify-content: space-around; margin-top: 1rem; align-items: flex-start;">
-            ${renderRatingControl(charA, 'a')}
-            ${renderRatingControl(charB, 'b')}
-          </div>
-          <div style="text-align: center; margin-top: 1.5rem;">
-            <button id="submit-ratings-btn" class="btn">별점 제출</button>
-          </div>
-        </div>
         
         <form id="comment-form" class="comment-form" style="${!currentUserId ? 'display:none;' : ''}">
-          <p style="margin:0;font-weight:500;">내 캐릭터로 댓글 남기기</p>
+          <p style="margin:0;font-weight:500;">이 조우에 대한 평가와 리뷰를 남겨주세요.</p>
           
+          <div id="rating-area" class="kv-card" style="margin-bottom: 1rem;">
+            <div class="row" style="justify-content: space-around; align-items: flex-start;">
+              ${renderRatingControl(charA, 'a')}
+              ${renderRatingControl(charB, 'b')}
+            </div>
+          </div>
+
           <button type="button" id="comment-char-picker">
-            <span class="placeholder">-- 댓글을 작성할 내 캐릭터 선택 --</span>
+            <span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>
           </button>
 
-          <textarea id="comment-text" class="form-control" placeholder="캐릭터의 입장에서 댓글을 작성하면 AI가 서사를 반영하여 변환합니다..." required minlength="5"></textarea>
-          <button type="submit" class="btn">AI로 변환하여 댓글 등록</button>
+          <textarea id="comment-text" class="form-control" placeholder="캐릭터의 입장에서 리뷰를 작성하면 AI가 서사를 반영하여 변환합니다... (필수)" required minlength="5"></textarea>
+          <button type="submit" class="btn">AI 리뷰 등록 (별점 포함)</button>
         </form>
 
         <div id="comments-list" class="comments-list">
@@ -117,13 +114,14 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
 }
 
 function renderRatingControl(char, side) {
+    // 0.5점 단위로 10개의 라디오 버튼 생성
     return `
       <div class="col" style="align-items: center; gap: 12px; flex: 1;">
         <img src="${esc(char.thumb_url)}" class="elog-avatar" style="width: 64px; height: 64px;">
         <b>${esc(char.name)}</b>
         <div class="star-rating-enhanced" data-char-id="${char.id}">
           ${[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5].map(val => {
-              const id = `star-${side}-${val}`;
+              const id = `star-${side}-${String(val).replace('.', '_')}`;
               return `<input type="radio" id="${id}" name="rating-${side}" value="${val}"><label for="${id}" title="${val}점">★</label>`;
           }).join('')}
         </div>
@@ -136,58 +134,20 @@ function renderComment(comment) {
 }
 
 function attachAllActionEvents(logId, myChars) {
-    // ✨ [수정] 별점 이벤트: 즉시 제출 대신 임시 저장
+    // 별점 선택 시 즉시 제출 대신 임시 객체에 저장
     document.querySelectorAll('.star-rating-enhanced input').forEach(radio => {
         radio.addEventListener('change', (e) => {
             if (!auth.currentUser) {
                 showToast('로그인이 필요합니다.', 'error');
-                e.target.checked = false; // 선택 취소
+                e.target.checked = false;
                 return;
             }
             const rating = parseFloat(e.target.value);
             const charId = e.target.closest('.star-rating-enhanced').dataset.charId;
-            
-            pendingRatings[charId] = rating; // 임시 저장
-            showToast(`${rating}점이 선택되었습니다. 하단의 '별점 제출' 버튼을 눌러주세요.`, 'info');
+            pendingRatings[charId] = rating;
         });
     });
 
-    // ✨ [추가] 별점 제출 버튼 이벤트
-    const submitBtn = document.getElementById('submit-ratings-btn');
-    if (submitBtn) {
-        submitBtn.addEventListener('click', async () => {
-            if (!auth.currentUser) return showToast('로그인이 필요합니다.', 'error');
-
-            const ratingEntries = Object.entries(pendingRatings);
-            if (ratingEntries.length === 0) {
-                return showToast('제출할 별점이 없습니다. 별점을 먼저 선택해주세요.', 'error');
-            }
-
-            submitBtn.disabled = true;
-            submitBtn.textContent = '제출 중...';
-            const ratingArea = document.getElementById('rating-area');
-            ratingArea.style.pointerEvents = 'none'; // 평가 영역 비활성화
-
-            try {
-                // 여러 별점을 병렬로 제출
-                const promises = ratingEntries.map(([charId, rating]) => 
-                    call('rateEncounter')({ logId, targetCharId: charId, rating })
-                );
-                await Promise.all(promises);
-
-                showToast('별점이 성공적으로 제출되었습니다!', 'success');
-                submitBtn.textContent = '제출 완료';
-                // 성공 시 평가 영역을 계속 비활성화 상태로 둡니다.
-            } catch (err) {
-                showToast(`평가 제출 실패: ${err.message}`, 'error');
-                submitBtn.disabled = false;
-                submitBtn.textContent = '별점 제출';
-                ratingArea.style.pointerEvents = 'auto'; // 실패 시 다시 활성화
-            }
-        });
-    }
-
-    // 캐릭터 선택 버튼(모달 열기) 이벤트
     const pickerBtn = document.getElementById('comment-char-picker');
     if (pickerBtn) {
         pickerBtn.onclick = async () => {
@@ -199,7 +159,6 @@ function attachAllActionEvents(logId, myChars) {
         };
     }
 
-    // 댓글 폼 제출 이벤트
     const commentForm = document.getElementById('comment-form');
     if (commentForm) {
         commentForm.onsubmit = async (e) => {
@@ -208,41 +167,59 @@ function attachAllActionEvents(logId, myChars) {
             const rawComment = document.getElementById('comment-text').value;
 
             if (!selectedCharForComment) {
-                showToast('댓글을 작성할 캐릭터를 선택해주세요.', 'error'); return;
+                showToast('리뷰를 작성할 캐릭터를 선택해주세요.', 'error'); return;
             }
             if (rawComment.length < 5) {
-                showToast('댓글은 5자 이상 입력해주세요.', 'error'); return;
+                showToast('리뷰는 5자 이상 입력해주세요.', 'error'); return;
+            }
+            // ✨ [추가] 별점을 하나라도 선택했는지 확인
+            if (Object.keys(pendingRatings).length === 0) {
+                showToast('캐릭터에게 별점을 매겨주세요.', 'error'); return;
             }
 
             btn.disabled = true;
-            btn.textContent = 'AI 변환 중...';
+            btn.textContent = 'AI 변환 및 제출 중...';
+
             try {
-                const res = await call('commentOnEncounter')({ logId, actingCharId: selectedCharForComment.id, rawComment });
-                if (res.data.ok) {
-                    showToast('댓글이 등록되었습니다.');
+                // 1. 댓글 등록
+                const commentPromise = call('commentOnEncounter')({ logId, actingCharId: selectedCharForComment.id, rawComment });
+
+                // 2. 별점 등록
+                const ratingPromises = Object.entries(pendingRatings).map(([charId, rating]) => 
+                    call('rateEncounter')({ logId, targetCharId: charId, rating })
+                );
+
+                // 3. 댓글과 별점 등록을 동시에 처리
+                const [commentResult] = await Promise.all([commentPromise, ...ratingPromises]);
+
+                if (commentResult.data.ok) {
+                    showToast('리뷰와 별점이 성공적으로 등록되었습니다.');
                     const list = document.getElementById('comments-list');
                     if (list.innerHTML.includes('아직 댓글이 없습니다.')) list.innerHTML = '';
-                    list.insertAdjacentHTML('afterbegin', renderComment(res.data.comment));
+                    list.insertAdjacentHTML('afterbegin', renderComment(commentResult.data.comment));
+                    
+                    // 성공 후 폼 초기화
                     commentForm.reset();
+                    document.querySelectorAll('.star-rating-enhanced input').forEach(radio => radio.checked = false);
+                    pendingRatings = {};
                     selectedCharForComment = null;
-                    pickerBtn.innerHTML = `<span class="placeholder">-- 댓글을 작성할 내 캐릭터 선택 --</span>`;
+                    pickerBtn.innerHTML = `<span class="placeholder">-- 리뷰를 작성할 내 캐릭터 선택 --</span>`;
                 }
             } catch (err) {
-                showToast(`댓글 등록 실패: ${err.message}`, 'error');
+                showToast(`등록 실패: ${err.message}`, 'error');
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'AI로 변환하여 댓글 등록';
+                btn.textContent = 'AI 리뷰 등록 (별점 포함)';
             }
         };
     }
 
-    // 신고 이벤트 (기존과 동일)
     document.getElementById('comments-list').addEventListener('click', async (e) => {
         if (e.target.classList.contains('btn-report')) {
             if (!auth.currentUser) return showToast('로그인이 필요합니다.', 'error');
             const commentItem = e.target.closest('.comment-item');
             const commentId = commentItem.dataset.commentId;
-            const reason = prompt("신고 사유를 입력해주세요. (예: 정치적, 성적, '그 캐릭터' 등)");
+            const reason = prompt("신고 사유를 입력해주세요.");
             if (reason) {
                 e.target.disabled = true;
                 try {
