@@ -691,3 +691,64 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
     background: #111;
     border: 1px solid var(--bd);
 }
+
+/* /public/css/style.css 파일 하단에 추가 */
+
+/* --- 조우 로그 별점 UI --- */
+.star-rating-enhanced {
+    display: flex;
+    flex-direction: row-reverse; /* 별을 오른쪽부터 채우기 위함 */
+    justify-content: center;
+    font-size: 2rem;
+    line-height: 1;
+}
+
+.star-rating-enhanced input {
+    display: none; /* 라디오 버튼 숨기기 */
+}
+
+.star-rating-enhanced label {
+    color: #4b5563; /* 비활성 별 색상 */
+    cursor: pointer;
+    transition: color 0.2s ease-out, transform 0.1s ease;
+    padding: 0 2px;
+    -webkit-text-stroke: 1px #222; /* 별 테두리 효과 */
+}
+
+/* 반쪽 별 스타일 */
+.star-rating-enhanced label:nth-of-type(odd)::before {
+    content: '★';
+    position: absolute;
+    display: block;
+    width: 50%;
+    overflow: hidden;
+    color: #ffc700; /* 활성 별 색상 */
+    -webkit-text-stroke: 1px #222;
+}
+
+/* 짝수 번째 라벨(왼쪽 반)은 투명하게 처리 */
+.star-rating-enhanced label:nth-of-type(even) {
+    color: transparent;
+}
+
+
+/* 호버 및 체크 효과 */
+.star-rating-enhanced > input:checked ~ label,
+.star-rating-enhanced:not(:checked) > label:hover,
+.star-rating-enhanced:not(:checked) > label:hover ~ label {
+    color: #ffc700;
+    text-shadow: 0 0 8px #ffc70090;
+}
+
+/* 반쪽 별 호버 효과 */
+.star-rating-enhanced > input:checked + label:hover,
+.star-rating-enhanced > input:checked ~ label:hover,
+.star-rating-enhanced > input:checked ~ label:hover ~ label,
+.star-rating-enhanced > label:hover ~ input:checked ~ label {
+    color: #ffed85;
+}
+
+/* 호버 시 확대 효과 */
+.star-rating-enhanced label:hover {
+    transform: scale(1.15);
+}
