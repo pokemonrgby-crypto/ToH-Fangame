@@ -6,7 +6,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
-    // AI 호출 헬퍼 함수 (변경 없음)
+    // AI 호출 헬퍼 함수 (수정됨)
     async function callGeminiForComment(systemText, userText) {
         const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
         const apiKey = GEMINI_API_KEY.value();
@@ -30,12 +30,22 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('internal', `Gemini API 호출 실패: ${res.status} ${txt}`);
         }
         const json = await res.json().catch(()=>null);
-        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
         try {
-            return JSON.parse(text);
+            // [수정] 더 안정적인 JSON 파싱 로직 적용
+            let clean = text.replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '').trim();
+            const firstBrace = clean.indexOf('{');
+            const lastBrace = clean.lastIndexOf('}');
+            if (firstBrace !== -1 && lastBrace > firstBrace) {
+                clean = clean.slice(firstBrace, lastBrace + 1);
+            }
+            clean = clean.replace(/,\s*([}\]])/g, '$1'); // 후행 쉼표 제거
+            return JSON.parse(clean);
         } catch(e) {
-            return { transformedComment: text.replace(/["']/g, '') };
+            logger.error("callGeminiForComment JSON parse failed", { rawText: text, error: e.message });
+            // 파싱 실패 시, 원본 텍스트를 그대로 반환하여 문제 파악을 돕고, 최소한의 정보라도 표시하도록 함
+            return { transformedComment: text };
         }
     }
 
@@ -66,7 +76,14 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             const userPrompt = `Character Narrative: ${latestNarrative}\n\nRaw Comment to Transform: "${rawComment}"`;
             
             const aiResult = await callGeminiForComment(systemPrompt, userPrompt);
-            transformedComment = aiResult.transformedComment;
+            
+            // [수정] AI 결과가 유효한지 확인하고, 유효하지 않으면 원본 댓글 사용
+            if (aiResult && aiResult.transformedComment) {
+                transformedComment = aiResult.transformedComment;
+            } else {
+                transformedComment = rawComment; 
+                logger.warn('AI comment transformation failed or returned invalid format. Using raw comment.', { logId, actingCharId, aiResponse: aiResult });
+            }
         }
 
         // Firestore 트랜잭션으로 댓글과 별점 동시 처리
