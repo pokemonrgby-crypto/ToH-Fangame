@@ -1,18 +1,19 @@
 // /public/js/tabs/encounterlog.js
+
 import { auth, db, fx, func } from '../api/firebase.js';
 import { getEncounterLog, getEncounterComments, fetchMyChars } from '../api/store.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { prettyTime } from '../ui/utils.js';
-// ✨ 1단계에서 만든 캐릭터 선택 모달을 가져옵니다.
 import { openCharacterPickerModal } from '../ui/character_picker.js';
 
 const call = (name) => httpsCallable(func, name);
 
-// ✨ 댓글 작성을 위해 유저가 선택한 캐릭터를 저장할 변수를 만듭니다.
+// ✨ 댓글 및 평가를 위해 상태를 저장할 변수들
 let selectedCharForComment = null;
+let pendingRatings = {}; // ✨ [추가] 제출 전 별점을 임시로 저장할 객체
 
-// (여기부터 showEncounterLog 함수 전까지는 기존 코드와 동일합니다)
+// (기존 코드와 동일)
 function parseLogId(){const h=location.hash||'';const m=h.match(/^#\/encounter-log\/([^/]+)$/);return m?m[1]:null}
 function esc(s){return String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 const rarityColors={normal:'#c8d0dc',rare:'#cfe4ff',epic:'#e6dcff',legend:'#ffe9ad',myth:'#ffc9ce',aether:'#d6fff7'};
@@ -30,8 +31,9 @@ export async function showEncounterLog() {
     }
     root.innerHTML = `<section class="container narrow"><div class="spin-center" style="margin-top: 40px;"></div></section>`;
     try {
-        // ✨ 페이지에 들어올 때마다 선택된 캐릭터를 초기화합니다.
-        selectedCharForComment = null; 
+        // ✨ [수정] 페이지에 들어올 때마다 선택된 캐릭터와 임시 별점을 초기화합니다.
+        selectedCharForComment = null;
+        pendingRatings = {};
 
         const [log, comments] = await Promise.all([ getEncounterLog(logId), getEncounterComments(logId) ]);
         const [charASnap, charBSnap] = await Promise.all([ fx.getDoc(fx.doc(db, log.a_char)), fx.getDoc(fx.doc(db, log.b_char)) ]);
@@ -55,7 +57,7 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
 
     root.innerHTML = `
     <style>
-      /* ✨ 세련된 별점 UI를 위한 스타일 */
+      /* (기존 스타일은 그대로 유지) */
       .star-rating-enhanced { display: flex; flex-direction: row-reverse; justify-content: center; font-size: 2rem; }
       .star-rating-enhanced input { display: none; }
       .star-rating-enhanced label { color: #4b5563; cursor: pointer; transition: color 0.2s ease-out, transform 0.1s ease; padding: 0 2px; }
@@ -67,14 +69,10 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
       .star-rating-enhanced > input:checked ~ label:hover,
       .star-rating-enhanced > input:checked ~ label:hover ~ label,
       .star-rating-enhanced > label:hover ~ input:checked ~ label { color: #ffed85; }
-
-      /* ✨ 캐릭터 선택 버튼 스타일 */
       #comment-char-picker { display: flex; align-items: center; gap: 10px; width: 100%; text-align: left; padding: 10px; border: 1px solid #273247; border-radius: 8px; background: #0f172a; cursor: pointer; transition: background .2s; }
       #comment-char-picker:hover { background: #1e293b; }
       #comment-char-picker img { width: 36px; height: 36px; border-radius: 50%; object-fit: cover; }
       #comment-char-picker .placeholder { color: #6b7280; }
-      
-      /* (기존 스타일은 그대로 유지) */
       .elog-wrap{display:flex;flex-direction:column;gap:18px} .elog-topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(8,12,18,.6);border-bottom:1px solid #1e2835} .elog-topbar .inner{display:flex;align-items:center;justify-content:space-between;padding:10px 8px} .elog-actions{display:flex;gap:8px} .elog-grid{display:grid;grid-template-columns:1fr minmax(0,72ch) 1fr;gap:18px} .elog-cc{display:flex;justify-content:center} .elog-card{text-decoration:none;color:inherit;display:flex;flex-direction:column;align-items:center;gap:6px} .elog-avatar{width:96px;height:96px;object-fit:cover;border-radius:50%;border:3px solid #273247;box-shadow:0 4px 12px rgba(0,0,0,.3)} .elog-name{font-weight:800;font-size:15px;margin-top:2px} .elog-exp{font-size:12px;font-weight:700;color:#a3e635;background:rgba(163,230,53,.12);padding:3px 8px;border-radius:999px} .elog-body{line-height:1.8;font-size:15px} .elog-title{font-size:22px;font-weight:900;text-align:center;margin:8px 0 14px} .elog-article{background:#0c1117;border:1px solid #273247;border-radius:14px;padding:16px} .rich-thought{margin:16px 0;padding:12px;border-left:3px solid #7a9bff;background:rgba(122,155,255,.08);border-radius:8px; font-style: italic; color: #d1d5db;} .log-paragraph, .dialogue-bubble-wrap { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; } .log-paragraph.is-visible, .dialogue-bubble-wrap.is-visible { opacity: 1; transform: translateY(0); } .log-paragraph { margin-bottom: 1.5rem; line-height: 1.8; word-break: keep-all; } .dialogue-bubble-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 1.5rem 0; max-width: 85%; } .dialogue-bubble-wrap[data-side="right"] { margin-left: auto; flex-direction: row-reverse; } .dialogue-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; } .dialogue-bubble { background: #232a3b; padding: 12px 16px; border-radius: 18px; position: relative; max-width: min(560px, 90vw); } .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble { border-top-left-radius: 6px; } .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble { border-top-right-radius: 6px; background: #3b3a61; } .dialogue-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; } .dialogue-text { line-height: 1.7; word-break: keep-all; } .elog-comments-wrap { margin-top: 24px; border-top: 1px solid #273247; padding-top: 24px; } .elog-comments-wrap h2 { font-size: 1.25rem; margin-bottom: 1rem; } .comment-form { display: flex; flex-direction: column; gap: 12px; margin-bottom: 24px; background: #141a23; padding: 16px; border-radius: 8px; } .comments-list { display: flex; flex-direction: column; gap: 16px; } .comment-item { display: flex; gap: 12px; background: #0c1117; padding: 12px; border-radius: 8px; border: 1px solid #273247; } .comment-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; } .comment-body { flex: 1; } .comment-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 6px; } .comment-author { font-weight: bold; } .comment-text { font-size: 0.95em; line-height: 1.6; white-space: pre-wrap; word-break: break-all; } .comment-meta { font-size: 0.8rem; color: #6b7280; margin-top: 8px; display: flex; align-items: center; } @media (max-width:860px){ .elog-grid{grid-template-columns:1fr;gap:12px} .elog-cc{order:-1} }
     </style>
     <section class="container narrow elog-wrap">
@@ -87,6 +85,9 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
           <div class="row" style="justify-content: space-around; margin-top: 1rem; align-items: flex-start;">
             ${renderRatingControl(charA, 'a')}
             ${renderRatingControl(charB, 'b')}
+          </div>
+          <div style="text-align: center; margin-top: 1.5rem;">
+            <button id="submit-ratings-btn" class="btn">별점 제출</button>
           </div>
         </div>
         
@@ -115,7 +116,6 @@ async function render(root, log, charA, charB, logId, comments, myChars) {
     attachAllActionEvents(logId, myChars);
 }
 
-// ✨ 개선된 별점 UI를 렌더링하는 함수입니다.
 function renderRatingControl(char, side) {
     return `
       <div class="col" style="align-items: center; gap: 12px; flex: 1;">
@@ -124,7 +124,6 @@ function renderRatingControl(char, side) {
         <div class="star-rating-enhanced" data-char-id="${char.id}">
           ${[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5].map(val => {
               const id = `star-${side}-${val}`;
-              // 각 라벨은 온전한 별표(★) 하나를 내용으로 가집니다.
               return `<input type="radio" id="${id}" name="rating-${side}" value="${val}"><label for="${id}" title="${val}점">★</label>`;
           }).join('')}
         </div>
@@ -132,37 +131,68 @@ function renderRatingControl(char, side) {
     `;
 }
 
-// 댓글 카드 렌더링 함수 (기존과 동일)
 function renderComment(comment) {
     return `<div class="comment-item" data-comment-id="${comment.id}"><img src="${esc(comment.photoURL||'')}" class="comment-avatar" onerror="this.style.background='#334155';this.src='data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';"><div class="comment-body"><div class="comment-header"><span class="comment-author">${esc(comment.displayName)}</span></div><p class="comment-text">${esc(comment.text).replace(/\n/g,'<br>')}</p><div class="comment-meta">${prettyTime(comment.createdAt?.toDate?comment.createdAt.toDate():new Date())}<button class="btn xs ghost btn-report" style="margin-left:auto;">신고</button></div></div></div>`;
 }
 
-// ✨ 모든 이벤트 리스너를 한 곳에서 관리하도록 통합했습니다.
 function attachAllActionEvents(logId, myChars) {
-    // 별점 이벤트
+    // ✨ [수정] 별점 이벤트: 즉시 제출 대신 임시 저장
     document.querySelectorAll('.star-rating-enhanced input').forEach(radio => {
-        radio.addEventListener('change', async (e) => {
-            if (!auth.currentUser) return showToast('로그인이 필요합니다.', 'error');
+        radio.addEventListener('change', (e) => {
+            if (!auth.currentUser) {
+                showToast('로그인이 필요합니다.', 'error');
+                e.target.checked = false; // 선택 취소
+                return;
+            }
             const rating = parseFloat(e.target.value);
             const charId = e.target.closest('.star-rating-enhanced').dataset.charId;
-            const btnContainer = e.target.closest('.star-rating-enhanced');
-            btnContainer.style.pointerEvents = 'none';
-            try {
-                await call('rateEncounter')({ logId, targetCharId: charId, rating });
-                showToast(`${rating}점을 주었습니다!`, 'success');
-            } catch (err) {
-                showToast(`평가 실패: ${err.message}`, 'error');
-                btnContainer.style.pointerEvents = 'auto';
-            }
+            
+            pendingRatings[charId] = rating; // 임시 저장
+            showToast(`${rating}점이 선택되었습니다. 하단의 '별점 제출' 버튼을 눌러주세요.`, 'info');
         });
     });
 
-    // ✨ 캐릭터 선택 버튼(모달 열기) 이벤트
+    // ✨ [추가] 별점 제출 버튼 이벤트
+    const submitBtn = document.getElementById('submit-ratings-btn');
+    if (submitBtn) {
+        submitBtn.addEventListener('click', async () => {
+            if (!auth.currentUser) return showToast('로그인이 필요합니다.', 'error');
+
+            const ratingEntries = Object.entries(pendingRatings);
+            if (ratingEntries.length === 0) {
+                return showToast('제출할 별점이 없습니다. 별점을 먼저 선택해주세요.', 'error');
+            }
+
+            submitBtn.disabled = true;
+            submitBtn.textContent = '제출 중...';
+            const ratingArea = document.getElementById('rating-area');
+            ratingArea.style.pointerEvents = 'none'; // 평가 영역 비활성화
+
+            try {
+                // 여러 별점을 병렬로 제출
+                const promises = ratingEntries.map(([charId, rating]) => 
+                    call('rateEncounter')({ logId, targetCharId: charId, rating })
+                );
+                await Promise.all(promises);
+
+                showToast('별점이 성공적으로 제출되었습니다!', 'success');
+                submitBtn.textContent = '제출 완료';
+                // 성공 시 평가 영역을 계속 비활성화 상태로 둡니다.
+            } catch (err) {
+                showToast(`평가 제출 실패: ${err.message}`, 'error');
+                submitBtn.disabled = false;
+                submitBtn.textContent = '별점 제출';
+                ratingArea.style.pointerEvents = 'auto'; // 실패 시 다시 활성화
+            }
+        });
+    }
+
+    // 캐릭터 선택 버튼(모달 열기) 이벤트
     const pickerBtn = document.getElementById('comment-char-picker');
     if (pickerBtn) {
         pickerBtn.onclick = async () => {
             const selected = await openCharacterPickerModal(myChars, '댓글을 작성할 캐릭터 선택');
-            if (selected) { // 캐릭터를 선택하면
+            if (selected) {
                 selectedCharForComment = selected;
                 pickerBtn.innerHTML = `<img src="${esc(selected.thumb_url||'')}"><span>${esc(selected.name)}</span>`;
             }
@@ -177,7 +207,6 @@ function attachAllActionEvents(logId, myChars) {
             const btn = commentForm.querySelector('button[type="submit"]');
             const rawComment = document.getElementById('comment-text').value;
 
-            // ✨ select 대신 변수에 저장된 캐릭터 정보로 유효성 검사
             if (!selectedCharForComment) {
                 showToast('댓글을 작성할 캐릭터를 선택해주세요.', 'error'); return;
             }
@@ -195,8 +224,7 @@ function attachAllActionEvents(logId, myChars) {
                     if (list.innerHTML.includes('아직 댓글이 없습니다.')) list.innerHTML = '';
                     list.insertAdjacentHTML('afterbegin', renderComment(res.data.comment));
                     commentForm.reset();
-                    // 댓글 작성 후 선택된 캐릭터 초기화
-                    selectedCharForComment = null; 
+                    selectedCharForComment = null;
                     pickerBtn.innerHTML = `<span class="placeholder">-- 댓글을 작성할 내 캐릭터 선택 --</span>`;
                 }
             } catch (err) {
@@ -208,7 +236,7 @@ function attachAllActionEvents(logId, myChars) {
         };
     }
 
-    // 신고 이벤트
+    // 신고 이벤트 (기존과 동일)
     document.getElementById('comments-list').addEventListener('click', async (e) => {
         if (e.target.classList.contains('btn-report')) {
             if (!auth.currentUser) return showToast('로그인이 필요합니다.', 'error');
