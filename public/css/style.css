@@ -661,3 +661,33 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
     line-height: 1.4;
     word-break: keep-all; /* 한글 단어 깨짐 방지 */
 }
+
+/* /public/css/style.css 파일 맨 아래에 추가 */
+
+/* --- 조우 로그 리치 텍스트 스타일 --- */
+.rich-thought {
+    margin: 16px 0;
+    padding: 12px;
+    border-left: 3px solid #7a9bff;
+    background: rgba(122, 155, 255, .08);
+    border-radius: 8px;
+    font-style: italic;
+    color: #d1d5db;
+}
+.rich-dialogue {
+    margin: 16px 0;
+    padding: 12px;
+    background: rgba(255, 255, 255, .05);
+    border-radius: 8px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+}
+
+/* --- 아바타 (sm) --- */
+.avatar-sm {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    object-fit: cover;
+    background: #111;
+    border: 1px solid var(--bd);
+}
