@@ -32,6 +32,48 @@ async function callGemini(apiKey, model, systemText, userText) {
 module.exports = (admin, { GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
+    // 세계관 정보를 다양한 경로에서 안전하게 찾아오는 헬퍼
+    async function resolveWorld(db, worldId, worldObj) {
+      // 1) 프론트에서 world 객체가 왔다면 그대로 사용
+      if (worldObj && (worldObj.id || worldObj.name)) return worldObj;
+    
+      // 2) 컬렉션 worlds/{worldId} 시도
+      if (worldId) {
+        try {
+          const docSnap = await db.doc(`worlds/${worldId}`).get();
+          if (docSnap.exists) return { id: worldId, ...docSnap.data() };
+        } catch (_) {}
+      }
+
+      // 3) 설정 문서 configs/worlds (배열)에서 찾기
+      try {
+        const cfgSnap = await db.doc('configs/worlds').get();
+        const arr = cfgSnap.exists ? (cfgSnap.data()?.worlds || []) : [];
+        const found = arr.find(w => w.id === worldId || w.name === worldId);
+        if (found) return found;
+      } catch (_) {}
+
+      // 4) (옵션) configs/worlds/{worldId} 문서 형태도 시도
+      if (worldId) {
+        try {
+          const docSnap = await db.doc(`configs/worlds/${worldId}`).get();
+          if (docSnap.exists) return { id: worldId, ...docSnap.data() };
+        } catch (_) {}
+      }
+      return null;
+    }
+
+    // world 필드 표준화(프롬프트에 쓰기 편하게)
+    function normalizeWorldFields(w = {}) {
+      const name   = String(w.name ?? w.id ?? '').trim();
+      const intro  = String(w.intro ?? w.summary ?? '').trim();
+      const detail = String(
+        w.detail?.lore_long ?? w.detail?.lore ?? w.detail ?? w.description ?? ''
+      ).trim();
+      return { name, intro, detail };
+    }
+    
+
     /**
      * 유저가 스토리 기능에 접근할 수 있는지 확인합니다. (어드민 또는 베타테스터)
      * @param {string} uid - 확인할 사용자 UID
@@ -95,7 +137,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             throw new HttpsError('failed-precondition', `이미 진행 중인 이야기("${userData.storyInProgress}")가 있습니다.`);
         }
 
-        const { charId, keywords, worldId } = req.data;
+        const { charId, keywords, worldId, world } = req.data;
+
         if (!charId || !keywords || !worldId) {
             throw new HttpsError('invalid-argument', '캐릭터, 키워드, 세계관 정보는 필수입니다.');
         }
@@ -109,9 +152,12 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
             const charData = charSnap.data();
 
-            const worldsSnap = await db.doc('configs/worlds').get();
-            const worldData = (worldsSnap.data()?.worlds || []).find(w => w.id === worldId);
-            if (!worldData) throw new HttpsError('not-found', '세계관 정보를 찾을 수 없습니다.');
+            const worldDataRaw = await resolveWorld(db, worldId, world);
+            if (!worldDataRaw) {
+              throw new HttpsError('not-found', '세계관 정보를 찾을 수 없습니다. (worldId/world 객체 확인 필요)');
+            }
+            const { name: worldName, intro: worldIntro, detail: worldDetail } = normalizeWorldFields(worldDataRaw);
+
 
             // 2. 최신 서사 추출
             const latestNarrative = (charData.narratives || [])
@@ -124,9 +170,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             
             const userPrompt = `
                 ## 세계관 설정
-                - 이름: ${worldData.name}
-                - 소개: ${worldData.intro}
-                - 상세: ${worldData.detail?.lore_long || worldData.detail?.lore}
+                - 이름: ${worldName}
+                - 소개: ${worldIntro}
+                - 상세: ${worldDetail}
+
 
                 ## 캐릭터 정보
                 - 이름: ${charData.name}
@@ -188,10 +235,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
                 throw new HttpsError('already-exists', '이 캐릭터는 이미 생성된 이야기가 있습니다.');
             }
             
-            tx.update(userRef, {
-                storyInProgress: charId,
-                lastStoryStartTime: now
-            });
+            tx.set(userRef, {
+              storyInProgress: charId,
+              lastStoryStartTime: now
+            }, { merge: true });
             
             tx.set(storyRef, {
                 owner: uid,
@@ -199,7 +246,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
                 worldId: worldId,
                 createdAt: now,
                 status: 'ongoing',
-                narrative: [
+                narratives: [
                     { type: 'sketch', content: initialSketch, timestamp: now }
                 ]
             });
