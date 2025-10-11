@@ -63,6 +63,19 @@ export function createModal(options = {}) {
 }
 
 /**
+ * [추가] 내용을 받아 모달을 열고, 모달의 card 엘리먼트를 반환합니다.
+ * story.js 등에서 사용하기 위한 간편 함수입니다.
+ * @param {string} content - 모달 카드에 들어갈 HTML 내용
+ * @returns {HTMLElement} 생성된 모달의 card 엘리먼트
+ */
+export function showModal(content) {
+    const { card } = createModal();
+    card.innerHTML = content;
+    return card;
+}
+
+
+/**
  * [추가된 함수] 다른 파일에서 import하여 사용할 수 있도록 openModal 함수를 추가합니다.
  * 이 함수는 모달을 열고 내용을 채운 후 콜백을 실행합니다.
  * @param {string} content - 모달 카드에 들어갈 HTML 내용
