@@ -34,8 +34,7 @@ export function ensureModalCss(){
 }
 
 /**
- * [추가] 비어있는 모달 창을 생성하고, card와 modal element를 반환합니다.
- * item.js 등에서 상세 모달을 만들 때 사용합니다.
+ * 비어있는 모달 창을 생성하고, card와 modal element를 반환합니다.
  * @param {object} options - { zIndex }
  * @returns {{modal: HTMLElement, card: HTMLElement}}
  */
@@ -44,27 +43,23 @@ export function createModal(options = {}) {
     const back = document.createElement('div');
     back.className = 'modal-back';
     
-    // zIndex 옵션이 있으면 적용하고, 없으면 현재 열린 모달 개수에 따라 동적으로 계산
     back.style.zIndex = options.zIndex || (9990 + document.querySelectorAll('.modal-back').length);
 
     const card = document.createElement('div');
     card.className = 'modal-card';
     back.appendChild(card);
 
-    // 배경 클릭 시 닫기
     const close = () => back.remove();
     back.addEventListener('click', e => {
         if (e.target === back) close();
     });
 
     document.body.appendChild(back);
-    // card element를 반환하여 내용을 채울 수 있도록 하고, modal(back) element는 z-index 계산 등에 사용
     return { modal: back, card };
 }
 
 /**
- * [추가] 내용을 받아 모달을 열고, 모달의 card 엘리먼트를 반환합니다.
- * story.js 등에서 사용하기 위한 간편 함수입니다.
+ * 내용을 받아 모달을 열고, 모달의 card 엘리먼트를 반환합니다.
  * @param {string} content - 모달 카드에 들어갈 HTML 내용
  * @returns {HTMLElement} 생성된 모달의 card 엘리먼트
  */
@@ -76,8 +71,7 @@ export function showModal(content) {
 
 
 /**
- * [추가된 함수] 다른 파일에서 import하여 사용할 수 있도록 openModal 함수를 추가합니다.
- * 이 함수는 모달을 열고 내용을 채운 후 콜백을 실행합니다.
+ * 다른 파일에서 import하여 사용할 수 있도록 openModal 함수를 추가합니다.
  * @param {string} content - 모달 카드에 들어갈 HTML 내용
  * @param {function} onOpen - 모달이 열린 후 실행할 콜백 함수
  */
@@ -85,7 +79,6 @@ export function openModal(content, onOpen) {
     const { modal, card } = createModal();
     card.innerHTML = content;
 
-    // 닫기 버튼에 이벤트 리스너 추가 (모달 내부에 id="close-modal" 버튼이 있다고 가정)
     const closeButton = card.querySelector('#close-modal');
     if (closeButton) {
         closeButton.onclick = () => modal.remove();
@@ -98,7 +91,7 @@ export function openModal(content, onOpen) {
 
 
 /**
- * [추가] 모달 내부의 버튼 등에서 모달을 닫을 때 사용합니다.
+ * 모달 내부의 버튼 등에서 모달을 닫을 때 사용합니다.
  * @param {HTMLElement} elementInsideModal - 모달 내부의 아무 엘리먼트
  */
 export function closeModal(elementInsideModal) {
@@ -113,7 +106,6 @@ export function closeModal(elementInsideModal) {
  */
 export function confirmModal(opts){
   return new Promise(res=>{
-    // zIndex를 옵션으로 받아 createModal에 전달합니다.
     const { modal, card } = createModal({ zIndex: opts.zIndex });
     
     card.innerHTML = `
@@ -131,7 +123,6 @@ export function confirmModal(opts){
     card.querySelector('[data-ok]').onclick = ()=> close(true);
   });
 }
-window.closeModal = closeModal;
 
 /**
  * 텍스트 프롬프트를 입력받는 새로운 모달
@@ -169,8 +160,6 @@ export function promptModal({ title, placeholder, hint, maxLen = 300, okText = '
         card.querySelector('#prompt-ok').onclick = () => {
             const value = txt.value.trim();
             if (!value) {
-                // alert() 대신 confirmModal과 비슷한 알림 모달을 사용하는 것이 더 일관적일 수 있습니다.
-                // 여기서는 일단 alert를 유지합니다.
                 alert('내용을 입력해주세요.');
                 return;
             }
