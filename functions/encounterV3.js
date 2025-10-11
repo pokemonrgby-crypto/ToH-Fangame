@@ -83,7 +83,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
             const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
             
-            const systemPrompt = `당신은 캐릭터의 서사를 기반으로 사용자의 댓글을 변환하는 AI입니다. 캐릭터의 성격과 말투, 톤을 완벽하게 파악하고 흉내내어, 마치 그 캐릭터가 직접 말하는 것처럼 댓글을 수정해야 합니다. 결과는 반드시 제공된 JSON 스키마를 따라야 합니다.`;
+            const systemPrompt = `당신은 캐릭터의 서사를 기반으로 사용자의 댓글을 '문체만 변환'하는 AI입니다. 원본 댓글의 핵심 의미, 의도, 뉘앙스를 절대 바꾸지 마세요. 캐릭터의 성격과 말투, 톤을 반영하되, 원본에 없던 새로운 내용이나 질문, 감정을 추가해서는 안 됩니다. 당신의 임무는 해당 캐릭터가 말하듯 스타일을 바꾸는 것이지, 내용을 창작하는 것이 아닙니다. 결과는 반드시 제공된 JSON 스키마를 따라야 합니다.`;
             
             const userPrompt = `조우 상황:\n"""\n${encounterText}\n"""\n\n캐릭터 서사:\n"""\n${latestNarrative}\n"""\n\n변환할 원본 댓글: "${rawComment}"`;
             
