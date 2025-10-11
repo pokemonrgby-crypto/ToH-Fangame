@@ -2,8 +2,7 @@
 import { App, loadRankingsFromServer, restoreRankingCache } from '../api/store.js';
 import { el } from '../ui/components.js';
 // [추가] 조우 랭킹 관련 함수를 가져옵니다.
-import { showEncounterRankings, showRecentEncounters } from './rankings_encounter.js';
-
+import { showEncounterRankings, showRecentEncounters, showRecentComments } from './rankings_encounter.js';
 // 탭/캐시 상태
 const State = {
   tab: 'weekly',     // 'weekly'|'total'|'elo'|'elo_low'|'encounter'
