@@ -642,3 +642,46 @@ export async function getRelationBetween(charId1, charId2) {
     return null;
   }
 }
+
+
+
+// /public/js/api/store.js 파일 맨 아래에 추가
+
+/**
+ * [신규] 최근 조우 로그 댓글을 가져옵니다.
+ * @param {number} limit 
+ * @returns {Promise<Array<object>>}
+ */
+export async function getRecentEncounterComments(limit = 50) {
+    // 'comments' 컬렉션 그룹에서 최신순으로 댓글을 가져옵니다.
+    const commentsRef = fx.collectionGroup(db, 'comments');
+    const q = fx.query(commentsRef, fx.orderBy('createdAt', 'desc'), fx.limit(limit));
+    const snapshot = await fx.getDocs(q);
+
+    // 댓글에 연결된 로그 및 사용자 정보를 한 번에 가져오기 위해 ID를 수집합니다.
+    const logIds = new Set();
+    snapshot.docs.forEach(doc => {
+        const logId = doc.ref.parent.parent.id;
+        logIds.add(logId);
+    });
+
+    // 로그 데이터를 병렬로 조회합니다.
+    const logPromises = Array.from(logIds).map(id => fx.getDoc(fx.doc(db, 'encounter_logs', id)));
+    const logSnaps = await Promise.all(logPromises);
+    const logsMap = new Map(logSnaps.filter(s => s.exists()).map(s => [s.id, s.data()]));
+
+    // 각 댓글에 로그 정보를 추가하여 반환합니다.
+    return snapshot.docs.map(doc => {
+        const comment = doc.data();
+        const logId = doc.ref.parent.parent.id;
+        const log = logsMap.get(logId);
+        return {
+            id: doc.id,
+            ...comment,
+            logId: logId,
+            logTitle: log ? log.title : '알 수 없는 로그',
+            // 'displayName' 필드가 없을 경우를 대비하여 'author' 필드를 추가합니다.
+            author: comment.displayName || '익명',
+        };
+    });
+}
