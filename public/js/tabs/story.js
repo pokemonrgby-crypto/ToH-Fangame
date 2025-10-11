@@ -106,7 +106,16 @@ function startStoryCreationFlow(myChars) {
 
             try {
                 const generateSketchFn = call('generateStorySketch');
-                const result = await generateSketchFn({ charId, keywords, worldId });
+                const w = WORLD_LIST[worldId] || {};
+                const world = {
+                  id: worldId,
+                  name: w.name || worldId,
+                  summary: w.summary || w.intro || '',
+                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
+                  rawJson: w
+                };
+                const result = await generateSketchFn({ charId, keywords, worldId, world });
+
                 if (result.data.ok) {
                     showSketchResult(charId, worldId, keywords, result.data.sketch);
                 } else {
@@ -139,7 +148,16 @@ function startStoryCreationFlow(myChars) {
             
             try {
                 const generateSketchFn = call('generateStorySketch');
-                const result = await generateSketchFn({ charId, keywords, worldId });
+                const w = WORLD_LIST[worldId] || {};
+                const world = {
+                  id: worldId,
+                  name: w.name || worldId,
+                  summary: w.summary || w.intro || '',
+                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
+                  rawJson: w
+                };
+                const result = await generateSketchFn({ charId, keywords, worldId, world });
+
                 if (result.data.ok) {
                     showSketchResult(charId, worldId, keywords, result.data.sketch);
                 } else {
