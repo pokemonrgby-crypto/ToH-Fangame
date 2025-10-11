@@ -34,6 +34,7 @@ const companyFunctions = require('./company'); // () 호출 제거
 const constructionFunctions = require('./construction');
 const landmarkFunctions = require('./landmark'); // 추가
 const taskFunctions = require('./tasks');
+const storyFns = require('./story')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -803,6 +804,8 @@ Object.assign(exports, researchFunctions);
 Object.assign(exports, landmarkFunctions);
 
 Object.assign(exports, taskFunctions);
+
+Object.assign(exports, storyFns);
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
