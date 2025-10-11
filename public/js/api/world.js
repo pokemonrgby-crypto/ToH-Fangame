@@ -27,10 +27,15 @@ async function fetchWorldsData() {
 
 // story.js에서 import할 수 있도록 WORLD_LIST를 초기화하고 비동기적으로 채웁니다.
 export let WORLD_LIST = {};
-fetchWorldsData().then(data => {
-    // 비동기적으로 불러온 데이터를 WORLD_LIST에 할당합니다.
+export const WORLD_LIST_READY = fetchWorldsData().then(data => {
     Object.assign(WORLD_LIST, data);
+    return WORLD_LIST;
 });
+export async function getWorldById(id){
+  await WORLD_LIST_READY;
+  return WORLD_LIST[id] || null;
+}
+
 
 
 /**
