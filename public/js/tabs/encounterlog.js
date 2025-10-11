@@ -2,6 +2,7 @@
 import { auth, db, fx } from '../api/firebase.js';
 import { getEncounterLog, createOrUpdateRelation } from '../api/store.js';
 import { showToast } from '../ui/toast.js';
+import { prettyTime } from '../ui/utils.js';
 
 function parseLogId() {
     const h = location.hash || '';
@@ -13,26 +14,80 @@ function esc(s) {
     return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
-// [수정] 아이템 등급별 색상 맵 및 리치 텍스트 렌더러
 const rarityColors = {
-    normal: '#c8d0dc',
-    rare:   '#cfe4ff',
-    epic:   '#e6dcff',
-    legend: '#ffe9ad',
-    myth:   '#ffc9ce',
-    aether: '#f8f8f2' // 에테르는 보통 특별한 스타일이 적용되므로 기본 텍스트 색상
+    normal: '#c8d0dc', rare: '#cfe4ff', epic: '#e6dcff',
+    legend: '#ffe9ad', myth: '#ffc9ce', aether: '#d6fff7'
 };
 
-function renderRichText(text = '') {
-    return esc(text)
-        .replace(/\[대화\]([\s\S]*?)\[\/대화\]/g, '<div class="rich-dialogue">$1</div>')
+/**
+ * 리치 텍스트 렌더링 (battlelog.js 스타일)
+ */
+function renderRichLog(logText = '', party = []) {
+    if (typeof logText !== 'string') logText = String(logText ?? '');
+
+    let txt = logText.replace(/\r\n?/g, '\n');
+    if (txt.includes('\\n')) txt = txt.replace(/\\n/g, '\n');
+
+    const dialogues = [];
+    // [대사:0]「대사」[/대사] 또는 [대사:0]"대사"[/대사] 형식을 먼저 플레이스홀더로 분리
+    // [수정] 프롬프트 변경에 따라 [대화] 태그를 [대사:인덱스] 태그로 처리하도록 변경
+    txt = txt.replace(/\[대사:(\d)\]([\s\S]*?)\[\/대사\]/g, (match, charIndex, line) => {
+        dialogues.push({ charIndex: parseInt(charIndex, 10), line });
+        return `__DIALOGUE_PLACEHOLDER_${dialogues.length - 1}__`;
+    });
+
+    // 나머지 텍스트 이스케이프 및 태그 변환
+    let narrativeBody = esc(txt)
         .replace(/\[내면\]([\s\S]*?)\[\/내면\]/g, '<div class="rich-thought">$1</div>')
-        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (match, rarity, itemName) => {
-            const color = rarityColors[rarity.toLowerCase()] || rarityColors.normal;
-            return `<strong style="color: ${color}; font-weight: 800; text-shadow: 0 0 5px ${color}55;">${itemName}</strong>`;
-        })
-        .replace(/\n/g, '<br>');
+        .replace(/\[ITEM:(normal|rare|epic|legend|myth|aether)\]([\s\S]*?)\[\/ITEM\]/g, (_m, r, n) => {
+            const color = rarityColors[r.toLowerCase()] || '#fff';
+            return `<strong class="item-highlight" style="color:${color}; text-shadow:0 0 6px ${color}80;">${n}</strong>`;
+        });
+
+    // 분리했던 대화 블록을 말풍선 HTML로 삽입
+    dialogues.forEach((dialogue, index) => {
+        const character = party[dialogue.charIndex];
+        if (!character) return;
+        
+        const side = dialogue.charIndex === 0 ? 'left' : 'right';
+        const bubbleHtml = `
+          <div class="dialogue-bubble-wrap" data-side="${side}">
+            <img src="${esc(character.thumb_url)}" class="dialogue-avatar" onerror="this.style.display='none'">
+            <div class="dialogue-bubble">
+              <div class="dialogue-name">${esc(character.name)}</div>
+              <div class="dialogue-text">${esc(dialogue.line).replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')}</div>
+            </div>
+          </div>
+        `;
+        narrativeBody = narrativeBody.replace(`__DIALOGUE_PLACEHOLDER_${index}__`, bubbleHtml);
+    });
+
+    const paragraphs = narrativeBody.split(/\n{2,}/)
+      .map(p => p.trim()).filter(p => p)
+      .map(p => p.startsWith('<div class="dialogue-bubble-wrap"') ? p : `<div class="log-paragraph">${p.replace(/\n/g, '<br>')}</div>`)
+      .join('');
+          
+    return paragraphs;
 }
+
+/**
+ * 스크롤 애니메이션 설정
+ */
+function setupScrollAnimations() {
+    const observer = new IntersectionObserver((entries) => {
+        entries.forEach(entry => {
+            if (entry.isIntersecting) {
+                entry.target.classList.add('is-visible');
+                observer.unobserve(entry.target);
+            }
+        });
+    }, { threshold: 0.1 });
+
+    document.querySelectorAll('.log-paragraph, .dialogue-bubble-wrap').forEach(el => {
+        observer.observe(el);
+    });
+}
+
 
 export async function showEncounterLog() {
     const root = document.getElementById('view');
@@ -60,6 +115,7 @@ export async function showEncounterLog() {
         const charB = charBSnap.exists() ? { id: charBId, ...charBSnap.data() } : { id: charBId, ...log.b_snapshot };
 
         await render(root, log, charA, charB, logId);
+        setupScrollAnimations();
 
     } catch (e) {
         console.error("Failed to load encounter log:", e);
@@ -73,6 +129,8 @@ async function render(root, log, charA, charB, logId) {
   const expA = Number(log.exp_a ?? log.exp_char_a ?? 0) | 0;
   const expB = Number(log.exp_b ?? log.exp_char_b ?? 0) | 0;
 
+  const body = renderRichLog(log.content, [charA, charB]); // 렌더링 함수에 party 전달
+
   const characterCard = (char, exp) => `
     <a href="#/char/${char.id}" class="elog-card">
       ${char.thumb_url ? `<img src="${esc(char.thumb_url)}" class="elog-avatar" alt="">` : `<div class="elog-avatar ph"></div>`}
@@ -80,7 +138,7 @@ async function render(root, log, charA, charB, logId) {
       <div class="elog-exp">+${exp} EXP</div>
     </a>`;
 
-  root.innerHTML = `
+  root.innerHTML = \`
     <style>
       .elog-wrap{display:flex;flex-direction:column;gap:18px}
       .elog-topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(8,12,18,.6);border-bottom:1px solid #1e2835}
@@ -97,7 +155,20 @@ async function render(root, log, charA, charB, logId) {
       .elog-title{font-size:22px;font-weight:900;text-align:center;margin:8px 0 14px}
       .elog-article{background:#0c1117;border:1px solid #273247;border-radius:14px;padding:16px}
       .rich-thought{margin:16px 0;padding:12px;border-left:3px solid #7a9bff;background:rgba(122,155,255,.08);border-radius:8px; font-style: italic; color: #d1d5db;}
-      .rich-dialogue{margin:16px 0;padding:12px;background:rgba(255,255,255,.05);border-radius:8px; box-shadow: 0 2px 8px rgba(0,0,0,0.2);}
+      
+      /* 말풍선 스타일 (battlelog.js에서 가져옴) */
+      .log-paragraph, .dialogue-bubble-wrap { opacity: 0; transform: translateY(20px); transition: opacity 0.6s ease-out, transform 0.6s ease-out; }
+      .log-paragraph.is-visible, .dialogue-bubble-wrap.is-visible { opacity: 1; transform: translateY(0); }
+      .log-paragraph { margin-bottom: 1.5rem; line-height: 1.8; word-break: keep-all; }
+      .dialogue-bubble-wrap { display: flex; align-items: flex-start; gap: 10px; margin: 1.5rem 0; max-width: 85%; }
+      .dialogue-bubble-wrap[data-side="right"] { margin-left: auto; flex-direction: row-reverse; }
+      .dialogue-avatar { width: 40px; height: 40px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+      .dialogue-bubble { background: #232a3b; padding: 12px 16px; border-radius: 18px; position: relative; max-width: min(560px, 90vw); }
+      .dialogue-bubble-wrap[data-side="left"] .dialogue-bubble { border-top-left-radius: 6px; }
+      .dialogue-bubble-wrap[data-side="right"] .dialogue-bubble { border-top-right-radius: 6px; background: #3b3a61; }
+      .dialogue-name { font-weight: 700; font-size: 0.9rem; margin-bottom: 6px; color: #e5e7eb; }
+      .dialogue-text { line-height: 1.7; word-break: keep-all; }
+
       @media (max-width:860px){ .elog-grid{grid-template-columns:1fr;gap:12px} .elog-cc{order:-1} }
     </style>
 
@@ -117,17 +188,17 @@ async function render(root, log, charA, charB, logId) {
 
         <div class="elog-article">
           <h1 class="elog-title">${esc(log.title)}</h1>
-          <div class="elog-body">${renderRichText(log.content)}</div>
+          <div class="elog-body">${body}</div>
         </div>
 
         <div class="elog-cc">${characterCard(charB, expB)}</div>
       </div>
 
       <div style="display:flex;justify-content:center;margin:10px 0 0">
-        ${isParty ? `<button class="btn large ghost" id="btnRelate">AI로 관계 분석/업데이트</button>` : ``}
+        ${isParty ? \`<button class="btn large ghost" id="btnRelate">AI로 관계 분석/업데이트</button>\` : ''}
       </div>
     </section>
-  `;
+  \`;
 
   const btnShare = root.querySelector('#btnShare');
   if (btnShare) {
@@ -149,7 +220,7 @@ async function render(root, log, charA, charB, logId) {
   if (btnRematch) {
     btnRematch.onclick = ()=>{
       sessionStorage.setItem('toh.match.intent', JSON.stringify({ mode:'encounter', charId: charA.id, ts: Date.now() }));
-      location.hash = `#/encounter`;
+      location.hash = \`#/encounter\`;
     };
   }
 
