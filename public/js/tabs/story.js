@@ -111,8 +111,9 @@ function showSketchResult(charId, worldId, keywords, sketch) {
             <button id="btn-confirm-story" class="btn primary">이 이야기로 시작</button>
         </div>
     `;
-    const modal = showModal(modalContent); // [수정]
+    const modal = showModal(modalContent); 
     
+    // '다시 생성' 버튼 클릭 이벤트
     modal.querySelector('#btn-reroll').onclick = async () => {
         const btn = modal.querySelector('#btn-reroll');
         btn.disabled = true;
@@ -120,19 +121,19 @@ function showSketchResult(charId, worldId, keywords, sketch) {
         
         try {
             const generateSketchFn = call('generateStorySketch');
-            const result = await generateSketchFn({ charId, keywords, worldId }); // [수정] worldId 추가
+            const result = await generateSketchFn({ charId, keywords, worldId });
             if (result.data.ok) {
+                // 현재 모달 내용을 새 초안으로 교체하기 위해 함수를 다시 호출합니다.
                 showSketchResult(charId, worldId, keywords, result.data.sketch);
             }
         } catch(e) {
             showToast(`재생성 실패: ${e.message}`);
-            btn.disabled = false;
-            btn.textContent = '다시 생성';
+            // 실패 시 버튼을 다시 활성화할 필요가 없습니다. 새 모달이 뜨기 때문입니다.
         }
     };
 
+    // '이 이야기로 시작' 버튼 클릭 이벤트
     modal.querySelector('#btn-confirm-story').onclick = () => {
-        // [추가] 7일 쿨타임 경고창
         const confirmContent = `
             <h3 style="margin-top:0; color:var(--color-warn);">정말 시작하시겠습니까?</h3>
             <p>이야기를 시작하면 <b>7일 동안</b> 다른 캐릭터로 새 이야기를 시작할 수 없습니다.</p>
@@ -156,7 +157,8 @@ function showSketchResult(charId, worldId, keywords, sketch) {
                     initialSketch: sketch
                 });
                 if (result.data.ok) {
-                    closeModal();
+                    // 모든 모달을 닫습니다.
+                    document.querySelectorAll('.modal-back').forEach(m => m.remove());
                     showToast('새로운 이야기가 시작되었습니다! 모험을 떠나보세요.', 'success');
                     // TODO: 실제 스토리 진행 화면으로 이동하는 로직 (예: location.hash = `#/story/${charId}`)
                 }
