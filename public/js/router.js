@@ -30,6 +30,7 @@ export const routes = {
   '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
   '#/raid': () => import('./tabs/raid.js').then(m => m.showRaid()),
   '#/raidlog': () => import('./tabs/raidlog.js').then(m => m.showRaidLog()),
+  '#/rankings/encounter': () => import('./tabs/rankings.js').then(m => (m.showRankings || m.default)()),
   // ANCHOR: [추가] 캐릭터 성장 관련 라우트
   '#/char-create-skill': () => import('./tabs/char_create_skill.js').then(m => m.default()),
   '#/char-enhance-skill': () => import('./tabs/char_enhance_skill.js').then(m => m.default()),
@@ -40,6 +41,10 @@ export function highlightTab() {
   const hash = location.hash || '#/home';
   const mainRoute = '#/' + hash.split('/')[1];
   let tabName = mainRoute.substring(2);
+
+  if (tabName === 'rankings' || hash.startsWith('#/rankings/')) {
+      tabName = 'rankings';
+  }
 
   if (['economy', 'market', 'worldmap', 'land', 'land-management'].includes(tabName)) {
     tabName = 'plaza';
@@ -68,7 +73,7 @@ export function router() {
   const dynamicRoutes = [
     '#/char/', '#/relations/', '#/explore-run/', '#/explore-battle/',
     '#/battlelog/', '#/encounter-log/', '#/explorelog/',
-    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/',
+    '#/guild/', '#/market', '#/worldmap', '#/economy', '#/land/', '#/raidlog/', '#/land-management/', '#/rankings/',
     '#/plaza/' // ◀◀◀ 이 부분을 추가했습니다.
   ];
   // ▲▲▲ [수정된 부분] ▲▲▲
