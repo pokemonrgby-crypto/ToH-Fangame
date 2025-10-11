@@ -138,7 +138,6 @@ async function render(root, log, charA, charB, logId) {
       <div class="elog-exp">+${exp} EXP</div>
     </a>`;
 
-  // 141번째 줄의 `\` 제거됨
   root.innerHTML = `
     <style>
       .elog-wrap{display:flex;flex-direction:column;gap:18px}
@@ -221,7 +220,7 @@ async function render(root, log, charA, charB, logId) {
   if (btnRematch) {
     btnRematch.onclick = ()=>{
       sessionStorage.setItem('toh.match.intent', JSON.stringify({ mode:'encounter', charId: charA.id, ts: Date.now() }));
-      location.hash = \`#/encounter\`;
+      location.hash = `#/encounter`;
     };
   }
 
