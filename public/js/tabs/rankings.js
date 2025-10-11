@@ -5,6 +5,7 @@ import { el } from '../ui/components.js';
 // 탭/캐시 상태
 const State = {
   tab: 'weekly',     // 'weekly'|'total'|'elo'
+  subTab: 'recent',  // 'ranking'|'recent' (조우 탭 전용)  
   lastLoaded: 0,
 };
 const STALE_MS = 60 * 1000; // 60초 지나면 새로 불러오기
@@ -14,15 +15,27 @@ restoreRankingCache(); // App.rankings 복원 시도
 function tabs(){
   const make=(id,label)=> el('button',{
     className:'btn tab'+(State.tab===id?' active':''), 
-    onclick:()=>{ State.tab=id; showRankings(true); } // 탭 전환 시 강제 갱신
+    onclick:()=>{ State.tab=id; showRankings(true); }
   }, label);
   return el('div',{className:'row', style:'gap:8px;margin-bottom:10px'},
     make('weekly','주간 좋아요'),
     make('total','누적 좋아요'),
     make('elo','Elo'),
-    make('elo_low','Elo(역순)')
-
+    make('elo_low','Elo(역순)'),
+    make('encounter', '🌟조우') // [추가]
   );
+}
+
+// [추가] 조우 하위 탭
+function encounterSubTabs() {
+    const make = (id, label) => el('button', {
+        className: 'btn tab' + (State.subTab === id ? ' active' : ''),
+        onclick: () => { State.subTab = id; showRankings(true); }
+    }, label);
+    return el('div', { className: 'row', style: 'gap:8px;margin:10px 0;' },
+        make('ranking', '조우 랭킹'),
+        make('recent', '최근 조우 로그')
+    );
 }
 
 function rankCard(c, i){
