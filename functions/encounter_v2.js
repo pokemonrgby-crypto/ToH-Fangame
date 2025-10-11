@@ -3,7 +3,7 @@ const { Timestamp, FieldValue } = require('firebase-admin/firestore');
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { defineSecret } = require('firebase-functions/params');
 
-const MODEL_POOL = ['gemini-2.0-flash-lite', 'gemini-2.5-flash-lite', 'gemini-2.0-flash', 'gemini-2.5-flash'];
+const MODEL_POOL = ['gemini-2.5-flash-lite'];
 const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY');
 
 // --- helpers ---
@@ -276,7 +276,7 @@ ${result.content}
         logger.error('관계 생성/업데이트 실패:', { message: relError.message });
       }
 
-      // 8) 공용 쿨타임 5분
+      // 8) 공용 쿨타임 3분
       const nowSecAfter = Math.floor(Date.now() / 1000);
       await db.collection('users').doc(uid).set(
         { cooldown_all_until: nowSecAfter + 180 },
