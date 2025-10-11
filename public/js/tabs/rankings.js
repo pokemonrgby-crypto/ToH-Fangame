@@ -36,7 +36,8 @@ function encounterSubTabs() {
     }, label);
     return el('div', { className: 'row', style: 'gap:8px;margin:10px 0;' },
         make('ranking', '조우 랭킹'),
-        make('recent', '최근 조우 로그')
+        make('recent', '최근 조우 로그'),
+        make('comments', '최근 댓글') // <-- 추가된 부분
     );
 }
 
@@ -77,25 +78,26 @@ export async function showRankings(force=false){
   v.innerHTML = `<div class="container narrow"><div class="spin-center"></div></div>`;
   const container = el('div', { className: 'container narrow' });
 
-  // [수정된 핵심 로직]
-  // '조우' 탭일 경우, 별도의 렌더링 함수를 호출하고 실행을 종료합니다.
   if (State.tab === 'encounter') {
       container.append(
           el('div', { className: 'title' }, '랭킹'),
           tabs(),
-          encounterSubTabs(), // 조우 탭의 하위 탭 추가
+          encounterSubTabs(),
           el('div', { id: 'ranking-content' })
       );
       v.replaceChildren(container);
       
       const contentEl = document.getElementById('ranking-content');
-      // 하위 탭 상태에 따라 다른 내용을 표시합니다.
+      
+      // [수정] 'comments' 탭이 선택되었을 때 showRecentComments 함수를 호출하는 로직을 추가합니다.
       if (State.subTab === 'ranking') {
           showEncounterRankings(contentEl);
+      } else if (State.subTab === 'comments') {
+          showRecentComments(contentEl); // <-- 추가된 부분
       } else {
           showRecentEncounters(contentEl);
       }
-      return; // 여기서 함수 실행을 종료해야 아래의 기존 랭킹 로직이 실행되지 않습니다.
+      return;
   }
 
   // --- 이하 기존 랭킹(주간, 누적, Elo) 표시 로직 ---
