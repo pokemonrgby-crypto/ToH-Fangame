@@ -1,10 +1,9 @@
-// /public/js/tabs/story.js
+// public/js/tabs/story.js
 
 import { auth, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
-// [수정] createModal을 직접 사용하여 모달 인스턴스를 관리합니다.
 import { createModal } from '../ui/modal.js';
 import { WORLD_LIST } from '../api/world.js';
 
@@ -19,7 +18,6 @@ export default async function showStoryPage() {
             .story-container { text-align: center; padding: 40px 20px; }
             .story-title { font-size: 2.5rem; font-weight: 900; color: #fff; text-shadow: 0 0 15px rgba(255,255,255,0.3); }
             .char-select-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
-            .world-select-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
         </style>
         <div class="story-container">
             <h1 class="story-title">당신만의 캐릭터의<br>이야기를 써 내려가세요.</h1>
@@ -28,6 +26,10 @@ export default async function showStoryPage() {
     `;
 
     document.getElementById('btn-start-story').onclick = async () => {
+        if (!auth.currentUser) {
+            showToast('로그인이 필요합니다.');
+            return;
+        }
         const myChars = await fetchMyChars(auth.currentUser.uid);
         if (myChars.length === 0) {
             showToast('이야기를 만들 캐릭터가 없습니다. 먼저 캐릭터를 생성해주세요.');
@@ -38,15 +40,13 @@ export default async function showStoryPage() {
 }
 
 /**
- * [추가] 스토리 생성 전체 흐름을 단일 모달 내에서 관리하는 함수
+ * 스토리 생성 전체 흐름을 단일 모달 내에서 관리하는 함수
  * @param {Array} myChars - 사용자의 캐릭터 목록
  */
 function startStoryCreationFlow(myChars) {
-    // 모달을 한 번만 생성합니다.
     const { modal, card } = createModal();
     const close = () => modal.remove();
 
-    // 1. 캐릭터 선택 단계 표시
     showCharSelectStep();
 
     function showCharSelectStep() {
@@ -66,13 +66,16 @@ function startStoryCreationFlow(myChars) {
                     </button>
                 `).join('')}
             </div>
+             <div class="row" style="justify-content:flex-end; margin-top:12px;">
+                <button id="btn-cancel" class="btn ghost">취소</button>
+            </div>
         `;
         
+        card.querySelector('#btn-cancel').onclick = close;
         card.querySelectorAll('button[data-char-id]').forEach(btn => {
             btn.onclick = () => {
                 const charId = btn.dataset.charId;
                 const worldId = btn.dataset.worldId;
-                // [수정] 새 모달을 띄우는 대신 내용만 교체
                 showKeywordStep(charId, worldId);
             };
         });
@@ -89,7 +92,6 @@ function startStoryCreationFlow(myChars) {
             </div>
         `;
         
-        // [수정] 전역 함수 대신 직접 이벤트 리스너 할당
         card.querySelector('#btn-cancel').onclick = close;
         card.querySelector('#btn-generate-sketch').onclick = async () => {
             const keywords = card.querySelector('#story-keywords').value.trim();
@@ -139,14 +141,12 @@ function startStoryCreationFlow(myChars) {
                 const generateSketchFn = call('generateStorySketch');
                 const result = await generateSketchFn({ charId, keywords, worldId });
                 if (result.data.ok) {
-                    // [수정] 현재 모달 내용을 새 초안으로 교체
                     showSketchResult(charId, worldId, keywords, result.data.sketch);
                 } else {
                     throw new Error(result.data.error || '알 수 없는 오류');
                 }
             } catch(e) {
                 showToast(`재생성 실패: ${e.message}`);
-                // [수정] 실패 시 현재 상태를 유지하며 버튼을 다시 활성화
                 btn.disabled = false;
                 btn.textContent = '다시 생성';
             }
@@ -159,7 +159,7 @@ function startStoryCreationFlow(myChars) {
 
     function showFinalConfirm(charId, worldId, sketch) {
         card.innerHTML = `
-            <h3 style="margin-top:0; color:var(--color-warn);">정말 시작하시겠습니까?</h3>
+            <h3 style="margin-top:0; color:var(--warn);">정말 시작하시겠습니까?</h3>
             <p>이야기를 시작하면 <b>7일 동안</b> 다른 캐릭터로 새 이야기를 시작할 수 없습니다.</p>
             <p>또한, 현재 진행 중인 이야기는 포기하기 전까지 계속됩니다.</p>
             <div class="row" style="justify-content:flex-end; margin-top:16px; gap:8px;">
@@ -177,9 +177,10 @@ function startStoryCreationFlow(myChars) {
                 const startStoryFn = call('startStory');
                 const result = await startStoryFn({ charId, worldId, initialSketch: sketch });
                 if (result.data.ok) {
-                    close(); // [수정] 현재 모달만 닫습니다.
+                    close();
                     showToast('새로운 이야기가 시작되었습니다! 모험을 떠나보세요.', 'success');
-                    // TODO: 실제 스토리 진행 화면으로 이동
+                    // TODO: 실제 스토리 진행 화면으로 이동하는 로직 추가
+                    // 예: location.hash = `#/story/play/${charId}`;
                 } else {
                     throw new Error(result.data.error || '알 수 없는 오류');
                 }
