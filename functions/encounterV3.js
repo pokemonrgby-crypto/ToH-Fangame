@@ -12,7 +12,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
         
-        const model = 'gemini-2.5-flash-lite'; // 최신 모델로 변경 권장 (또는 기존 모델 사용)
+        const model = 'gemini-1.5-flash';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const body = {
             systemInstruction: { parts: [{ text: systemText }] },
@@ -35,7 +35,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         try {
             return JSON.parse(text);
         } catch(e) {
-            // AI가 JSON 형식이 아닌 일반 텍스트만 반환한 경우, 그대로 사용
             return { transformedComment: text.replace(/["']/g, '') };
         }
     }
@@ -48,7 +47,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
         const { logId, actingCharId, rawComment, ratings } = req.data;
-        // rawComment는 선택사항일 수 있으므로 유효성 검사에서 제외하고, ratings는 필수
         if (!logId || !actingCharId || !ratings || typeof ratings !== 'object' || Object.keys(ratings).length === 0) {
             throw new HttpsError('invalid-argument', '필수 정보(logId, actingCharId, ratings)가 올바르지 않습니다.');
         }
@@ -59,10 +57,9 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         }
         const charData = charSnap.data();
         
-        let transformedComment = rawComment; // 기본값은 원본 댓글
-        let newCommentData = null; // 댓글 데이터를 담을 변수
+        let transformedComment = rawComment;
+        let newCommentData = null;
 
-        // 댓글이 있는 경우에만 AI 호출
         if (rawComment && typeof rawComment === 'string' && rawComment.trim().length > 0) {
             const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
             const systemPrompt = `You are an AI that transforms comments based on a character's narrative. Your response MUST be a JSON object of the format: {"transformedComment": "your_transformed_comment_text"}. Do not include any other text or markdown. Based on the character's narrative, rewrite the user's raw comment to match the character's personality and tone.`;
@@ -74,44 +71,65 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
         // Firestore 트랜잭션으로 댓글과 별점 동시 처리
         return await db.runTransaction(async (tx) => {
+            // =================================================================
+            // 단계 1: 모든 읽기 작업을 트랜잭션 맨 앞에서 수행
+            // =================================================================
             const today = new Date().toISOString().slice(0, 10);
             const ratingLimitDocRef = db.collection('users').doc(uid).collection('daily_limits').doc(today);
-            const limitSnap = await tx.get(ratingLimitDocRef);
-            const ratingCount = limitSnap.exists ? (limitSnap.data().encounter_ratings || 0) : 0;
+            const encounterLogRef = db.doc(`encounter_logs/${logId}`);
+            
+            const ratingCharIds = Object.keys(ratings);
+            const ratingRefs = ratingCharIds.map(targetCharId => 
+                db.collection('encounter_ratings').doc(`${logId}_${targetCharId}_${uid}`)
+            );
 
-            if (ratingCount + Object.keys(ratings).length > 10) {
+            // 필요한 모든 문서를 Promise.all로 한 번에 가져옴
+            const docsToRead = [
+                tx.get(ratingLimitDocRef),
+                tx.get(encounterLogRef),
+                ...ratingRefs.map(ref => tx.get(ref))
+            ];
+            const [limitSnap, logSnap, ...existingRatingSnaps] = await Promise.all(docsToRead);
+
+            // =================================================================
+            // 단계 2: 읽어온 데이터를 바탕으로 유효성 검사
+            // =================================================================
+            const ratingCount = limitSnap.exists ? (limitSnap.data().encounter_ratings || 0) : 0;
+            if (ratingCount + ratingCharIds.length > 10) {
                 throw new HttpsError('resource-exhausted', '하루에 10번까지만 평가할 수 있습니다.');
             }
 
-            const encounterLogRef = db.doc(`encounter_logs/${logId}`);
-            const logSnap = await tx.get(encounterLogRef);
             if (!logSnap.exists || logSnap.data().simulated) {
                 throw new HttpsError('not-found', '평가할 수 없는 로그입니다.');
             }
 
+            // 이미 평가한 캐릭터가 있는지 확인
+            for (let i = 0; i < existingRatingSnaps.length; i++) {
+                if (existingRatingSnaps[i].exists) {
+                    const targetCharId = ratingCharIds[i];
+                    throw new HttpsError('already-exists', `이미 이 캐릭터(${targetCharId})에게 별점을 주었습니다.`);
+                }
+            }
+
+            // =================================================================
+            // 단계 3: 모든 쓰기 작업을 수행
+            // =================================================================
             // 별점 처리
-            for (const targetCharId in ratings) {
+            ratingCharIds.forEach(targetCharId => {
                 const rating = ratings[targetCharId];
                 if (rating < 0.5 || rating > 5) {
                     throw new HttpsError('invalid-argument', '별점은 0.5점에서 5점 사이여야 합니다.');
                 }
-
                 const ratingRef = db.collection('encounter_ratings').doc(`${logId}_${targetCharId}_${uid}`);
-                const existingRatingSnap = await tx.get(ratingRef);
-                if (existingRatingSnap.exists) {
-                    // 이미 별점을 준 경우, 이번 요청에서는 건너뛰도록 처리하거나 에러를 발생시킬 수 있습니다.
-                    // 여기서는 에러를 발생시킵니다.
-                    throw new HttpsError('already-exists', `이미 이 캐릭터(${targetCharId})에게 별점을 주었습니다.`);
-                }
-
                 tx.set(ratingRef, { logId, raterUid: uid, targetCharId, rating, createdAt: FieldValue.serverTimestamp() });
+                
                 const charStatsRef = db.collection('char_encounter_stats').doc(targetCharId);
                 tx.set(charStatsRef, { totalRating: FieldValue.increment(rating), ratingCount: FieldValue.increment(1) }, { merge: true });
-            }
+            });
             
-            tx.set(ratingLimitDocRef, { encounter_ratings: FieldValue.increment(Object.keys(ratings).length) }, { merge: true });
+            tx.set(ratingLimitDocRef, { encounter_ratings: FieldValue.increment(ratingCharIds.length) }, { merge: true });
 
-            // 댓글 처리 (댓글 내용이 있을 경우에만)
+            // 댓글 처리
             if (rawComment && typeof rawComment === 'string' && rawComment.trim().length > 0) {
                 const commentRef = db.collection('encounter_logs').doc(logId).collection('comments').doc();
                 newCommentData = {
@@ -125,11 +143,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                     reports: 0
                 };
                 tx.set(commentRef, newCommentData);
-                // 클라이언트에서 즉시 UI에 반영할 수 있도록 ID를 추가해서 전달
                 newCommentData.id = commentRef.id;
             }
             
-            return { ok: true, comment: newCommentData }; // 댓글이 없으면 comment는 null
+            return { ok: true, comment: newCommentData };
         });
     });
 
