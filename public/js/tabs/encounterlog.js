@@ -124,6 +124,7 @@ function renderRatingControl(char, side) {
         <div class="star-rating-enhanced" data-char-id="${char.id}">
           ${[5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1, 0.5].map(val => {
               const id = `star-${side}-${val}`;
+              // 각 라벨은 온전한 별표(★) 하나를 내용으로 가집니다.
               return `<input type="radio" id="${id}" name="rating-${side}" value="${val}"><label for="${id}" title="${val}점">★</label>`;
           }).join('')}
         </div>
