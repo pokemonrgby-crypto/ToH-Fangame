@@ -6,7 +6,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
-    // AI 호출 헬퍼 함수 (수정됨)
+    // AI 호출 헬퍼 함수
     async function callGeminiForComment(systemText, userText) {
         const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
         const apiKey = GEMINI_API_KEY.value();
@@ -33,18 +33,17 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
         try {
-            // [수정] 더 안정적인 JSON 파싱 로직 적용
+            // 더 안정적인 JSON 파싱 로직
             let clean = text.replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '').trim();
             const firstBrace = clean.indexOf('{');
             const lastBrace = clean.lastIndexOf('}');
             if (firstBrace !== -1 && lastBrace > firstBrace) {
                 clean = clean.slice(firstBrace, lastBrace + 1);
             }
-            clean = clean.replace(/,\s*([}\]])/g, '$1'); // 후행 쉼표 제거
+            clean = clean.replace(/,\s*([}\]])/g, '$1');
             return JSON.parse(clean);
         } catch(e) {
             logger.error("callGeminiForComment JSON parse failed", { rawText: text, error: e.message });
-            // 파싱 실패 시, 원본 텍스트를 그대로 반환하여 문제 파악을 돕고, 최소한의 정보라도 표시하도록 함
             return { transformedComment: text };
         }
     }
@@ -71,13 +70,38 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         let newCommentData = null;
 
         if (rawComment && typeof rawComment === 'string' && rawComment.trim().length > 0) {
+            // [수정] AI에게 조우 로그 내용을 전달하기 위해 트랜잭션 외부에서 미리 문서를 가져옴
+            const logSnapForPrompt = await db.doc(`encounter_logs/${logId}`).get();
+            if (!logSnapForPrompt.exists) {
+                throw new HttpsError('not-found', '댓글을 작성할 조우 로그를 찾을 수 없습니다.');
+            }
+            const logData = logSnapForPrompt.data();
+            const encounterText = logData.text || "조우 상황을 요약할 수 없습니다.";
+
             const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
-            const systemPrompt = `You are an AI that transforms comments based on a character's narrative. Your response MUST be a JSON object of the format: {"transformedComment": "your_transformed_comment_text"}. Do not include any other text or markdown. Based on the character's narrative, rewrite the user's raw comment to match the character's personality and tone.`;
-            const userPrompt = `Character Narrative: ${latestNarrative}\n\nRaw Comment to Transform: "${rawComment}"`;
+            
+            // [수정] 시스템 프롬프트 강화 및 조우 로그 내용 추가
+            const systemPrompt = `당신은 주어진 상황(조우 로그)과 캐릭터의 서사를 기반으로 사용자의 댓글을 변환하는 AI입니다.
+캐릭터의 성격과 말투, 톤을 완벽하게 파악하고 흉내내어, 마치 그 캐릭터가 직접 말하는 것처럼 댓글을 수정해야 합니다.
+
+Your response MUST be a single, valid JSON object and nothing else.
+Do NOT include markdown, explanations, or any characters outside of the JSON structure.
+
+BAD EXAMPLE (extra characters):
+\`\`\`json
+{"transformedComment": "이런, 어이가 없군."}
+\`\`\`
+"}
+
+GOOD EXAMPLE (valid JSON only):
+{"transformedComment": "이런, 어이가 없군."}
+
+이제 아래 조우 상황, 캐릭터 서사, 원본 댓글을 바탕으로, 댓글을 캐릭터의 목소리로 변환해주세요.`;
+            
+            const userPrompt = `조우 상황:\n"""\n${encounterText}\n"""\n\n캐릭터 서사:\n"""\n${latestNarrative}\n"""\n\n변환할 원본 댓글: "${rawComment}"`;
             
             const aiResult = await callGeminiForComment(systemPrompt, userPrompt);
             
-            // [수정] AI 결과가 유효한지 확인하고, 유효하지 않으면 원본 댓글 사용
             if (aiResult && aiResult.transformedComment) {
                 transformedComment = aiResult.transformedComment;
             } else {
@@ -86,11 +110,8 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             }
         }
 
-        // Firestore 트랜잭션으로 댓글과 별점 동시 처리
+        // Firestore 트랜잭션
         return await db.runTransaction(async (tx) => {
-            // =================================================================
-            // 단계 1: 모든 읽기 작업을 트랜잭션 맨 앞에서 수행
-            // =================================================================
             const today = new Date().toISOString().slice(0, 10);
             const ratingLimitDocRef = db.collection('users').doc(uid).collection('daily_limits').doc(today);
             const encounterLogRef = db.doc(`encounter_logs/${logId}`);
@@ -100,7 +121,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 db.collection('encounter_ratings').doc(`${logId}_${targetCharId}_${uid}`)
             );
 
-            // 필요한 모든 문서를 Promise.all로 한 번에 가져옴
             const docsToRead = [
                 tx.get(ratingLimitDocRef),
                 tx.get(encounterLogRef),
@@ -108,9 +128,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             ];
             const [limitSnap, logSnap, ...existingRatingSnaps] = await Promise.all(docsToRead);
 
-            // =================================================================
-            // 단계 2: 읽어온 데이터를 바탕으로 유효성 검사
-            // =================================================================
             const ratingCount = limitSnap.exists ? (limitSnap.data().encounter_ratings || 0) : 0;
             if (ratingCount + ratingCharIds.length > 10) {
                 throw new HttpsError('resource-exhausted', '하루에 10번까지만 평가할 수 있습니다.');
@@ -120,7 +137,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 throw new HttpsError('not-found', '평가할 수 없는 로그입니다.');
             }
 
-            // 이미 평가한 캐릭터가 있는지 확인
             for (let i = 0; i < existingRatingSnaps.length; i++) {
                 if (existingRatingSnaps[i].exists) {
                     const targetCharId = ratingCharIds[i];
@@ -128,10 +144,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 }
             }
 
-            // =================================================================
-            // 단계 3: 모든 쓰기 작업을 수행
-            // =================================================================
-            // 별점 처리
             ratingCharIds.forEach(targetCharId => {
                 const rating = ratings[targetCharId];
                 if (rating < 0.5 || rating > 5) {
@@ -146,7 +158,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             
             tx.set(ratingLimitDocRef, { encounter_ratings: FieldValue.increment(ratingCharIds.length) }, { merge: true });
 
-            // 댓글 처리
             if (rawComment && typeof rawComment === 'string' && rawComment.trim().length > 0) {
                 const commentRef = db.collection('encounter_logs').doc(logId).collection('comments').doc();
                 newCommentData = {
@@ -168,7 +179,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     });
 
     /**
-     * 조우 댓글 신고 (변경 없음)
+     * 조우 댓글 신고
      */
     const reportEncounterComment = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
@@ -205,6 +216,5 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         return { ok: true, message: '신고가 접수되었습니다.' };
     });
 
-    // submitEncounterReview 함수를 포함하여 export 합니다.
     return { submitEncounterReview, reportEncounterComment };
 };
