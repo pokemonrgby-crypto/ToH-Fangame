@@ -107,14 +107,6 @@ function startStoryCreationFlow(myChars) {
 
             try {
                 const generateSketchFn = call('generateStorySketch');
-                const w = WORLD_LIST[worldId] || {};
-                const world = {
-                  id: worldId,
-                  name: w.name || worldId,
-                  summary: w.summary || w.intro || '',
-                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
-                  rawJson: w
-                };
                 await WORLD_LIST_READY;
                 const w = await getWorldById(worldId) || {};
                 const world = {
@@ -159,14 +151,6 @@ function startStoryCreationFlow(myChars) {
             
             try {
                 const generateSketchFn = call('generateStorySketch');
-                const w = WORLD_LIST[worldId] || {};
-                const world = {
-                  id: worldId,
-                  name: w.name || worldId,
-                  summary: w.summary || w.intro || '',
-                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
-                  rawJson: w
-                };
                 await WORLD_LIST_READY;
                 const w = await getWorldById(worldId) || {};
                 const world = {
