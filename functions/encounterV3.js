@@ -6,7 +6,7 @@ const { FieldValue } = require('firebase-admin/firestore');
 module.exports = (admin, { logger, GEMINI_API_KEY }) => {
     const db = admin.firestore();
 
-    // AI 호출 헬퍼 함수
+    // AI 호출 헬퍼 함수 (responseSchema 적용)
     async function callGeminiForComment(systemText, userText) {
         const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
         const apiKey = GEMINI_API_KEY.value();
@@ -14,6 +14,8 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         
         const model = 'gemini-2.5-flash-lite';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        
+        // [수정] responseSchema를 사용하여 JSON 출력 형식을 강제합니다.
         const body = {
             systemInstruction: { parts: [{ text: systemText }] },
             contents: [{ role: 'user', parts: [{ text: userText }] }],
@@ -21,6 +23,16 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 temperature: 0.8,
                 maxOutputTokens: 2048,
                 responseMimeType: "application/json",
+                responseSchema: {
+                    type: "object",
+                    properties: {
+                        transformedComment: {
+                            type: "string",
+                            description: "The user's comment, rewritten in the character's voice."
+                        }
+                    },
+                    required: ["transformedComment"]
+                }
             }
         };
 
@@ -32,18 +44,13 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const json = await res.json().catch(()=>null);
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
+
+        // responseSchema 덕분에, 더 이상 복잡한 파싱 로직이 필요 없습니다.
         try {
-            // 더 안정적인 JSON 파싱 로직
-            let clean = text.replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '').trim();
-            const firstBrace = clean.indexOf('{');
-            const lastBrace = clean.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace > firstBrace) {
-                clean = clean.slice(firstBrace, lastBrace + 1);
-            }
-            clean = clean.replace(/,\s*([}\]])/g, '$1');
-            return JSON.parse(clean);
+            return JSON.parse(text);
         } catch(e) {
-            logger.error("callGeminiForComment JSON parse failed", { rawText: text, error: e.message });
+            logger.error("callGeminiForComment JSON parse failed despite using schema", { rawText: text, error: e.message });
+            // 스키마를 사용했음에도 파싱에 실패하는 예외적인 경우에 대한 대비
             return { transformedComment: text };
         }
     }
@@ -70,7 +77,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         let newCommentData = null;
 
         if (rawComment && typeof rawComment === 'string' && rawComment.trim().length > 0) {
-            // [수정] AI에게 조우 로그 내용을 전달하기 위해 트랜잭션 외부에서 미리 문서를 가져옴
             const logSnapForPrompt = await db.doc(`encounter_logs/${logId}`).get();
             if (!logSnapForPrompt.exists) {
                 throw new HttpsError('not-found', '댓글을 작성할 조우 로그를 찾을 수 없습니다.');
@@ -80,23 +86,8 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
             const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
             
-            // [수정] 시스템 프롬프트 강화 및 조우 로그 내용 추가
-            const systemPrompt = `당신은 주어진 상황(조우 로그)과 캐릭터의 서사를 기반으로 사용자의 댓글을 변환하는 AI입니다.
-캐릭터의 성격과 말투, 톤을 완벽하게 파악하고 흉내내어, 마치 그 캐릭터가 직접 말하는 것처럼 댓글을 수정해야 합니다.
-
-Your response MUST be a single, valid JSON object and nothing else.
-Do NOT include markdown, explanations, or any characters outside of the JSON structure.
-
-BAD EXAMPLE (extra characters):
-\`\`\`json
-{"transformedComment": "이런, 어이가 없군."}
-\`\`\`
-"}
-
-GOOD EXAMPLE (valid JSON only):
-{"transformedComment": "이런, 어이가 없군."}
-
-이제 아래 조우 상황, 캐릭터 서사, 원본 댓글을 바탕으로, 댓글을 캐릭터의 목소리로 변환해주세요.`;
+            // [수정] 시스템 프롬프트를 간결하게 변경
+            const systemPrompt = `당신은 캐릭터의 서사를 기반으로 사용자의 댓글을 변환하는 AI입니다. 캐릭터의 성격과 말투, 톤을 완벽하게 파악하고 흉내내어, 마치 그 캐릭터가 직접 말하는 것처럼 댓글을 수정해야 합니다. 결과는 반드시 제공된 JSON 스키마를 따라야 합니다.`;
             
             const userPrompt = `조우 상황:\n"""\n${encounterText}\n"""\n\n캐릭터 서사:\n"""\n${latestNarrative}\n"""\n\n변환할 원본 댓글: "${rawComment}"`;
             
@@ -112,6 +103,8 @@ GOOD EXAMPLE (valid JSON only):
 
         // Firestore 트랜잭션
         return await db.runTransaction(async (tx) => {
+            // Firestore transactions require all reads to be executed before all writes.
+            // 1. READS
             const today = new Date().toISOString().slice(0, 10);
             const ratingLimitDocRef = db.collection('users').doc(uid).collection('daily_limits').doc(today);
             const encounterLogRef = db.doc(`encounter_logs/${logId}`);
@@ -128,15 +121,14 @@ GOOD EXAMPLE (valid JSON only):
             ];
             const [limitSnap, logSnap, ...existingRatingSnaps] = await Promise.all(docsToRead);
 
+            // 2. VALIDATION
             const ratingCount = limitSnap.exists ? (limitSnap.data().encounter_ratings || 0) : 0;
             if (ratingCount + ratingCharIds.length > 10) {
                 throw new HttpsError('resource-exhausted', '하루에 10번까지만 평가할 수 있습니다.');
             }
-
             if (!logSnap.exists || logSnap.data().simulated) {
                 throw new HttpsError('not-found', '평가할 수 없는 로그입니다.');
             }
-
             for (let i = 0; i < existingRatingSnaps.length; i++) {
                 if (existingRatingSnaps[i].exists) {
                     const targetCharId = ratingCharIds[i];
@@ -144,11 +136,11 @@ GOOD EXAMPLE (valid JSON only):
                 }
             }
 
+            // 3. WRITES
             ratingCharIds.forEach(targetCharId => {
                 const rating = ratings[targetCharId];
-                if (rating < 0.5 || rating > 5) {
-                    throw new HttpsError('invalid-argument', '별점은 0.5점에서 5점 사이여야 합니다.');
-                }
+                if (rating < 0.5 || rating > 5) throw new HttpsError('invalid-argument', '별점은 0.5점에서 5점 사이여야 합니다.');
+                
                 const ratingRef = db.collection('encounter_ratings').doc(`${logId}_${targetCharId}_${uid}`);
                 tx.set(ratingRef, { logId, raterUid: uid, targetCharId, rating, createdAt: FieldValue.serverTimestamp() });
                 
@@ -178,9 +170,6 @@ GOOD EXAMPLE (valid JSON only):
         });
     });
 
-    /**
-     * 조우 댓글 신고
-     */
     const reportEncounterComment = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
@@ -201,15 +190,12 @@ GOOD EXAMPLE (valid JSON only):
             const commentData = commentSnap.data();
 
             tx.set(reportRef, {
-                logId,
-                commentId,
-                reason,
+                logId, commentId, reason,
                 reporterUid: uid,
                 reportedUid: commentData.uid,
                 reportedCharId: commentData.authorCharId,
                 createdAt: FieldValue.serverTimestamp()
             });
-
             tx.update(commentRef, { reports: FieldValue.increment(1) });
         });
 
