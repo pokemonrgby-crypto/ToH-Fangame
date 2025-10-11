@@ -5,7 +5,8 @@ import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/fireba
 import { showToast } from '../ui/toast.js';
 import { fetchMyChars } from '../api/store.js';
 import { createModal } from '../ui/modal.js';
-import { WORLD_LIST } from '../api/world.js';
+import { WORLD_LIST, WORLD_LIST_READY, getWorldById } from '../api/world.js';
+
 
 const call = (name) => httpsCallable(func, name);
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[c]));
@@ -114,7 +115,17 @@ function startStoryCreationFlow(myChars) {
                   detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
                   rawJson: w
                 };
+                await WORLD_LIST_READY;
+                const w = await getWorldById(worldId) || {};
+                const world = {
+                  id: worldId,
+                  name: w.name || worldId,
+                  summary: w.summary || w.intro || '',
+                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
+                  rawJson: w
+                };
                 const result = await generateSketchFn({ charId, keywords, worldId, world });
+
 
                 if (result.data.ok) {
                     showSketchResult(charId, worldId, keywords, result.data.sketch);
@@ -156,7 +167,17 @@ function startStoryCreationFlow(myChars) {
                   detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
                   rawJson: w
                 };
+                await WORLD_LIST_READY;
+                const w = await getWorldById(worldId) || {};
+                const world = {
+                  id: worldId,
+                  name: w.name || worldId,
+                  summary: w.summary || w.intro || '',
+                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
+                  rawJson: w
+                };
                 const result = await generateSketchFn({ charId, keywords, worldId, world });
+
 
                 if (result.data.ok) {
                     showSketchResult(charId, worldId, keywords, result.data.sketch);
