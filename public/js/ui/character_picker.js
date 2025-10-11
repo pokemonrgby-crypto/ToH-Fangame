@@ -22,7 +22,7 @@ export async function openCharacterPickerModal(characters, title = '캐릭터 �
           <div>
             <div style="font-weight:bold;">${esc(char.name)}</div>
             <div class="text-dim" style="font-size:11px; margin-top:4px; line-height:1.4;">
-              Lv.${char.level || 1} / Elo ${char.elo || 1000}
+              Elo ${char.elo || 1000}
             </div>
           </div>
         </div>
