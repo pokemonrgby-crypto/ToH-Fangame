@@ -1,5 +1,10 @@
 // /public/js/tabs/rankings_encounter.js
+
+// [수정] 필요한 함수들을 import 합니다.
 import { db, fx } from '../api/firebase.js';
+import { getRecentEncounterComments } from '../api/store.js';
+import { prettyTime } from '../ui/utils.js';
+
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -105,6 +110,54 @@ function logCard(log) {
                 <div style="text-align:right; flex-shrink:0; margin-left:12px;">
                     <div class="chip">${new Date(log.createdAt.seconds * 1000).toLocaleDateString()}</div>
                     <div style="margin-top:8px;">⭐ <b>${avgRating}</b> (${log.ratingCount || 0})</div>
+                </div>
+            </div>
+        </a>
+    `;
+}
+
+/**
+ * [신규] 최근 댓글 탭 렌더링
+ */
+export async function showRecentComments(root) {
+    root.innerHTML = `<div class="spin-center"></div>`;
+    try {
+        const comments = await getRecentEncounterComments(50);
+
+        root.innerHTML = `
+            <div class="col" style="gap: 12px;">
+                ${comments.length > 0 ? comments.map(commentCard).join('') : '<div class="kv-card text-dim">최근 댓글이 없습니다.</div>'}
+            </div>
+        `;
+
+    } catch (e) {
+        root.innerHTML = `<div class="kv-card error">댓글을 불러오는 중 오류가 발생했습니다: ${e.message}</div>`;
+        console.error(e);
+    }
+}
+
+/**
+ * [신규] 댓글 카드 UI 템플릿
+ * @param {object} comment - 댓글 데이터 객체
+ * @returns {string} HTML 문자열
+ */
+function commentCard(comment) {
+    // Firestore Timestamp 객체를 Date 객체로 변환하여 prettyTime 함수에 전달
+    const createdAtDate = comment.createdAt?.toDate ? comment.createdAt.toDate() : new Date();
+
+    return `
+        <a href="#/encounter-log/${comment.logId}" class="kv-card" style="text-decoration:none; color:inherit;">
+            <div style="display: flex; justify-content: space-between; align-items: flex-start; gap: 12px;">
+                <div style="flex: 1; min-width: 0;">
+                    <div style="font-weight: bold; margin-bottom: 4px;">${esc(comment.author)}</div>
+                    <p style="margin: 0 0 8px; font-size: 1.1em; line-height: 1.5;">${esc(comment.text)}</p>
+                    <div class="text-dim" style="font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">
+                        └ 원본: ${esc(comment.logTitle)}
+                    </div>
+                </div>
+                <div style="text-align: right; flex-shrink: 0;">
+                    <div class="chip">${prettyTime(createdAtDate)}</div>
+                    ${comment.rating ? `<div style="margin-top: 8px;">⭐ <b>${Number(comment.rating).toFixed(1)}</b></div>` : ''}
                 </div>
             </div>
         </a>
