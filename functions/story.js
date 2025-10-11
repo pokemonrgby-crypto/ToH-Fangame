@@ -46,7 +46,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             ]);
 
             const adminConfig = adminSnap.exists ? adminSnap.data() : {};
-            const betaConfig = betaSnap.exists ? betaConfig.data() : {};
+            const betaConfig = betaSnap.exists ? betaSnap.data() : {};
 
             const allowUids = new Set([
                 ...(adminConfig.allow || []),
@@ -100,13 +100,13 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '캐릭터, 키워드, 세계관 정보는 필수입니다.');
         }
         
-        await userRef.update({ lastStorySketchTime: now });
+        await userRef.set({ lastStorySketchTime: now }, { merge: true });
 
         // --- Gemini API 호출 로직 ---
         try {
             // 1. 캐릭터 및 세계관 정보 가져오기
             const charSnap = await db.doc(`chars/${charId}`).get();
-            if (!charSnap.exists()) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
+            if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
             const charData = charSnap.data();
 
             const worldsSnap = await db.doc('configs/worlds').get();
