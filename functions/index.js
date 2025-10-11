@@ -16,6 +16,7 @@ const GEMINI_API_KEY = defineSecret('GEMINI_API_KEY'); // 이미 있다면 재�
 
 const exploreV2 = require('./explore_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
 const encounterV2 = require('./encounter_v2')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
+const encounterV3 = require('./encounterV3')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY }); // [추가]
 const maintenanceFns = require('./maintenance')(admin, { onCall, HttpsError, logger });
 
 const inventoryFns = require('./inventory')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
@@ -749,7 +750,7 @@ exports.endExploreV2     = exploreV2.endExploreV2;
 exports.advBattleActionV2 = exploreV2.advBattleActionV2; // 추가
 exports.advBattleFleeV2 = exploreV2.advBattleFleeV2;     // 추가
 exports.startEncounter = encounterV2.startEncounter;
-
+Object.assign(exports, encounterV3); // [추가]
 
 // Raid exports
 
