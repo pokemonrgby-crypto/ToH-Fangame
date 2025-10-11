@@ -138,7 +138,8 @@ async function render(root, log, charA, charB, logId) {
       <div class="elog-exp">+${exp} EXP</div>
     </a>`;
 
-  root.innerHTML = \`
+  // 141번째 줄의 `\` 제거됨
+  root.innerHTML = `
     <style>
       .elog-wrap{display:flex;flex-direction:column;gap:18px}
       .elog-topbar{position:sticky;top:0;z-index:10;backdrop-filter:blur(8px);background:rgba(8,12,18,.6);border-bottom:1px solid #1e2835}
@@ -195,10 +196,10 @@ async function render(root, log, charA, charB, logId) {
       </div>
 
       <div style="display:flex;justify-content:center;margin:10px 0 0">
-        ${isParty ? \`<button class="btn large ghost" id="btnRelate">AI로 관계 분석/업데이트</button>\` : ''}
+        ${isParty ? `<button class="btn large ghost" id="btnRelate">AI로 관계 분석/업데이트</button>` : ''}
       </div>
     </section>
-  \`;
+  `;
 
   const btnShare = root.querySelector('#btnShare');
   if (btnShare) {
