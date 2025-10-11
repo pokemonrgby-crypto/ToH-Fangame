@@ -7,20 +7,36 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
     // AI 호출 헬퍼 함수
     async function callGeminiForComment(systemText, userText) {
-        // ... (기존 Gemini 호출 로직과 유사)
         const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
         const apiKey = GEMINI_API_KEY.value();
         if (!apiKey) throw new HttpsError('internal', 'AI API 키가 설정되지 않았습니다.');
         
-        const model = 'gemini-2.5-flash-lite';
-        const url = `https://generativelace.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const model = 'gemini-1.5-flash-latest';
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         const body = {
-            // ... (요청 본문 구성)
+            systemInstruction: { parts: [{ text: systemText }] },
+            contents: [{ role: 'user', parts: [{ text: userText }] }],
+            generationConfig: {
+                temperature: 0.8,
+                maxOutputTokens: 2048,
+                responseMimeType: "application/json",
+            }
         };
+
         const res = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
-        // ... (응답 처리 로직)
-        const json = await res.json();
-        return json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if(!res.ok){
+            const txt = await res.text().catch(()=> '');
+            throw new HttpsError('internal', `Gemini API 호출 실패: ${res.status} ${txt}`);
+        }
+        const json = await res.json().catch(()=>null);
+        const text = json?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+        if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
+        try {
+            return JSON.parse(text);
+        } catch(e) {
+            // AI가 JSON 형식이 아닌 일반 텍스트만 반환한 경우, 그대로 사용
+            return { transformedComment: text.replace(/["']/g, '') };
+        }
     }
 
     /**
@@ -31,8 +47,9 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
         const { logId, targetCharId, rating } = req.data;
+        // 0.5 단위 별점을 위해 rating validation 수정
         if (!logId || !targetCharId || rating < 1 || rating > 5) {
-            throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
+            throw new HttpsError('invalid-argument', '필수 정보(logId, targetCharId, rating)가 올바르지 않습니다.');
         }
 
         const today = new Date().toISOString().slice(0, 10);
@@ -47,11 +64,15 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             }
 
             const encounterLogRef = db.doc(`encounter_logs/${logId}`);
-            const ratingRef = db.collection('encounter_ratings').doc(`${logId}_${uid}`);
+            const ratingRef = db.collection('encounter_ratings').doc(`${logId}_${targetCharId}_${uid}`); // 고유 ID 보강
             
-            const logSnap = await tx.get(encounterLogRef);
+            const [logSnap, existingRatingSnap] = await Promise.all([tx.get(encounterLogRef), tx.get(ratingRef)]);
+
             if (!logSnap.exists || logSnap.data().simulated) {
                 throw new HttpsError('not-found', '평가할 수 없는 로그입니다.');
+            }
+            if (existingRatingSnap.exists) {
+                throw new HttpsError('already-exists', '이미 이 캐릭터에게 별점을 주었습니다.');
             }
 
             tx.set(ratingRef, {
@@ -62,11 +83,11 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 createdAt: FieldValue.serverTimestamp()
             });
 
-            // 캐릭터의 평균 별점 업데이트 (집계)
-            const charStatsRef = db.doc(`char_stats/${targetCharId}`);
+            // 캐릭터의 평균 별점 업데이트 (집계용 신규 컬렉션)
+            const charStatsRef = db.collection('char_encounter_stats').doc(targetCharId);
             tx.set(charStatsRef, {
-                encounter_rating_total: FieldValue.increment(rating),
-                encounter_rating_count: FieldValue.increment(1)
+                totalRating: FieldValue.increment(rating),
+                ratingCount: FieldValue.increment(1)
             }, { merge: true });
 
             // 평가 횟수 업데이트
@@ -88,7 +109,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
         }
 
-        // 캐릭터 정보와 최신 서사 가져오기
         const charSnap = await db.doc(`chars/${actingCharId}`).get();
         if (!charSnap.exists || charSnap.data().owner_uid !== uid) {
             throw new HttpsError('permission-denied', '자신의 캐릭터로만 댓글을 작성할 수 있습니다.');
@@ -96,26 +116,27 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const charData = charSnap.data();
         const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
 
-        // AI를 통해 댓글 변환
-        const systemPrompt = "당신은 캐릭터의 서사를 바탕으로 댓글을 변환하는 AI입니다. 다음 캐릭터의 서사를 참고하여, 입력된 댓글을 캐릭터의 말투와 성격에 맞게 자연스럽게 변환해주세요. 결과는 변환된 댓글 텍스트만 포함해야 합니다.";
-        const userPrompt = `캐릭터 서사: ${latestNarrative}\n\n변환할 댓글: "${rawComment}"`;
+        const systemPrompt = `You are an AI that transforms comments based on a character's narrative. Your response MUST be a JSON object of the format: {"transformedComment": "your_transformed_comment_text"}. Do not include any other text or markdown. Based on the character's narrative, rewrite the user's raw comment to match the character's personality and tone.`;
+        const userPrompt = `Character Narrative: ${latestNarrative}\n\nRaw Comment to Transform: "${rawComment}"`;
         
-        const transformedComment = await callGeminiForComment(systemPrompt, userPrompt);
+        const aiResult = await callGeminiForComment(systemPrompt, userPrompt);
+        const transformedComment = aiResult.transformedComment;
 
-        // 댓글 저장
-        const commentRef = db.collection('encounter_comments').doc();
-        await commentRef.set({
-            logId,
-            authorUid: uid,
+        const commentRef = db.collection('encounter_logs').doc(logId).collection('comments').doc();
+        const newCommentData = {
+            uid: uid,
             authorCharId: actingCharId,
-            authorCharName: charData.name,
-            rawComment,
-            transformedComment,
+            displayName: charData.name,
+            photoURL: charData.thumb_url || null,
+            text: transformedComment,
+            rawText: rawComment, // 원본 댓글 저장
             createdAt: FieldValue.serverTimestamp(),
             reports: 0
-        });
+        };
 
-        return { ok: true, commentId: commentRef.id, transformedComment };
+        await commentRef.set(newCommentData);
+
+        return { ok: true, comment: {id: commentRef.id, ...newCommentData} };
     });
 
     /**
@@ -125,12 +146,12 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const uid = req.auth?.uid;
         if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
 
-        const { commentId, reason } = req.data;
-        if (!commentId || !reason) {
+        const { logId, commentId, reason } = req.data;
+        if (!logId || !commentId || !reason) {
             throw new HttpsError('invalid-argument', '필수 정보가 누락되었습니다.');
         }
 
-        const commentRef = db.doc(`encounter_comments/${commentId}`);
+        const commentRef = db.doc(`encounter_logs/${logId}/comments/${commentId}`);
         const reportRef = db.collection('encounter_reports').doc();
 
         await db.runTransaction(async (tx) => {
@@ -141,17 +162,19 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             const commentData = commentSnap.data();
 
             tx.set(reportRef, {
+                logId,
                 commentId,
                 reason,
                 reporterUid: uid,
-                reportedUid: commentData.authorUid,
+                reportedUid: commentData.uid,
+                reportedCharId: commentData.authorCharId,
                 createdAt: FieldValue.serverTimestamp()
             });
 
             tx.update(commentRef, { reports: FieldValue.increment(1) });
         });
 
-        return { ok: true };
+        return { ok: true, message: '신고가 접수되었습니다.' };
     });
 
     return { rateEncounter, commentOnEncounter, reportEncounterComment };
