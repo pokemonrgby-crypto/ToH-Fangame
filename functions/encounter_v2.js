@@ -212,6 +212,7 @@ ${relationNote}
           content: result.content,
           exp_a: expA,
           exp_b: expB,
+          simulated: false,          
           createdAt: Timestamp.now(),
           endedAt: Timestamp.now()
         });
