@@ -48,7 +48,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
         const { logId, targetCharId, rating } = req.data;
         // 0.5 단위 별점을 위해 rating validation 수정
-        if (!logId || !targetCharId || rating < 1 || rating > 5) {
+        if (!logId || !targetCharId || rating < 0.5 || rating > 5) {
             throw new HttpsError('invalid-argument', '필수 정보(logId, targetCharId, rating)가 올바르지 않습니다.');
         }
 
