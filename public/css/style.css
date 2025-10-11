@@ -694,12 +694,13 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
 
 /* /public/css/style.css 파일 하단에 추가 */
 
+/* ▼▼▼ [수정된 부분] ▼▼▼ */
 /* --- 조우 로그 별점 UI --- */
 .star-rating-enhanced {
-    display: inline-flex;
-    /* row-reverse는 CSS만으로 이전 별들을 색칠하는 트릭입니다. */
+    display: flex; /* inline-flex 대신 flex 사용으로 안정성 확보 */
     flex-direction: row-reverse;
-    font-size: 2rem; /* 별 크기 */
+    justify-content: center;
+    font-size: 2rem; /* 별의 전체 크기 */
     line-height: 1;
 }
 
@@ -708,41 +709,56 @@ input{background:#0f141b;color:#fff;border:1px solid var(--bd);border-radius:10p
 }
 
 .star-rating-enhanced label {
-    position: relative;
     padding: 0;
-    width: 1rem; /* 각 라벨은 별의 절반 너비를 가집니다. */
+    width: 1rem; /* 별의 절반 너비 (font-size의 절반) */
     cursor: pointer;
     color: #4b5563; /* 선택되지 않은 별 색상 */
-    -webkit-text-stroke: 1px #222;
-    overflow: hidden;
+    overflow: hidden; /* 중요: 절반만 보이도록 자름 */
     white-space: nowrap;
     transition: color 0.2s ease-out, transform 0.1s ease;
+    -webkit-text-stroke: 1px #222; /* 외곽선 유지 */
 }
 
-/* 별의 오른쪽 절반 (값: 1, 2, 3, 4, 5) */
-/* HTML 구조상 input 다음에 label이 오므로 nth-of-type(odd)가 됩니다. */
-.star-rating-enhanced label:nth-of-type(odd)::before {
+/* 공통 별 스타일: label의 font-size(2rem)를 상속받음 */
+.star-rating-enhanced label::before {
     content: '★';
-    position: absolute;
-    left: -1rem; /* 별 문자를 왼쪽으로 절반만큼 밀어서 오른쪽 부분만 보이게 합니다. */
+    display: inline-block; /* 너비와 마진을 적용하기 위해 변경 */
+    width: 2rem; /* 별 하나가 차지하는 전체 너비 */
+    font-size: 2rem; /* 명시적으로 크기 지정 */
+    line-height: 1;
 }
 
-/* 별의 왼쪽 절반 (값: 0.5, 1.5, 2.5, 3.5, 4.5) */
+/* 별의 왼쪽 절반을 표시 (HTML 구조상 짝수번째 label) */
+/* (row-reverse 때문에 시각적으로는 각 별의 오른쪽 절반이 됨) */
 .star-rating-enhanced label:nth-of-type(even)::before {
-    content: '★';
-    position: absolute;
-    left: 0; /* 별 문자의 왼쪽 부분이 보이도록 합니다. */
+    /* 특별한 처리 없이 label의 overflow:hidden에 의해 왼쪽 절반만 보임 */
 }
 
-/* 마우스를 올리거나 선택되었을 때의 색상 변경 */
+/* 별의 오른쪽 절반을 표시 (HTML 구조상 홀수번째 label) */
+/* (row-reverse 때문에 시각적으로는 각 별의 왼쪽 절반이 됨) */
+.star-rating-enhanced label:nth-of-type(odd)::before {
+    /* 별 아이콘을 왼쪽으로 절반만큼 이동시켜 오른쪽 절반이 보이게 함 */
+    margin-left: -1rem;
+}
+
+/* 마우스를 올리거나 선택되었을 때의 색상 변경 (기존과 동일) */
 .star-rating-enhanced input:checked ~ label,
-.star-rating-enhanced label:hover,
-.star-rating-enhanced label:hover ~ label {
+.star-rating-enhanced:not(:checked) > label:hover,
+.star-rating-enhanced:not(:checked) > label:hover ~ label {
     color: #ffc700;
     text-shadow: 0 0 8px #ffc70090;
 }
 
-/* 마우스를 올렸을 때 약간 커지는 효과 */
+.star-rating-enhanced > input:checked + label:hover,
+.star-rating-enhanced > input:checked ~ label:hover,
+.star-rating-enhanced > input:checked ~ label:hover ~ label,
+.star-rating-enhanced > label:hover ~ input:checked ~ label {
+    color: #ffed85;
+}
+
+
+/* 마우스를 올렸을 때 약간 커지는 효과 (기존과 동일) */
 .star-rating-enhanced label:hover {
     transform: scale(1.15);
 }
+/* ▲▲▲ [수정된 부분] ▲▲▲ */
