@@ -3,7 +3,7 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.3/fireba
 import {
   getFirestore, doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, where, orderBy, limit, serverTimestamp, writeBatch,
-  arrayUnion, runTransaction, increment, onSnapshot
+  arrayUnion, runTransaction, increment, onSnapshot, collectionGroup
 } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-firestore.js';
 
 import { getAuth } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-auth.js';
@@ -88,7 +88,7 @@ if (typeof window !== 'undefined') {
 export const fx = {
   doc, getDoc, getDocs, setDoc, updateDoc, addDoc, deleteDoc,
   collection, query, where, orderBy, limit, serverTimestamp, writeBatch,
-  arrayUnion, runTransaction, increment, onSnapshot
+  arrayUnion, runTransaction, increment, onSnapshot, collectionGroup
 };
 
 export const sx = { ref: sRef, uploadBytes, getDownloadURL };
