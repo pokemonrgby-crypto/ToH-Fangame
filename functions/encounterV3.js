@@ -15,7 +15,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const model = 'gemini-2.5-flash-lite';
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
         
-        // [수정] responseSchema를 사용하여 JSON 출력 형식을 강제합니다.
         const body = {
             systemInstruction: { parts: [{ text: systemText }] },
             contents: [{ role: 'user', parts: [{ text: userText }] }],
@@ -45,12 +44,10 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
         if(!text) throw new HttpsError('internal', 'Gemini 응답이 비어 있습니다.');
 
-        // responseSchema 덕분에, 더 이상 복잡한 파싱 로직이 필요 없습니다.
         try {
             return JSON.parse(text);
         } catch(e) {
             logger.error("callGeminiForComment JSON parse failed despite using schema", { rawText: text, error: e.message });
-            // 스키마를 사용했음에도 파싱에 실패하는 예외적인 경우에 대한 대비
             return { transformedComment: text };
         }
     }
@@ -86,7 +83,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
 
             const latestNarrative = (charData.narratives || []).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0]?.long || charData.summary;
             
-            // [수정] 시스템 프롬프트를 간결하게 변경
             const systemPrompt = `당신은 캐릭터의 서사를 기반으로 사용자의 댓글을 변환하는 AI입니다. 캐릭터의 성격과 말투, 톤을 완벽하게 파악하고 흉내내어, 마치 그 캐릭터가 직접 말하는 것처럼 댓글을 수정해야 합니다. 결과는 반드시 제공된 JSON 스키마를 따라야 합니다.`;
             
             const userPrompt = `조우 상황:\n"""\n${encounterText}\n"""\n\n캐릭터 서사:\n"""\n${latestNarrative}\n"""\n\n변환할 원본 댓글: "${rawComment}"`;
@@ -101,10 +97,7 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             }
         }
 
-        // Firestore 트랜잭션
         return await db.runTransaction(async (tx) => {
-            // Firestore transactions require all reads to be executed before all writes.
-            // 1. READS
             const today = new Date().toISOString().slice(0, 10);
             const ratingLimitDocRef = db.collection('users').doc(uid).collection('daily_limits').doc(today);
             const encounterLogRef = db.doc(`encounter_logs/${logId}`);
@@ -121,11 +114,13 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
             ];
             const [limitSnap, logSnap, ...existingRatingSnaps] = await Promise.all(docsToRead);
 
-            // 2. VALIDATION
-            const ratingCount = limitSnap.exists ? (limitSnap.data().encounter_ratings || 0) : 0;
-            if (ratingCount + ratingCharIds.length > 10) {
-                throw new HttpsError('resource-exhausted', '하루에 10번까지만 평가할 수 있습니다.');
+            const limitData = limitSnap.exists ? limitSnap.data() : {};
+            const ratingCount = limitData.encounter_ratings || 0;
+            const recharges = limitData.encounter_ratings_recharges || 0;
+            if ((ratingCount + ratingCharIds.length) > (10 + recharges)) {
+                throw new HttpsError('resource-exhausted', `하루에 10번까지만 평가할 수 있습니다. (충전 횟수: ${recharges})`);
             }
+
             if (!logSnap.exists || logSnap.data().simulated) {
                 throw new HttpsError('not-found', '평가할 수 없는 로그입니다.');
             }
@@ -136,7 +131,6 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
                 }
             }
 
-            // 3. WRITES
             ratingCharIds.forEach(targetCharId => {
                 const rating = ratings[targetCharId];
                 if (rating < 0.5 || rating > 5) throw new HttpsError('invalid-argument', '별점은 0.5점에서 5점 사이여야 합니다.');
@@ -202,5 +196,47 @@ module.exports = (admin, { logger, GEMINI_API_KEY }) => {
         return { ok: true, message: '신고가 접수되었습니다.' };
     });
 
-    return { submitEncounterReview, reportEncounterComment };
+    /**
+     * [신규] 코인을 사용해 조우 평가 횟수를 충전하는 함수
+     */
+    const rechargeEncounterRating = onCall({ region: 'us-central1' }, async (req) => {
+        const uid = req.auth?.uid;
+        if (!uid) throw new HttpsError('unauthenticated', '로그인이 필요합니다.');
+
+        const { count } = req.data;
+        const purchaseCount = Math.floor(Number(count));
+
+        if (!Number.isInteger(purchaseCount) || purchaseCount < 1 || purchaseCount > 10) {
+            throw new HttpsError('invalid-argument', '충전 횟수는 1에서 10 사이의 정수여야 합니다.');
+        }
+
+        const cost = purchaseCount * 100;
+        const userRef = db.doc(`users/${uid}`);
+        const today = new Date().toISOString().slice(0, 10);
+        const ratingLimitDocRef = db.collection('users').doc(uid).collection('daily_limits').doc(today);
+
+        return await db.runTransaction(async (tx) => {
+            const userSnap = await tx.get(userRef);
+            if (!userSnap.exists) {
+                throw new HttpsError('not-found', '사용자 정보를 찾을 수 없습니다.');
+            }
+
+            const userCoins = userSnap.data()?.coins || 0;
+            if (userCoins < cost) {
+                throw new HttpsError('failed-precondition', `코인이 부족합니다. (필요: ${cost}, 보유: ${userCoins})`);
+            }
+
+            // 코인 차감
+            tx.update(userRef, { coins: FieldValue.increment(-cost) });
+
+            // 평가 횟수 충전 횟수 기록
+            tx.set(ratingLimitDocRef, {
+                encounter_ratings_recharges: FieldValue.increment(purchaseCount)
+            }, { merge: true });
+
+            return { ok: true, purchased: purchaseCount, cost };
+        });
+    });
+
+    return { submitEncounterReview, reportEncounterComment, rechargeEncounterRating };
 };
