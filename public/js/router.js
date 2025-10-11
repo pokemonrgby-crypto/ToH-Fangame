@@ -28,6 +28,7 @@ export const routes = {
   '#/worldmap': () => import('./tabs/worldmap.js').then(m => m.showWorldMap()),
   '#/land': () => import('./tabs/land_detail.js').then(m => m.showLandDetail()),
   '#/land-management': () => import('./tabs/land_management.js').then(m => m.showLandManagement()),
+  '#/story': () => import('./tabs/story.js').then(m => m.default()),  
   '#/raid': () => import('./tabs/raid.js').then(m => m.showRaid()),
   '#/raidlog': () => import('./tabs/raidlog.js').then(m => m.showRaidLog()),
   '#/rankings/encounter': () => import('./tabs/rankings.js').then(m => (m.showRankings || m.default)()),
