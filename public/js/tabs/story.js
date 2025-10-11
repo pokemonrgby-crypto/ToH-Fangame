@@ -45,6 +45,7 @@ export default async function showStoryPage() {
  * @param {Array} myChars - 사용자의 캐릭터 목록
  */
 function startStoryCreationFlow(myChars) {
+    let lastMeta = null;
     const { modal, card } = createModal();
     const close = () => modal.remove();
 
@@ -118,12 +119,14 @@ function startStoryCreationFlow(myChars) {
                 };
                 const result = await generateSketchFn({ charId, keywords, worldId, world });
 
-
-                if (result.data.ok) {
-                    showSketchResult(charId, worldId, keywords, result.data.sketch);
+                if (result.data && result.data.ok) {
+                  const { sketch, meta } = result.data;
+                  lastMeta = meta || null;
+                  showSketchResult(charId, worldId, keywords, sketch, meta);
                 } else {
-                    throw new Error(result.data.error || '알 수 없는 오류');
+                  throw new Error(result.data?.error || '알 수 없는 오류');
                 }
+
             } catch(e) {
                 showToast(`생성 실패: ${e.message}`);
                 btn.disabled = false;
@@ -132,53 +135,85 @@ function startStoryCreationFlow(myChars) {
         };
     }
 
-    function showSketchResult(charId, worldId, keywords, sketch) {
-        card.innerHTML = `
-            <h3 style="margin-top:0;">이야기 초안</h3>
-            <div class="kv-card" style="white-space: pre-wrap; max-height: 40vh; overflow-y: auto;">${esc(sketch)}</div>
-            <div class="row" style="justify-content:flex-end; margin-top:12px; gap:8px;">
-                <button id="btn-close" class="btn ghost">닫기</button>
-                <button id="btn-reroll" class="btn">다시 생성</button>
-                <button id="btn-confirm-story" class="btn primary">이 이야기로 시작</button>
-            </div>
-        `;
-        
-        card.querySelector('#btn-close').onclick = close;
-        card.querySelector('#btn-reroll').onclick = async () => {
-            const btn = card.querySelector('#btn-reroll');
-            btn.disabled = true;
-            btn.textContent = '재생성 중...';
-            
-            try {
-                const generateSketchFn = call('generateStorySketch');
-                await WORLD_LIST_READY;
-                const w = await getWorldById(worldId) || {};
-                const world = {
-                  id: worldId,
-                  name: w.name || worldId,
-                  summary: w.summary || w.intro || '',
-                  detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
-                  rawJson: w
-                };
-                const result = await generateSketchFn({ charId, keywords, worldId, world });
+    function showSketchResult(charId, worldId, keywords, sketch, meta) {
+      const tierLabel = meta?.strengthTier || 'apprentice';
+      const logline   = meta?.logline || '';
+      const events    = Array.isArray(meta?.keyEvents) ? meta.keyEvents : [];
 
+      card.innerHTML = `
+        <h3 style="margin-top:0;">이야기 초안</h3>
 
-                if (result.data.ok) {
-                    showSketchResult(charId, worldId, keywords, result.data.sketch);
-                } else {
-                    throw new Error(result.data.error || '알 수 없는 오류');
-                }
-            } catch(e) {
-                showToast(`재생성 실패: ${e.message}`);
-                btn.disabled = false;
-                btn.textContent = '다시 생성';
+        <div class="kv-card" style="white-space: pre-wrap; max-height: 40vh; overflow-y: auto; margin-bottom:12px;">${esc(sketch)}</div>
+
+        <div class="kv-card" style="padding:12px; text-align:left;">
+          <div style="font-weight:700; margin-bottom:6px;">설계 요약</div>
+          <div class="text-dim" style="font-size:13px; margin-bottom:8px;">
+            <b>서사 등급</b>: ${esc(tierLabel)}<br>
+            <b>로그라인</b>: ${esc(logline || '—')}
+         </div>
+          <div>
+           <div style="font-weight:700; margin-bottom:6px;">주요 분기점</div>
+            ${
+              events.length
+                ? `<ol style="margin:0; padding-left:18px;">
+                    ${events.map(e => `
+                      <li style="margin:6px 0;">
+                        <div><b>${esc(e.title || '')}</b></div>
+                        <div class="text-dim" style="font-size:12px">${esc(e.description || '')}</div>
+                        <div class="text-dim" style="font-size:12px">장소: ${esc(e.location || '')}</div>
+                      </li>
+                    `).join('')}
+                   </ol>`
+                : `<div class="text-dim" style="font-size:12px">분기점 정보 없음</div>`
             }
-        };
+          </div>
+        </div>
 
-        card.querySelector('#btn-confirm-story').onclick = () => {
-            showFinalConfirm(charId, worldId, sketch);
-        };
+        <div class="row" style="justify-content:flex-end; margin-top:12px; gap:8px;">
+          <button id="btn-close" class="btn ghost">닫기</button>
+          <button id="btn-reroll" class="btn">다시 생성</button>
+          <button id="btn-confirm-story" class="btn primary">이 이야기로 시작</button>
+        </div>
+      `;
+
+      card.querySelector('#btn-close').onclick = () => modal.remove();
+
+      card.querySelector('#btn-reroll').onclick = async () => {
+        const btn = card.querySelector('#btn-reroll');
+        btn.disabled = true;
+        btn.textContent = '재생성 중...';
+        try {
+          const generateSketchFn = call('generateStorySketch');
+          await WORLD_LIST_READY;
+          const w = await getWorldById(worldId) || {};
+          const world = {
+            id: worldId,
+            name: w.name || worldId,
+            summary: w.summary || w.intro || '',
+            detail: (w.detail && (w.detail.lore_long || w.detail.lore || w.detail)) || '',
+            rawJson: w
+          };
+          const result = await generateSketchFn({ charId, keywords, worldId, world });
+
+          if (result.data && result.data.ok) {
+            const { sketch: newSketch, meta: newMeta } = result.data;
+            lastMeta = newMeta || null;
+            showSketchResult(charId, worldId, keywords, newSketch, newMeta);
+          } else {
+            throw new Error(result.data?.error || '알 수 없는 오류');
+          }
+        } catch(e) {
+          showToast(`재생성 실패: ${e.message}`);
+          btn.disabled = false;
+          btn.textContent = '다시 생성';
+        }
+      };
+
+      card.querySelector('#btn-confirm-story').onclick = () => {
+        showFinalConfirm(charId, worldId, sketch);
+      };
     }
+
 
     function showFinalConfirm(charId, worldId, sketch) {
         card.innerHTML = `
@@ -198,7 +233,14 @@ function startStoryCreationFlow(myChars) {
             btn.textContent = '처리 중...';
             try {
                 const startStoryFn = call('startStory');
-                const result = await startStoryFn({ charId, worldId, initialSketch: sketch });
+                const result = await startStoryFn({
+                  charId,
+                  worldId,
+                  initialSketch: sketch,
+                  logline: lastMeta?.logline || '',
+                  keyEvents: Array.isArray(lastMeta?.keyEvents) ? lastMeta.keyEvents : [],
+                  strengthTier: lastMeta?.strengthTier || 'apprentice'
+                });
                 if (result.data.ok) {
                     close();
                     showToast('새로운 이야기가 시작되었습니다! 모험을 떠나보세요.', 'success');
