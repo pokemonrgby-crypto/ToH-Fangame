@@ -262,9 +262,9 @@ JSON 출력 예시:
         // 몬스터의 난이도/등급에 따른 데미지 범위 설정 (rules 활용)
         const monsterDmgRange = rules.dmgRanges[monster.difficulty][monster.grade];
         const finalDamageToPlayer = isPlayerBlocked ? 0 : clamp(aiDamageToPlayer, monsterDmgRange[0], monsterDmgRange[1]);
-        
+
         logger.info(`Damage calculation for char ${charId}:`, {
-            ai propuestas: { toMonster: aiDamageToMonster, toPlayer: aiDamageToPlayer },
+            ai_proposals: { toMonster: aiDamageToMonster, toPlayer: aiDamageToPlayer },
             playerLevel,
             playerDmgRange: { min: playerMinDamage, max: playerMaxDamage },
             monsterDmgRange: { min: monsterDmgRange[0], max: monsterDmgRange[1] },
