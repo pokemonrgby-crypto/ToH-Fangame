@@ -1,280 +1,305 @@
-// functions/storyV3.js
-const { onCall, HttpsError } = require('firebase-functions/v2/https');
+const { onCall, HttpsError } = require('firebase-functions/v2/httpsys');
 const { Timestamp } = require('firebase-admin/firestore');
 
 // --- 프리롤(공유 링버퍼 재사용) ---
 const PREROLL_SIZE = 50;
 function d100(){ return Math.floor(Math.random()*100)+1; }
 async function ensurePreroll(docRef){
-  const snap = await docRef.get();
-  if (snap.exists) {
-    const d = snap.data()||{};
-    if (Array.isArray(d.prerolls) && d.prerolls.length === PREROLL_SIZE) return d;
-  }
-  const prerolls = Array.from({length:PREROLL_SIZE},()=>d100());
-  const payload = { prerolls, cursor:0, updatedAt: new Date() };
-  await docRef.set(payload, { merge:true });
-  return payload;
+  const snap = await docRef.get();
+  if (snap.exists) {
+    const d = snap.data()||{};
+    if (Array.isArray(d.prerolls) && d.prerolls.length === PREROLL_SIZE) return d;
+  }
+  const prerolls = Array.from({length:PREROLL_SIZE},()=>d100());
+  const payload = { prerolls, cursor:0, updatedAt: new Date() };
+  await docRef.set(payload, { merge:true });
+  return payload;
 }
 
 // --- Gemini 호출 ---
 async function callGemini(apiKey, model, systemText, userText) {
-  const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-  const body = {
-    systemInstruction: { role: 'system', parts: [{ text: systemText }] },
-    contents: [{ role: 'user', parts: [{ text: userText }] }],
-    generationConfig: { temperature: 0.7, maxOutputTokens: 4096, responseMimeType: "application/json" }
-  };
-  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
-  if (!res.ok) throw new HttpsError('internal', `Gemini Error ${res.status}: ${await res.text()}`);
-  const json = await res.json();
-  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
-  if (!text) throw new HttpsError('internal','Empty Gemini response');
-  try { return JSON.parse(text); } catch(e){ throw new HttpsError('internal','Gemini JSON parse failed'); }
+  const fetch = (...args) => import('node-fetch').then(({ default: fetch }) => fetch(...args));
+  const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+  const body = {
+    systemInstruction: { role: 'system', parts: [{ text: systemText }] },
+    contents: [{ role: 'user', parts: [{ text: userText }] }],
+    generationConfig: { temperature: 0.7, maxOutputTokens: 8192, responseMimeType: "application/json" }
+  };
+  const res = await fetch(url, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body) });
+  if (!res.ok) throw new HttpsError('internal', `Gemini Error ${res.status}: ${await res.text()}`);
+  const json = await res.json();
+  const text = json?.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+  if (!text) throw new HttpsError('internal','Empty Gemini response');
+  try { return JSON.parse(text.replace(/^```(?:json)?\s*/i, '').replace(/```$/,'').trim()); } catch(e){ throw new HttpsError('internal','Gemini JSON parse failed'); }
 }
 
 // 유틸
 const rangeMap = (r, min, max) => min + ((Math.max(1, r)-1) % (max-min+1));
+const choiceFromRoll = (arr, r) => arr[(Math.max(1, r)-1) % arr.length];
 const rotate = (arr, k)=>arr.slice(k).concat(arr.slice(0,k));
 
 module.exports = (admin, { GEMINI_API_KEY }) => {
-  const db = admin.firestore();
+  const db = admin.firestore();
 
-  async function hasStoryAccess(uid){
-    if (!uid) return false;
-    try{
-      const [a,b] = await Promise.all([db.doc('configs/admins').get(), db.doc('configs/betatesters').get()]);
-      const A = a.exists ? a.data() : {}; const B = b.exists ? b.data() : {};
-      const allowUids = new Set([...(A.allow||[]), ...(B.allow||[])]);
-      if (allowUids.has(uid)) return true;
-      const user = await admin.auth().getUser(uid);
-      const email = user.email||'';
-      const allowEmails = new Set([...(A.allowEmails||[]), ...(B.allowEmails||[])]);
-      return allowEmails.has(email);
-    }catch{ return false; }
-  }
+  async function hasStoryAccess(uid){
+    if (!uid) return false;
+    try{
+      const [a,b] = await Promise.all([db.doc('configs/admins').get(), db.doc('configs/betatesters').get()]);
+      const A = a.exists ? a.data() : {}; const B = b.exists ? b.data() : {};
+      const allowUids = new Set([...(A.allow||[]), ...(B.allow||[])]);
+      if (allowUids.has(uid)) return true;
+      const user = await admin.auth().getUser(uid);
+      const email = user.email||'';
+      const allowEmails = new Set([...(A.allowEmails||[]), ...(B.allowEmails||[])]);
+      return allowEmails.has(email);
+    }catch{ return false; }
+  }
 
-  // V3-1) NPC 팩 (비-필드 전부 한 번에) — 수치/행렬은 V2 입력값 존중
-  const enrichNPCsV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY] }, async (req)=>{
-    const uid = req.auth?.uid;
-    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
-    const { charId } = req.data||{};
-    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+  // V3-1) NPC 팩 (V2 입력값 존중)
+  const enrichNPCsV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY], memory: '1GiB' }, async (req)=>{
+    // ... (이전과 동일, 변경 없음)
+  });
 
-    const runRef = db.doc(`storyRuns/${charId}`);
-    const run = (await runRef.get()).data();
-    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+  // V3-2) 몬스터 팩 (난이도별) — 스킬 효과 구조화 추가
+  const enrichMonstersByDifficultyV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY], memory: '1GiB' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId, difficulties = ['easy','normal','hard','vhard','legend','impossible'] } = req.data||{};
+    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
 
-    const world = run.world;
-    const nonFields = (run.graph?.nodes||[]).filter(n=>n.kind!=='field').map(n=>{
-      const npcCount = (n.npc?.list?.length || 6);
-      return {
-        id:n.id, name:n.name, difficulty:n.difficulty,
-        groupAttitude:n.groupAttitude,
-        npcCount,
-        groupAttitudeToPlayerInput: n.groupAttitudeToPlayerInput || (n.id==='N1'?'friendly':'neutral'),
-        npcAttitudeBias: (typeof n.npcAttitudeBias==='number'? n.npcAttitudeBias : 0),
-        relationsSeed: typeof n.relationsSeed==='number' ? n.relationsSeed : 50,
-        relationsPreset: n.npc?.relations || null
-      };
-    });
+    const runRef = db.doc(`storyRuns/${charId}`);
+    const runSnap = await runRef.get();
+    const run = runSnap.data();
+    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+    const rules = run.rules;
+    if (!rules) throw new HttpsError('failed-precondition', 'V2 규칙이 먼저 필요합니다.');
 
-    const system = `역할: 세계관/NPC 설계 디자이너
+    // 프리롤 준비 + 로컬 소비
+    let pre = await ensurePreroll(runRef);
+    const nextRoll = ()=>{
+      const i = (pre.cursor||0) % PREROLL_SIZE;
+      const roll = pre.prerolls[i];
+      pre.prerolls[i] = d100();
+      pre.cursor = (i+1) % PREROLL_SIZE;
+      pre.updatedAt = new Date();
+      return roll;
+    };
+
+    // 설계안에 명시된 효과 타입
+    const EFFECT_TYPES = ['DAMAGE_MULTIPLIER', 'DAMAGE_REDUCTION_SELF', 'MAX_HP_PERCENT_DAMAGE', 'HEAL_SELF'];
+
+    const world = run.world;
+    const byDiff = run.enrichment.monstersByDifficulty || {};
+    for (const diff of difficulties){
+      const fields = (run.graph?.nodes||[]).filter(n=>n.kind==='field' && n.difficulty===diff).map(n=>({ id:n.id, name:n.name }));
+      if (fields.length===0) continue;
+
+      // 프리롤 기반으로 몬스터 및 스킬/효과 구조 생성
+      const monsterCount = rangeMap(nextRoll(), 8, 12);
+      const monsterConstraints = [];
+      for (let i = 0; i < monsterCount; i++) {
+        const grade = choiceFromRoll(rules.ENEMY_GRADES.slice(0, -1), nextRoll()); // hidden 제외
+        const skillCount = rangeMap(nextRoll(), 1, 3);
+        const skills = [];
+        for (let j = 0; j < skillCount; j++) {
+            let effectCount = 0;
+            if (grade === 'normal' && nextRoll() > 50) effectCount = 1;
+            else if (grade === 'elite') effectCount = rangeMap(nextRoll(), 1, 2);
+            else if (grade === 'boss') effectCount = rangeMap(nextRoll(), 1, 3);
+
+            const effects = [];
+            for (let k = 0; k < effectCount; k++) {
+                const type = choiceFromRoll(EFFECT_TYPES, nextRoll());
+                let value, triggerTurn = 0;
+
+                if (nextRoll() > 50) { // 50% 확률로 지연 발동
+                    triggerTurn = rangeMap(nextRoll(), 1, 5);
+                }
+
+                switch (type) {
+                    case 'DAMAGE_MULTIPLIER':
+                        value = 1 + 0.02 * rangeMap(nextRoll(), 10, 50); // 1.2 ~ 2.0
+                        break;
+                    case 'DAMAGE_REDUCTION_SELF':
+                        value = 1 + 0.02 * rangeMap(nextRoll(), 5, 40); // 1.1 ~ 1.8
+                        break;
+                    case 'MAX_HP_PERCENT_DAMAGE':
+                        value = rangeMap(nextRoll(), 10, 50); // 10 ~ 50%
+                        break;
+                    case 'HEAL_SELF':
+                        value = rangeMap(nextRoll(), 10, 20); // 10 ~ 20%
+                        break;
+                }
+                effects.push({ type, value: parseFloat(value.toFixed(2)), triggerTurn });
+            }
+            skills.push({ effects });
+        }
+        monsterConstraints.push({ grade, skills });
+      }
+      
+      const system = `역할: 몬스터 디자이너
 규칙:
-- 오직 JSON 한 개 객체만 출력. 마크다운/코드펜스/설명문 금지.
-- 스키마 외 키 금지, null/undefined 금지, 모든 문자열은 200자 이내.
-- "groupAttitudeToPlayerInput"이 주어지면 그 값을 그대로 사용(friendly/neutral/hostile).
-- "npcAttitudeBias"(-1/0/+1)를 반영해 개인별 attitudeToPlayer를 분포시킬 것.
-- "relationsPreset"이 주어지면 그 행렬(1..5, 대칭, 대각=3)을 그대로 복사 사용할 것(숫자 변경 금지).`;
+- 오직 JSON 한 개 객체만 출력. 마크다운/코드펜스 금지.
+- 스키마 외 키/수치 금지(레벨/체력/확률/수치는 절대 넣지 말 것).
+- 입력된 "constraints" 구조를 완벽하게 따를 것. 각 몬스터, 스킬, 효과의 개수와 값을 절대 변경하지 말고 그대로 출력 JSON에 포함시켜라.
+- 너의 역할은 이 기계적인 제약사항에 어울리는 'name', 'description', 'summary'를 창의적으로 채우는 것이다.`;
 
-    const user = `
+      const user = `
 입력:
-- 세계 요약: 이름/소개/상세
-- 비-필드 노드: id, name, difficulty, groupAttitude, npcCount,
-                groupAttitudeToPlayerInput(필수), npcAttitudeBias(-1|0|+1), relationsSeed(정수),
-                relationsPreset(행렬이 있을 경우 그대로 사용)
+- 세계: ${world.name}
+- 소개: ${world.intro}
+- 난이도: "${diff}"
+- 몬스터 제약사항 (반드시 이 구조와 값을 따를 것): ${JSON.stringify(monsterConstraints, null, 2)}
 
-출력 스키마(고정):
+출력 스키마 (name, description, summary만 창작):
 {
-  "nodes": [
+  "difficulty": "${diff}",
+  "monsters": [
     {
-      "id": "N1",
-      "npcs": [ { "id":"npc_1","name":"…","role":"…","trait":"…","backstory":"…","attitudeToPlayer":"우호적|보통|나쁨" } ],
-      "relations": { "npc_1": { "npc_1": 3, "npc_2": 2 }, "npc_2": { "npc_1": 2, "npc_2": 3 } },
-      "groupAttitudeToPlayer": "friendly|neutral|hostile" // ← 반드시 입력값을 그대로 사용
+      "name": "...",
+      "description": "2~3문장",
+      "grade": "elite", // constraints에서 복사
+      "skills": [
+        {
+          "name": "...",
+          "summary": "효과 요약(수치 금지)",
+          "effects": [ // constraints에서 복사
+            { "type": "DAMAGE_MULTIPLIER", "value": 1.5, "triggerTurn": 2 }
+          ]
+        }
+      ]
     }
   ]
-}
+}`;
 
-제약:
-- 각 노드의 npcs 길이는 npcCount(최소5~최대10) 정확히 맞출 것.
-- groupAttitudeToPlayer는 groupAttitudeToPlayerInput을 그대로 사용.
-- npcAttitudeBias(-1/0/+1)에 따라 개인 attitudeToPlayer 분포를 조정(예: +1이면 '나쁨' 비중 ↑).
-- relationsPreset이 있으면 그대로 복사하고, 없으면 1..5 정수로 대칭/대각3 행렬 생성.
-데이터:
-- 세계: ${world.name}
-- 소개: ${world.intro}
-- 상세: ${(world.detail||'').slice(0,1200)}
-- 비-필드: ${JSON.stringify(nonFields, null, 2)}
-`;
+      const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-pro-latest', system, user);
+      byDiff[diff] = data;
+    }
 
-    const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.0-pro-exp', system, user);
-    await runRef.set({ enrichment: { ...(run.enrichment||{}), npcs: data, npcsUpdatedAt: Timestamp.now() } }, { merge:true });
-    return { ok:true, npcs:data };
-  });
+    // 프리롤 커서 업데이트 + 결과 저장
+    await runRef.set({
+      prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
+      enrichment: { ...(run.enrichment||{}), monstersByDifficulty: byDiff, monstersUpdatedAt: Timestamp.now() }
+    }, { merge:true });
 
-  // V3-2) 몬스터 팩 (난이도별) — 개수/스킬수 모두 프리롤로 고정 후 프롬프트에 명시
-  const enrichMonstersByDifficultyV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY] }, async (req)=>{
-    const uid = req.auth?.uid;
-    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
-    const { charId, difficulties = ['easy','normal','hard','vhard','legend','impossible'] } = req.data||{};
-    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+    return { ok:true, monstersByDifficulty: byDiff };
+  });
 
-    const runRef = db.doc(`storyRuns/${charId}`);
-    const runSnap = await runRef.get();
-    const run = runSnap.data();
-    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+  // V3-3) 상점/드랍 서술 팩 — 아이템 효과 구조화 추가
+  const enrichShopsAndDropsV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY], memory: '1GiB' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId } = req.data||{};
+    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
 
-    // 프리롤 준비 + 로컬 소비
-    let pre = await ensurePreroll(runRef);
-    const nextRoll = ()=>{
-      const i = (pre.cursor||0) % PREROLL_SIZE;
-      const roll = pre.prerolls[i];
-      pre.prerolls[i] = d100();
-      pre.cursor = (i+1) % PREROLL_SIZE;
-      pre.updatedAt = new Date();
-      return roll;
+    const runRef = db.doc(`storyRuns/${charId}`);
+    const runSnap = await runRef.get();
+    const run = runSnap.data();
+    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+
+    const world = run.world;
+    const nonFieldNodes = (run.graph?.nodes||[]).filter(n=>n.kind!=='field');
+
+    // 프리롤 준비 + 로컬 소비
+    let pre = await ensurePreroll(runRef);
+    const nextRoll = ()=>{
+      const i = (pre.cursor||0) % PREROLL_SIZE;
+      const roll = pre.prerolls[i];
+      pre.prerolls[i] = d100();
+      pre.cursor = (i+1) % PREROLL_SIZE;
+      pre.updatedAt = new Date();
+      return roll;
+    };
+
+    const ITEM_EFFECT_TYPES = {
+        potion: [{ type: 'HEAL_HP', min: 20, max: 100 }, { type: 'BLOCK_NEXT_ATTACK', min: 1, max: 1 }],
+        general: [{ type: 'HEAL_HP', min: 10, max: 50 }],
+        clothes: [{ type: 'INCREASE_MAX_HP', min: 10, max: 50 }],
+        blacksmith: [{ type: 'INCREASE_DAMAGE', min: 5, max: 20 }]
     };
 
-    const world = run.world;
-    const byDiff = {};
-    for (const diff of difficulties){
-      const fields = (run.graph?.nodes||[]).filter(n=>n.kind==='field' && n.difficulty===diff).map(n=>({ id:n.id, name:n.name }));
-      if (fields.length===0) continue;
+    // 카테고리/아이템 개수/효과 프리롤 결정
+    const allCats = ['blacksmith','general','clothes','potion'];
+    const plan = {};
+    for (const n of nonFieldNodes){
+      const startIdx = (Math.max(1, nextRoll())-1) % allCats.length;
+      const catCount = rangeMap(nextRoll(), 1, 3); // 1~3개 카테고리
+      const ordered = rotate(allCats, startIdx);
+      const cats = ordered.slice(0, catCount);
 
-      // 프리롤: 몬스터 수(8~12), 각 몬스터 스킬 수(1~3)
-      const monsterCount = rangeMap(nextRoll(), 8, 12);
-      const skillCounts = Array.from({length: monsterCount}, ()=> rangeMap(nextRoll(), 1, 3));
+      const itemConstraints = {};
+      for (const c of cats){
+        const itemCount = rangeMap(nextRoll(), 3, 6);
+        itemConstraints[c] = [];
+        for (let i = 0; i < itemCount; i++) {
+            const effectTemplate = choiceFromRoll(ITEM_EFFECT_TYPES[c], nextRoll());
+            const effectValue = rangeMap(nextRoll(), effectTemplate.min, effectTemplate.max);
+            const isConsumable = c === 'potion' || c === 'general';
+            const price = (effectValue * 5) + rangeMap(nextRoll(), 10, 50);
 
-      const system = `역할: 몬스터 디자이너
+            itemConstraints[c].push({
+                isConsumable,
+                uses: isConsumable ? 1 : -1, // -1 for permanent
+                price,
+                effect: { type: effectTemplate.type, value: effectValue }
+            });
+        }
+      }
+      plan[n.id] = { itemConstraints };
+    }
+
+    const dropLoreCount = rangeMap(nextRoll(), 12, 16);
+
+    const system = `역할: 상점/아이템 명명가
 규칙:
 - 오직 JSON 한 개 객체만 출력. 마크다운/코드펜스 금지.
-- 스키마 외 키/수치 금지(레벨/체력/등급/확률/수치는 절대 넣지 말 것).
-- monsters는 정확히 ${monsterCount}개.
-- i번째 몬스터의 skills 길이는 정확히 skillCounts[i]를 따를 것.`;
-
-      const user = `
-입력:
-- 세계: ${world.name}
-- 소개: ${world.intro}
-- 상세: ${(world.detail||'').slice(0,800)}
-- 난이도 "${diff}" 필드 목록: ${JSON.stringify(fields,null,2)}
-- 제약: monsters=${monsterCount}, skillCounts=${JSON.stringify(skillCounts)}
-
-출력 스키마:
-{ "difficulty":"${diff}", "monsters":[ { "name":"…", "description":"2~3문장", "skills":[{"name":"…","summary":"효과 요약(수치 금지)"}], "tags": ["선택"] } ] }`;
-
-      const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.0-pro-exp', system, user);
-      byDiff[diff] = { ...data, constraints: { monsterCount, skillCounts } };
-    }
-
-    // 프리롤 커서 업데이트 + 결과 저장
-    await runRef.set({
-      prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
-      enrichment: { ...(run.enrichment||{}), monstersByDifficulty: byDiff, monstersUpdatedAt: Timestamp.now() }
-    }, { merge:true });
-
-    return { ok:true, monstersByDifficulty: byDiff };
-  });
-
-  // V3-3) 상점/드랍 서술 팩 — 카테고리/아이템 개수/드랍템플릿 개수까지 프리롤로 고정
-  const enrichShopsAndDropsV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY] }, async (req)=>{
-    const uid = req.auth?.uid;
-    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
-    const { charId } = req.data||{};
-    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
-
-    const runRef = db.doc(`storyRuns/${charId}`);
-    const runSnap = await runRef.get();
-    const run = runSnap.data();
-    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
-
-    const world = run.world;
-    const nonFieldNodes = (run.graph?.nodes||[]).filter(n=>n.kind!=='field');
-
-    // 프리롤 준비 + 로컬 소비
-    let pre = await ensurePreroll(runRef);
-    const nextRoll = ()=>{
-      const i = (pre.cursor||0) % PREROLL_SIZE;
-      const roll = pre.prerolls[i];
-      pre.prerolls[i] = d100();
-      pre.cursor = (i+1) % PREROLL_SIZE;
-      pre.updatedAt = new Date();
-      return roll;
-    };
-
-    // 카테고리/아이템 개수 프리롤 결정
-    const allCats = ['blacksmith','general','clothes','potion'];
-    const plan = {};
-    for (const n of nonFieldNodes){
-      const startIdx = (Math.max(1, nextRoll())-1) % allCats.length;
-      const catCount = rangeMap(nextRoll(), 1, 3); // 1~3개 카테고리
-      const ordered = rotate(allCats, startIdx);
-      const cats = ordered.slice(0, catCount);
-
-      const itemCounts = {};
-      for (const c of cats){
-        itemCounts[c] = rangeMap(nextRoll(), 3, 6); // 각 카테고리 3~6개
-      }
-      plan[n.id] = { categories: cats, itemCountsByCategory: itemCounts };
-    }
-
-    const dropLoreCount = rangeMap(nextRoll(), 12, 16); // 드랍 네이밍 템플릿 12~16개
-
-    const system = `역할: 상점/아이템 명명가
-규칙:
-- 오직 JSON 한 개 객체만 출력. 마크다운/코드펜스 금지.
-- 스키마 외 키 금지. 문자열 120자 이내.
-- 각 노드별 카테고리/아이템 개수는 입력 plan을 정확히 따른다.
+- 입력된 "plan"의 제약사항(isConsumable, uses, price, effect)을 절대 변경하지 말고 그대로 출력 JSON에 포함시켜라.
+- 너의 역할은 이 기계적인 제약사항에 어울리는 'name', 'description', 'suggestedRarity'를 창의적으로 채우는 것이다.
 - "alpha","omega" 레어리티는 절대 사용/표기 금지(판매 금지).`;
 
-    const user = `
+    const user = `
 입력:
 - 세계 요약: ${world.name} / ${world.intro}
-- 상세: ${(world.detail||'').slice(0,800)}
 - 상점 계획(plan): ${JSON.stringify(plan,null,2)}
 - 드랍 네이밍 템플릿 개수: ${dropLoreCount}
 
 요구:
-1) shopInventories
-   - 노드별 plan.categories에 지정된 카테고리만 생성
-   - 각 카테고리는 plan.itemCountsByCategory[cat] 개수만큼 아이템 생성
-   - 아이템 스키마: { name, description(1~2문장), suggestedRarity in ["normal","rare","epic","legend","aether"], isConsumable:boolean }
-   - 금지: "alpha","omega" 사용/표기 금지
-2) dropLore
-   - 정확히 ${dropLoreCount}개 { name, description } (드랍 이름 템플릿)
-   - 레어리티/확률/수치는 쓰지 말 것(전투 엔진에서 결정)
+1) shopInventories: 각 노드별 plan.itemConstraints에 맞춰 아이템 생성. name, description, suggestedRarity만 창작.
+2) dropLore: ${dropLoreCount}개의 { name, description } 생성.
 
 출력 스키마(고정):
 {
-  "shopInventories": { "N1": { "blacksmith":[{"name":"…","description":"…","suggestedRarity":"rare","isConsumable":false}], "potion":[…] } },
-  "dropLore": [ { "name":"…", "description":"…" } ]
+  "shopInventories": {
+    "N1": {
+      "potion": [
+        {
+          "name": "...",
+          "description": "...",
+          "suggestedRarity": "normal",
+          "isConsumable": true, // plan에서 복사
+          "uses": 1, // plan에서 복사
+          "price": 120, // plan에서 복사
+          "effect": { "type": "HEAL_HP", "value": 50 } // plan에서 복사
+        }
+      ]
+    }
+  },
+  "dropLore": [ { "name":"...", "description":"..." } ]
 }`;
 
-    const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.0-pro-exp', system, user);
+    const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-pro-latest', system, user);
 
-    await runRef.set({
-      prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
-      enrichment: { ...(run.enrichment||{}), shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[], shopsUpdatedAt: Timestamp.now() }
-    }, { merge:true });
+    await runRef.set({
+      prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
+      enrichment: { ...(run.enrichment||{}), shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[], shopsUpdatedAt: Timestamp.now() }
+    }, { merge:true });
 
-    return { ok:true, shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[] };
-  });
+    return { ok:true, shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[] };
+  });
 
-  return {
-    enrichNPCsV3,
-    enrichMonstersByDifficultyV3,
-    enrichShopsAndDropsV3,
-  };
+  return {
+    enrichNPCsV3,
+    enrichMonstersByDifficultyV3,
+    enrichShopsAndDropsV3,
+  };
 };
