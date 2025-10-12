@@ -4,8 +4,6 @@ const { Timestamp, FieldValue } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
 
 // === V2에서 가져온 헬퍼 및 룰 테이블 정의 시작 ===
-// (V2 파일에 정의된 프리롤, 클램프, 룰 테이블 등을 복사하여 사용합니다.)
-
 // --- 프리롤 링버퍼 헬퍼 ---
 const PREROLL_SIZE = 50;
 function d100(){ return Math.floor(Math.random()*100)+1; }
@@ -30,28 +28,53 @@ const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
 const rangeMap = (r, min, max) => min + ((Math.max(1, r)-1) % (max-min+1));
 const choiceFromRoll = (arr, r) => arr[(Math.max(1, r)-1) % arr.length];
 
+const DIFFICULTIES = ['easy','normal','hard','vhard','legend','impossible'];
+const ENEMY_GRADES = ['trash','normal','elite','boss','hidden'];
+
 function buildStoryRulesV2(){
   // V2.js에서 복사된 전체 규칙을 여기에 포함해야 합니다.
-  // 여기서는 생략하고, 필수적인 leveling 및 travel만 명시합니다.
   const travel = { ambushChance: 18 }; // %
+  // [핵심] 사용자가 요청한 레벨링 규칙이 명확히 정의됨: 기본HP 100, 레벨당 HP 5, 최대 레벨 100
   const leveling = { hpBase:100, hpPerLevel:5, expField:'story_exp', maxLevel:100 };
-  // ... (다른 규칙들: gradeProb, hpRanges, dmgRanges, blockBase, dropRates 등)
-  return { travel, leveling, hpRanges:{easy:{trash:[20,35]}}, dmgRanges:{easy:{trash:[3,6]}} /* ... */ };
+  
+  const hpRanges = {
+    easy:      {trash:[20,35], normal:[30,50], elite:[60,90],  boss:[120,180], hidden:[50,200]},
+    // ... (다른 난이도별 상세 범위는 V2.js 참조)
+  };
+  const dmgRanges = {
+    easy:      {trash:[3,6],  normal:[5,9],  elite:[10,18], boss:[16,26], hidden:[8,28]},
+    // ... (다른 난이도별 상세 범위는 V2.js 참조)
+  };
+  // ... (다른 규칙들: gradeProb, blockBase, dropRates 등)
+  return { 
+    travel, 
+    leveling, 
+    hpRanges, 
+    dmgRanges,
+    ENEMY_GRADES,
+    DIFFICULTIES
+  };
 }
 const STORY_RULES = buildStoryRulesV2();
 
 // --- 레벨/HP 계산 및 EXP 정산 유틸 ---
 function getLevelFromExp(exp, maxLevel=100) {
-  // 간단화된 레벨링 공식 가정 (실제 공식은 프로젝트에 맞게 조정 필요)
+  // 간단화된 레벨링 공식: (1레벨 0exp)
   const L = Math.floor(Math.sqrt(exp / 50 + 1));
   return clamp(L, 1, maxLevel);
 }
 function getMaxHpFromLevel(level, base=100, perLevel=5) {
+  // 기본 HP 100 + (레벨-1) * 5
   return base + (level - 1) * perLevel;
 }
 
 /**
  * 캐릭터 문서에 story_exp_total를 업데이트하고 레벨/최대HP를 계산하며 story_coins를 민팅합니다.
+ * @param {admin.firestore.Transaction} tx
+ * @param {admin.firestore.DocumentReference} charRef
+ * @param {string} ownerUid
+ * @param {number} addExp
+ * @param {string} note
  */
 async function mintByAddStoryExp(tx, charRef, ownerUid, addExp, note) {
   addExp = Math.max(0, Math.floor(Number(addExp) || 0));
@@ -63,18 +86,19 @@ async function mintByAddStoryExp(tx, charRef, ownerUid, addExp, note) {
   const runData = cSnap.data().story_run_data || {};
 
   const expTotal0 = Math.floor(Number(runData.story_exp_total || 0));
-  const expTotal1 = expTotal0 + addExp;
+  const expTotal1 = expTotal0 + addExp; // 스토리 전용 EXP 누적
 
   const L = STORY_RULES.leveling;
   const level = getLevelFromExp(expTotal1, L.maxLevel);
   const maxHp = getMaxHpFromLevel(level, L.hpBase, L.hpPerLevel);
 
-  // 코인 민팅: 100 Exp 당 1 Story Coin으로 민팅 (V2 규칙 참조)
+  // 코인 민팅: 100 Exp 당 1 Story Coin
   const mintRate = 100;
   const minted = Math.floor(addExp / mintRate);
   
   const userRef = db.doc(`users/${ownerUid}`);
 
+  // [WRITE 1] 캐릭터 업데이트
   tx.update(charRef, {
     story_run_data: {
       ...runData,
@@ -86,7 +110,7 @@ async function mintByAddStoryExp(tx, charRef, ownerUid, addExp, note) {
     updatedAt: Timestamp.now(),
   });
   
-  // 유저의 story_coins 업데이트
+  // [WRITE 2] 유저의 story_coins 업데이트
   if (minted > 0) {
     tx.set(userRef, { story_coins: FieldValue.increment(minted) }, { merge: true });
   }
@@ -98,7 +122,6 @@ async function mintByAddStoryExp(tx, charRef, ownerUid, addExp, note) {
 
 // --- (재사용) 스토리 액세스 권한 확인 함수 ---
 async function hasStoryAccess(admin, uid){
-  // ... (이전과 동일)
   if (!uid) return false;
   try{
     const db = admin.firestore();
@@ -158,7 +181,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       if ((currentRunData.currentHp || 0) <= 0) throw new HttpsError('failed-precondition','캐릭터 HP가 0입니다.');
 
       // 2. Ambush 체크 (Field -> Field 이동 시)
-      const roll = await takeRollTx(tx, prerollRef); // 프리롤 소비
+      const roll = await takeRollTx(tx, prerollRef); // 프리롤 소비 (READ+WRITE)
       let nextState = 'move';
       if (currentNode.kind === 'field' && targetNode.kind === 'field') {
           const ambushChance = rules.travel.ambushChance; // 18%
@@ -171,17 +194,19 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       const newCurrentNodeId = (nextState === 'move' ? targetNodeId : currentNodeId);
       
       // 3. 업데이트 (이동 또는 전투 시작)
-      const updatePayload = {
-        'story_run_data.current_node': newCurrentNodeId,
-        'story_run_data.updatedAt': Timestamp.now(),
-        'story_run_data.log': FieldValue.arrayUnion({ 
+      const logEntry = { 
           type: nextState, 
           from: prevNodeId, 
           to: newCurrentNodeId, 
           roll: nextState === 'battle' ? roll : undefined,
           desc: nextState === 'battle' ? `Ambush! ${prevNodeId}에서 전투 시작` : `${prevNodeId}에서 ${newCurrentNodeId}로 이동`, 
           at: Timestamp.now() 
-        })
+      };
+
+      const updatePayload = {
+        'story_run_data.current_node': newCurrentNodeId,
+        'story_run_data.updatedAt': Timestamp.now(),
+        'story_run_data.log': FieldValue.arrayUnion(logEntry)
       };
       
       if (nextState === 'battle') {
@@ -199,9 +224,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         updatePayload['story_run_data.battle'] = FieldValue.delete();
       }
 
+      // [WRITES]
       tx.update(charRef, updatePayload);
       
-      result = { ok: true, action: nextState, currentNode: newCurrentNodeId, targetNode: targetNodeId };
+      result = { ok: true, action: nextState, currentNode: newCurrentNodeId, targetNode: targetNodeId, logEntry: logEntry };
     });
 
     return result;
@@ -227,7 +253,6 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
       if (!cSnap.exists) throw new HttpsError('not-found','캐릭터 없음');
       const charData = cSnap.data() || {};
-      const runData = rSnap.data() || {};
       
       if (!rSnap.exists || charData.owner_uid !== uid) throw new HttpsError('failed-precondition','유효하지 않은 스토리 런');
 
@@ -239,22 +264,28 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       
       // (1) 몬스터 정보 확정 (pending_start일 때)
       if (battle.status === 'pending_start' || !battle.monster) {
-        const roll = await takeRollTx(tx, prerollRef);
+        const roll = await takeRollTx(tx, prerollRef); // 프리롤 소비 (READ+WRITE)
         // TODO: V2/V3 규칙(노드 난이도, V3 몬스터 목록)에 따라 몬스터 확정 로직 구현
-        const diff = 'easy'; 
-        const grade = choiceFromRoll(['trash','normal'], roll); // 임시 등급 선택
+        const currentNodeId = currentRunData.current_node;
+        const currentNode = runData.graph.nodes.find(n => n.id === currentNodeId);
+        const diff = currentNode?.difficulty || 'normal'; 
+        
+        // 필드 노드일 경우에만 등급 선택
+        const gradeProb = rules.gradeProb?.[diff] || rules.gradeProb?.normal || {trash: 100};
+        const gradeArr = Object.entries(gradeProb).flatMap(([g, p]) => Array(p).fill(g));
+        const grade = choiceFromRoll(gradeArr, roll); 
 
-        const hpRange = rules.hpRanges[diff][grade];
-        const dmgRange = rules.dmgRanges[diff][grade];
+        const hpRange = rules.hpRanges[diff]?.[grade] || [10, 20];
+        const dmgRange = rules.dmgRanges[diff]?.[grade] || [1, 5];
 
         battle.monster = {
-          id: 'mon_1',
+          id: 'mon_'+Timestamp.now().toMillis(),
           name: '더미 몬스터', 
           currentHp: rangeMap(roll, hpRange[0], hpRange[1]),
           maxHp: rangeMap(roll, hpRange[0], hpRange[1]),
           grade: grade,
           difficulty: diff,
-          skills: [{name:'할퀴기', desc:'1~3 피해'}],
+          skills: [{name:'할퀴기', desc:'기본 피해'}],
           hpRange: hpRange,
           dmgRange: dmgRange,
         };
@@ -272,20 +303,24 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       battle.turn++;
       
       // (2) 유저 턴 처리
+      let playerDmg = 0;
       if (action === 'attack') {
-        const roll = await takeRollTx(tx, prerollRef);
-        const playerDmg = rangeMap(roll, 5, 15); // 임시 데미지
+        const roll = await takeRollTx(tx, prerollRef); // 프리롤 소비 (READ+WRITE)
+        playerDmg = rangeMap(roll, 5, 15); // 임시 데미지
         
         // TODO: 블록 확률 체크 및 데미지 계산
         
         monsterHp -= playerDmg;
         log.push({ turn: battle.turn, type: 'player_attack', desc: `캐릭터가 공격하여 ${battle.monster.name}에게 ${playerDmg} 피해를 입혔습니다.` });
-      } 
+      } else {
+         log.push({ turn: battle.turn, type: 'player_action', desc: `캐릭터가 ${action} 행동을 했습니다.` });
+      }
 
       // (3) 몬스터 턴 처리
+      let monsterDmg = 0;
       if (monsterHp > 0) {
-        const roll = await takeRollTx(tx, prerollRef);
-        const monsterDmg = rangeMap(roll, battle.monster.dmgRange[0], battle.monster.dmgRange[1]);
+        const roll = await takeRollTx(tx, prerollRef); // 프리롤 소비 (READ+WRITE)
+        monsterDmg = rangeMap(roll, battle.monster.dmgRange[0], battle.monster.dmgRange[1]);
         
         // TODO: 블록 확률 체크 및 데미지 감소/무효화 적용
         
@@ -312,10 +347,11 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       };
       
       if (battleStatus === 'done') {
-        updatePayload['story_run_data.battle'] = FieldValue.delete();
-        // 클라이언트에서 endStoryRun을 호출하도록 유도합니다.
+        // endStoryRun 함수를 호출하도록 클라이언트에 알립니다.
+        // 전투 상태 필드는 endStoryRun에서 삭제됩니다.
       }
 
+      // [WRITES]
       tx.update(charRef, updatePayload);
       
       battleResult = { ok: true, status: battleStatus, playerHp, monsterHp, endReason, logEntry: log.slice(-1)[0] };
@@ -345,6 +381,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       
       if (charData.owner_uid !== uid) throw new HttpsError('permission-denied','본인 캐릭터 아님');
       
+      // [핵심] 독립된 스토리 인벤토리에서 아이템 탐색
       const inventory = currentRunData.inventory || [];
       const itemToUse = inventory.find(i => i.id === itemId);
 
@@ -365,21 +402,24 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       }).filter(item => item.count > 0);
       
       // 3. 업데이트
-      const updatePayload = {
-        'story_run_data.currentHp': newHp,
-        'story_run_data.inventory': newInventory,
-        'story_run_data.log': FieldValue.arrayUnion({ 
+      const logEntry = { 
           type: 'item_use', 
           itemId: itemId, 
           desc: `${itemToUse.name}을(를) 사용하여 HP ${hpRecover}을 회복했습니다. (현재 HP: ${newHp}/${maxHp})`, 
           at: Timestamp.now() 
-        }),
+      };
+
+      const updatePayload = {
+        'story_run_data.currentHp': newHp,
+        'story_run_data.inventory': newInventory,
+        'story_run_data.log': FieldValue.arrayUnion(logEntry),
         'story_run_data.updatedAt': Timestamp.now(),
       };
 
+      // [WRITES]
       tx.update(charRef, updatePayload);
       
-      result = { ok: true, itemId: itemId, currentHp: newHp };
+      result = { ok: true, itemId: itemId, currentHp: newHp, logEntry: logEntry };
     });
 
     return result;
@@ -417,10 +457,11 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       let baseExp = turnsPlayed * 10;
       if (reason === 'victory') baseExp *= 2; 
 
-      // 2. EXP 정산 및 레벨/HP 업데이트
+      // 2. EXP 정산 및 레벨/HP 업데이트 (story_exp_total 사용)
       const expResult = await mintByAddStoryExp(tx, charRef, ownerUid, baseExp, `story_run_end:${runRef.id}:${reason}`);
       
       // 3. storyRun 문서 업데이트 (종료 상태)
+      // [WRITE 1]
       tx.update(runRef, {
         status: 'ended', 
         endedAt: Timestamp.now(), 
@@ -429,6 +470,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       });
 
       // 4. 캐릭터 문서 초기화 및 HP/레벨 업데이트
+      // [WRITE 2]
       tx.update(charRef, { 
         story_active_run: FieldValue.delete(),
         story_run_data: {
@@ -436,7 +478,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
           level: expResult.levelAfter, 
           maxHp: expResult.maxHpAfter,
           currentHp: expResult.maxHpAfter, // HP 만회
-          inventory: [], // 아이템 소멸
+          inventory: [], // [핵심] 독립된 스토리 인벤토리 아이템 소멸
           current_node: null,
           battle: FieldValue.delete(),
           updatedAt: Timestamp.now()
