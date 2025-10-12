@@ -35,6 +35,8 @@ const constructionFunctions = require('./construction');
 const landmarkFunctions = require('./landmark'); // 추가
 const taskFunctions = require('./tasks');
 const storyFns = require('./story')(admin, { onCall, HttpsError, logger, GEMINI_API_KEY });
+const storyV2Fns = require('./storyV2')(admin);
+const storyV3Fns = require('./storyV3')(admin, { GEMINI_API_KEY });
 
 const stockmarket = require('./stockmarket')(admin, { onCall, HttpsError, logger, onSchedule, GEMINI_API_KEY });
 exports.updateStockMarket      = stockmarket.updateStockMarket;
@@ -806,6 +808,8 @@ Object.assign(exports, landmarkFunctions);
 Object.assign(exports, taskFunctions);
 
 Object.assign(exports, storyFns);
+Object.assign(exports, storyV2Fns);
+Object.assign(exports, storyV3Fns);
 
 // === BEGIN: admin tools (search) ===
 async function __isAdmin(uid) {
