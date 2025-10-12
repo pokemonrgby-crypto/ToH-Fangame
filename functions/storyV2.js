@@ -187,9 +187,162 @@ module.exports = (admin) => {
     return { ok:true, roll };
   });
 
+  // --- [NEW V2 RULES] 기본 전투/드랍/이동 룰 테이블 ---
+  const ENEMY_GRADES = ['trash','normal','elite','boss','hidden'];
+  const DROP_RARITIES = ['normal','rare','epic','legend','aether','alpha','omega'];
+
+  function buildStoryRulesV2(){
+    // hidden은 난이도와 무관하게 1% 고정
+    const gradeProb = {
+      easy:      {trash:55, normal:35, elite:8,  boss:1, hidden:1},
+      normal:    {trash:45, normal:40, elite:12, boss:2, hidden:1},
+      hard:      {trash:35, normal:42, elite:18, boss:4, hidden:1},
+      vhard:     {trash:25, normal:44, elite:22, boss:8, hidden:1},
+      legend:    {trash:15, normal:45, elite:25, boss:14,hidden:1},
+      impossible:{trash:10, normal:40, elite:28, boss:21,hidden:1},
+    };
+
+    // 난이도×등급별 HP 범위(필드 하위 컬렉션으로 물리화 대상)
+    const hpRanges = {
+      easy:      {trash:[20,35], normal:[30,50], elite:[60,90],  boss:[120,180], hidden:[50,200]},
+      normal:    {trash:[30,45], normal:[40,65], elite:[90,130], boss:[160,240], hidden:[60,260]},
+      hard:      {trash:[40,60], normal:[60,90], elite:[130,190],boss:[220,320], hidden:[80,340]},
+      vhard:     {trash:[55,80], normal:[85,120],elite:[180,260],boss:[300,420], hidden:[100,480]},
+      legend:    {trash:[70,95], normal:[110,150],elite:[240,340],boss:[380,560], hidden:[120,620]},
+      impossible:{trash:[85,120],normal:[140,190],elite:[320,450],boss:[500,750], hidden:[140,820]},
+    };
+
+    // 난이도×등급별 유효 데미지 범위(서술용/튜닝용)
+    const dmgRanges = {
+      easy:      {trash:[3,6],  normal:[5,9],  elite:[10,18], boss:[16,26], hidden:[8,28]},
+      normal:    {trash:[5,8],  normal:[7,12], elite:[14,24], boss:[22,34], hidden:[10,36]},
+      hard:      {trash:[7,11], normal:[10,16],elite:[20,34], boss:[30,46], hidden:[14,48]},
+      vhard:     {trash:[9,14], normal:[13,20],elite:[28,46], boss:[40,62], hidden:[18,66]},
+      legend:    {trash:[12,18],normal:[17,26],elite:[38,60], boss:[52,78], hidden:[22,82]},
+      impossible:{trash:[15,22],normal:[21,32],elite:[50,78], boss:[66,100],hidden:[26,110]},
+    };
+
+    // 블록(막기) 기본확률 + 레벨차 보정
+    const blockBase = {
+      easy:      {trash:55, normal:45, elite:35, boss:25, hidden:20},
+      normal:    {trash:45, normal:38, elite:30, boss:20, hidden:18},
+      hard:      {trash:38, normal:32, elite:24, boss:16, hidden:14},
+      vhard:     {trash:32, normal:26, elite:20, boss:12, hidden:10},
+      legend:    {trash:26, normal:21, elite:16, boss:10, hidden:8},
+      impossible:{trash:22, normal:18, elite:14, boss:9,  hidden:7},
+    };
+    // (charLv - enemyLv)*1.5%를 더하고, [-20%, +20%]로 캡
+    const levelAdj = { perLevel: 1.5, min: -20, max: +20 };
+
+    // 드랍 등급표(α/ω는 hidden 전용)
+    const dropRates = {
+      common: { normal:60, rare:28, epic:9,  legend:3,  aether:0, alpha:0, omega:0 },   // trash
+      tough:  { normal:50, rare:30, epic:14, legend:6,  aether:0, alpha:0, omega:0 },   // normal
+      elite:  { normal:35, rare:34, epic:20, legend:10, aether:1, alpha:0, omega:0 },   // elite
+      boss:   { normal:20, rare:34, epic:26, legend:18, aether:2, alpha:0, omega:0 },   // boss
+      hidden: { normal:10, rare:22, epic:28, legend:26, aether:12, alpha:1, omega:1 },  // hidden
+    };
+    const dropKeyByGrade = { trash:'common', normal:'tough', elite:'elite', boss:'boss', hidden:'hidden' };
+
+    // 이동 중 이벤트
+    const travel = { ambushChance: 18 }; // %
+
+    // 아이템/화폐/레벨 정책(표기용; 실제 계산은 배틀 엔진 단계)
+    const idScheme = "{charId}_{runId}_{serial}";
+    const currencies = { story_coins: true };
+    const leveling = { hpBase:100, hpPerLevel:5, expField:'story_exp', maxLevel:100 };
+
+    return { ENEMY_GRADES, DROP_RARITIES, gradeProb, hpRanges, dmgRanges, blockBase, levelAdj, dropRates, dropKeyByGrade, travel, idScheme, currencies, leveling };
+  }
+
+  // V2-4) 룰 생성(저장)
+  const createStoryRulesV2 = onCall({ region:'us-central1' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId } = req.data||{};
+    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+
+    const ref = db.doc(`storyRuns/${charId}`);
+    const snap = await ref.get();
+    if (!snap.exists) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+
+    const rules = buildStoryRulesV2();
+    await ref.set({ rules, rulesUpdatedAt: Timestamp.now() }, { merge:true });
+    return { ok:true, rules };
+  });
+
+  // V2-5) 룰 조회(개발자 콘솔 출력용)
+  const getStoryRulesV2 = onCall({ region:'us-central1' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId } = req.data||{};
+    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+    const ref = db.doc(`storyRuns/${charId}`);
+    const d = (await ref.get()).data()||null;
+    return { ok: !!d?.rules, rules: d?.rules||null };
+  });
+
+  // V2-6) 필드 통계 물리화(필드 하위 컬렉션에 hp/dmg 범위 저장)
+  const materializeFieldStatsV2 = onCall({ region:'us-central1' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId } = req.data||{};
+    if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+
+    const runRef = db.doc(`storyRuns/${charId}`);
+    const run = (await runRef.get()).data();
+    if (!run?.graph?.nodes) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+    const rules = run.rules || buildStoryRulesV2(); // 없으면 즉석 생성
+
+    const fields = run.graph.nodes.filter(n=>n.kind==='field');
+    const batch = db.batch();
+    for (const f of fields){
+      const diff = f.difficulty;
+      for (const g of rules.ENEMY_GRADES){
+        const hp = rules.hpRanges[diff][g];
+        const dmg = rules.dmgRanges[diff][g];
+        const docRef = db.doc(`storyRuns/${charId}/fields/${f.id}_${g}`);
+        batch.set(docRef, {
+          fieldId: f.id,
+          grade: g,
+          difficulty: diff,
+          hpRange: { min: hp[0], max: hp[1] },
+          dmgRange:{ min: dmg[0], max: dmg[1] },
+          updatedAt: Timestamp.now()
+        }, { merge:true });
+      }
+    }
+    await batch.commit();
+    return { ok:true, count: fields.length * rules.ENEMY_GRADES.length };
+  });
+
+  // V2-7) 특정 필드/등급 범위 조회(디버그)
+  const getFieldStatsV2 = onCall({ region:'us-central1' }, async (req)=>{
+    const uid = req.auth?.uid;
+    if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
+    const { charId, fieldId } = req.data||{};
+    if (!charId || !fieldId) throw new HttpsError('invalid-argument','charId/fieldId 필요');
+
+    const runRef = db.doc(`storyRuns/${charId}`);
+    const run = (await runRef.get()).data();
+    if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
+    const rules = run.rules || buildStoryRulesV2();
+    const grades = rules.ENEMY_GRADES;
+
+    const col = db.collection(`storyRuns/${charId}/fields`);
+    const snaps = await Promise.all(grades.map(g=>col.doc(`${fieldId}_${g}`).get()));
+    const out = [];
+    snaps.forEach((s)=>{ if (s.exists) out.push(s.data()); });
+    return { ok:true, stats: out };
+  });
+
   return {
     createStoryPlanV2,
     getRunSkeletonV2,
     devTakeRollV2,
+    createStoryRulesV2,
+    getStoryRulesV2,
+    materializeFieldStatsV2,
+    getFieldStatsV2,
   };
 };
