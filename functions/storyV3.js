@@ -1,4 +1,4 @@
-const { onCall, HttpsError } = require('firebase-functions/v2/httpsys');
+const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { Timestamp } = require('firebase-admin/firestore');
 
 // --- 프리롤(공유 링버퍼 재사용) ---
