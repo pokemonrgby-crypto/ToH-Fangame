@@ -33,10 +33,11 @@ async function takeRollTx(tx, docRef){
   return roll;
 }
 
-// --- 스키마 유틸 ---
+// --- 공용 유틸 ---
 const DIFFICULTIES = ['easy','normal','hard','vhard','legend','impossible'];
 const clamp = (n,min,max)=>Math.max(min,Math.min(max,n));
-function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]||null; }
+const rangeMap = (r, min, max) => min + ((Math.max(1, r)-1) % (max-min+1)); // [min..max] 균등 매핑
+const choiceFromRoll = (arr, r) => arr[(Math.max(1, r)-1) % arr.length];
 
 function normalizeWorld(w={}){
   return {
@@ -46,20 +47,97 @@ function normalizeWorld(w={}){
     detail: String(w.detail?.lore_long||w.detail?.lore||w.detail||'').trim(),
   };
 }
-function makeNPCsSkeleton(min=5,max=10){
-  const n = clamp(Math.floor(Math.random()*(max-min+1))+min, 5, 10);
+
+// NPC 스켈레톤(개수/역할 선택도 프리롤 기반)
+function makeNPCsSkeleton(count, nextRoll){
+  const roles = ['상인','수습기사','도적','학자','장로','용병','사서'];
   const npcs = [];
+  const n = clamp(count,5,10);
   for (let i=0;i<n;i++){
-    npcs.push({ id:`npc_${i+1}`, name:`NPC ${i+1}`, role: pick(['상인','수습기사','도적','학자','장로','용병','사서']) });
+    const r = nextRoll();
+    npcs.push({ id:`npc_${i+1}`, name:`NPC ${i+1}`, role: choiceFromRoll(roles, r) });
   }
-  // 관계 매트릭스는 V3에서 정교화(여긴 자리만)
-  return { list:npcs, relations:{} };
+  return { list:npcs, relations:{} }; // relations는 아래에서 프리롤로 꽉 채움
 }
+
 function ladder(len){
   return Array.from({length:len},(_,i)=>{
     const idx = Math.min(DIFFICULTIES.length-1, Math.floor(i/Math.max(1,(len-1)/(DIFFICULTIES.length-1))));
     return DIFFICULTIES[idx];
   });
+}
+
+// 우호도 프리롤 → 입력값
+function groupAttitudeFromRoll(r, diff){
+  const idx = DIFFICULTIES.indexOf(diff);   // 뒤로 갈수록 더 냉랭해지는 편향
+  const shift = Math.max(0, idx)*5;         // 난이도 한 단계당 5%씩 우호도 하향
+  const friendlyCut = Math.max(10, 45 - shift); // 최소 10%는 유지
+  const neutralCut  = Math.max(friendlyCut+1, 85 - shift);
+  if (r <= friendlyCut) return 'friendly';
+  if (r <= neutralCut)  return 'neutral';
+  return 'hostile';
+}
+function attitudeBiasFromAttitude(a){ return a==='friendly' ? -1 : (a==='neutral' ? 0 : +1); }
+
+// --- 룰 테이블(전투/드랍/이동) ---
+const ENEMY_GRADES = ['trash','normal','elite','boss','hidden'];
+const DROP_RARITIES = ['normal','rare','epic','legend','aether','alpha','omega'];
+
+function buildStoryRulesV2(){
+  // hidden은 난이도와 무관하게 1% 고정
+  const gradeProb = {
+    easy:      {trash:55, normal:35, elite:8,  boss:1, hidden:1},
+    normal:    {trash:45, normal:40, elite:12, boss:2, hidden:1},
+    hard:      {trash:35, normal:42, elite:18, boss:4, hidden:1},
+    vhard:     {trash:25, normal:44, elite:22, boss:8, hidden:1},
+    legend:    {trash:15, normal:45, elite:25, boss:14,hidden:1},
+    impossible:{trash:10, normal:40, elite:28, boss:21,hidden:1},
+  };
+
+  const hpRanges = {
+    easy:      {trash:[20,35], normal:[30,50], elite:[60,90],  boss:[120,180], hidden:[50,200]},
+    normal:    {trash:[30,45], normal:[40,65], elite:[90,130], boss:[160,240], hidden:[60,260]},
+    hard:      {trash:[40,60], normal:[60,90], elite:[130,190],boss:[220,320], hidden:[80,340]},
+    vhard:     {trash:[55,80], normal:[85,120],elite:[180,260],boss:[300,420], hidden:[100,480]},
+    legend:    {trash:[70,95], normal:[110,150],elite:[240,340],boss:[380,560], hidden:[120,620]},
+    impossible:{trash:[85,120],normal:[140,190],elite:[320,450],boss:[500,750], hidden:[140,820]},
+  };
+
+  const dmgRanges = {
+    easy:      {trash:[3,6],  normal:[5,9],  elite:[10,18], boss:[16,26], hidden:[8,28]},
+    normal:    {trash:[5,8],  normal:[7,12], elite:[14,24], boss:[22,34], hidden:[10,36]},
+    hard:      {trash:[7,11], normal:[10,16],elite:[20,34], boss:[30,46], hidden:[14,48]},
+    vhard:     {trash:[9,14], normal:[13,20],elite:[28,46], boss:[40,62], hidden:[18,66]},
+    legend:    {trash:[12,18],normal:[17,26],elite:[38,60], boss:[52,78], hidden:[22,82]},
+    impossible:{trash:[15,22],normal:[21,32],elite:[50,78], boss:[66,100],hidden:[26,110]},
+  };
+
+  const blockBase = {
+    easy:      {trash:55, normal:45, elite:35, boss:25, hidden:20},
+    normal:    {trash:45, normal:38, elite:30, boss:20, hidden:18},
+    hard:      {trash:38, normal:32, elite:24, boss:16, hidden:14},
+    vhard:     {trash:32, normal:26, elite:20, boss:12, hidden:10},
+    legend:    {trash:26, normal:21, elite:16, boss:10, hidden:8},
+    impossible:{trash:22, normal:18, elite:14, boss:9,  hidden:7},
+  };
+  const levelAdj = { perLevel: 1.5, min: -20, max: +20 };
+
+  const dropRates = {
+    common: { normal:60, rare:28, epic:9,  legend:3,  aether:0, alpha:0, omega:0 },
+    tough:  { normal:50, rare:30, epic:14, legend:6,  aether:0, alpha:0, omega:0 },
+    elite:  { normal:35, rare:34, epic:20, legend:10, aether:1, alpha:0, omega:0 },
+    boss:   { normal:20, rare:34, epic:26, legend:18, aether:2, alpha:0, omega:0 },
+    hidden: { normal:10, rare:22, epic:28, legend:26, aether:12, alpha:1, omega:1 },
+  };
+  const dropKeyByGrade = { trash:'common', normal:'tough', elite:'elite', boss:'boss', hidden:'hidden' };
+
+  const travel = { ambushChance: 18 }; // %
+
+  const idScheme = "{charId}_{runId}_{serial}";
+  const currencies = { story_coins: true };
+  const leveling = { hpBase:100, hpPerLevel:5, expField:'story_exp', maxLevel:100 };
+
+  return { ENEMY_GRADES, DROP_RARITIES, gradeProb, hpRanges, dmgRanges, blockBase, levelAdj, dropRates, dropKeyByGrade, travel, idScheme, currencies, leveling };
 }
 
 module.exports = (admin) => {
@@ -79,7 +157,7 @@ module.exports = (admin) => {
     }catch(e){ logger.error(e); return false; }
   }
 
-  // V2-1) 스토리 런 뼈대 생성: 그래프 + 키이벤트 + 프리롤만
+  // V2-1) 스토리 런 뼈대 생성: 그래프 + 키이벤트 + 프리롤만 (모든 수치 프리롤)
   const createStoryPlanV2 = onCall({ region:'us-central1' }, async (req)=>{
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
@@ -93,32 +171,80 @@ module.exports = (admin) => {
 
     const worldNorm = normalizeWorld(world);
 
-    // 비-필드 골격 4~6개
-    const spineCount = 4 + Math.floor(Math.random()*3); // 4~6
+    // 프리롤 준비 + 로컬 소비 도우미
+    const runRef = db.doc(`storyRuns/${charId}`);
+    let pre = await ensurePreroll(runRef);
+    const nextRoll = ()=>{ // 로컬로 소비(마지막에 저장)
+      const i = (pre.cursor||0) % PREROLL_SIZE;
+      const roll = pre.prerolls[i];
+      pre.prerolls[i] = d100();
+      pre.cursor = (i+1) % PREROLL_SIZE;
+      pre.updatedAt = Timestamp.now();
+      return roll;
+    };
+
+    // 비-필드 골격 개수(4~6) ← 프리롤
+    const spineCount = rangeMap(nextRoll(), 4, 6);
     const diffs = ladder(spineCount);
     const nonField = [];
     for (let i=0;i<spineCount;i++){
+      const kind =
+        (i===0) ? 'town' :
+        (i===spineCount-1) ? 'landmark' :
+        choiceFromRoll(['town','hub','landmark'], nextRoll());
+
+      // NPC 수(5~10), 우호도 입력값, 바이어스, 관계 프리셋 생성
+      const npcCount = rangeMap(nextRoll(), 5, 10);
+      const gaRoll = nextRoll();
+      const ga = (i===0 ? 'friendly' : groupAttitudeFromRoll(gaRoll, diffs[i]));
+      const bias = attitudeBiasFromAttitude(ga);
+      const relationsSeed = nextRoll();
+
+      // NPC 스켈레톤(역할까지 프리롤)
+      const npcSkeleton = makeNPCsSkeleton(npcCount, nextRoll);
+
+      // 관계도 행렬(1..5, 대칭, 대각=3) ← 전부 프리롤로 고정
+      const ids = npcSkeleton.list.map(n=>n.id);
+      const relations = {};
+      for (const a of ids){
+        relations[a] = relations[a]||{};
+        for (const b of ids){
+          if (a===b){ relations[a][b]=3; continue; }
+          // 한 번만 굴리고 대칭 복사
+          if (relations[a][b]) continue;
+          const val = rangeMap(nextRoll(), 1, 5);
+          relations[a][b] = val;
+          relations[b] = relations[b]||{};
+          relations[b][a] = val;
+        }
+      }
+      npcSkeleton.relations = relations;
+
       nonField.push({
         id: `N${i+1}`,
-        kind: (i===0?'town': (i===spineCount-1?'landmark': pick(['town','hub','landmark'])) ),
+        kind,
         name: `${worldNorm.name} ${i===0?'시작 마을': (i===spineCount-1?'최종 거점':'거점')} ${i+1}`,
         difficulty: diffs[i],
-        npc: makeNPCsSkeleton(),  // 세부는 V3에서 채움
-        groupAttitude: (i===0?'friendly':'neutral'), // 시작마을 우호 고정
+        npc: npcSkeleton,                 // count/roles/relations까지 프리롤로 고정됨
+        groupAttitude: ga==='friendly'?'town':kind, // 표기용(맵 타입), 의미적 용도 없음
+        groupAttitudeToPlayerInput: ga,   // V3가 그대로 사용
+        npcAttitudeBias: bias,            // V3가 분포에 참고
+        relationsSeed,                    // 기록용(현재는 미사용)
         connects: []
       });
     }
 
-    // 비-필드 사이 필드 1~5개씩 삽입, 연결 생성
-    const nodes=[...nonField]; const edges=[];
+    // 비-필드 사이 필드 수(1~5) ← 프리롤
+    const nodes=[...nonField];
+    const edges=[];
     let fieldSerial=0;
     for (let i=0;i<nonField.length-1;i++){
       const a = nonField[i], b = nonField[i+1];
-      const k = 1 + Math.floor(Math.random()*5); // 1~5
+      const k = rangeMap(nextRoll(), 1, 5); // 1~5
       let prev = a.id;
       for (let f=0; f<k; f++){
         const id = `F${++fieldSerial}`;
-        // 뒤로 갈수록 어려워짐(대략적인 구배)
+        // 뒤로 갈수록 어려워짐(대략적인 구배, 랜덤 없음)
         const baseIdx = DIFFICULTIES.indexOf(a.difficulty);
         const step = Math.min(DIFFICULTIES.length-1, baseIdx + Math.floor((f+1)/Math.max(1, k/2)));
         nodes.push({
@@ -131,6 +257,7 @@ module.exports = (admin) => {
       }
       edges.push([prev, b.id, `자연어 연결: ${prev}→${b.id}`]);
     }
+
     // 양방향 연결 반영
     const map = Object.fromEntries(nodes.map(n=>[n.id,n]));
     edges.forEach(([u,v,desc])=>{
@@ -138,7 +265,7 @@ module.exports = (admin) => {
       map[v].connects.push({ to:u, desc:`역방향: ${desc}` });
     });
 
-    // 필연 Key Events(타이틀/위치만): 4~5개
+    // 필연 Key Events(타이틀/위치만): 4~5개 (랜덤 없음)
     const keyEvents = [
       { id:'EV1', title:'조력자와의 만남', loc:nodes.find(n=>n.kind!=='field' && n.id!=='N1')?.id || 'N1', status:'pending' },
       { id:'EV2', title:'첫 번째 시련', loc:nodes.find(n=>n.kind==='field')?.id || 'N2', status:'pending' },
@@ -148,10 +275,10 @@ module.exports = (admin) => {
     ];
 
     const runId = 'r'+Date.now();
-    const runRef = db.doc(`storyRuns/${charId}`);
-    await ensurePreroll(runRef); // 프리롤 준비
 
+    // 저장(프리롤 커서/버퍼 업데이트 포함)
     await runRef.set({
+      prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
       runId, world: worldNorm,
       graph: { nodes, edges },
       keyEvents,
@@ -186,74 +313,6 @@ module.exports = (admin) => {
     const roll = await db.runTransaction(tx => takeRollTx(tx, ref));
     return { ok:true, roll };
   });
-
-  // --- [NEW V2 RULES] 기본 전투/드랍/이동 룰 테이블 ---
-  const ENEMY_GRADES = ['trash','normal','elite','boss','hidden'];
-  const DROP_RARITIES = ['normal','rare','epic','legend','aether','alpha','omega'];
-
-  function buildStoryRulesV2(){
-    // hidden은 난이도와 무관하게 1% 고정
-    const gradeProb = {
-      easy:      {trash:55, normal:35, elite:8,  boss:1, hidden:1},
-      normal:    {trash:45, normal:40, elite:12, boss:2, hidden:1},
-      hard:      {trash:35, normal:42, elite:18, boss:4, hidden:1},
-      vhard:     {trash:25, normal:44, elite:22, boss:8, hidden:1},
-      legend:    {trash:15, normal:45, elite:25, boss:14,hidden:1},
-      impossible:{trash:10, normal:40, elite:28, boss:21,hidden:1},
-    };
-
-    // 난이도×등급별 HP 범위(필드 하위 컬렉션으로 물리화 대상)
-    const hpRanges = {
-      easy:      {trash:[20,35], normal:[30,50], elite:[60,90],  boss:[120,180], hidden:[50,200]},
-      normal:    {trash:[30,45], normal:[40,65], elite:[90,130], boss:[160,240], hidden:[60,260]},
-      hard:      {trash:[40,60], normal:[60,90], elite:[130,190],boss:[220,320], hidden:[80,340]},
-      vhard:     {trash:[55,80], normal:[85,120],elite:[180,260],boss:[300,420], hidden:[100,480]},
-      legend:    {trash:[70,95], normal:[110,150],elite:[240,340],boss:[380,560], hidden:[120,620]},
-      impossible:{trash:[85,120],normal:[140,190],elite:[320,450],boss:[500,750], hidden:[140,820]},
-    };
-
-    // 난이도×등급별 유효 데미지 범위(서술용/튜닝용)
-    const dmgRanges = {
-      easy:      {trash:[3,6],  normal:[5,9],  elite:[10,18], boss:[16,26], hidden:[8,28]},
-      normal:    {trash:[5,8],  normal:[7,12], elite:[14,24], boss:[22,34], hidden:[10,36]},
-      hard:      {trash:[7,11], normal:[10,16],elite:[20,34], boss:[30,46], hidden:[14,48]},
-      vhard:     {trash:[9,14], normal:[13,20],elite:[28,46], boss:[40,62], hidden:[18,66]},
-      legend:    {trash:[12,18],normal:[17,26],elite:[38,60], boss:[52,78], hidden:[22,82]},
-      impossible:{trash:[15,22],normal:[21,32],elite:[50,78], boss:[66,100],hidden:[26,110]},
-    };
-
-    // 블록(막기) 기본확률 + 레벨차 보정
-    const blockBase = {
-      easy:      {trash:55, normal:45, elite:35, boss:25, hidden:20},
-      normal:    {trash:45, normal:38, elite:30, boss:20, hidden:18},
-      hard:      {trash:38, normal:32, elite:24, boss:16, hidden:14},
-      vhard:     {trash:32, normal:26, elite:20, boss:12, hidden:10},
-      legend:    {trash:26, normal:21, elite:16, boss:10, hidden:8},
-      impossible:{trash:22, normal:18, elite:14, boss:9,  hidden:7},
-    };
-    // (charLv - enemyLv)*1.5%를 더하고, [-20%, +20%]로 캡
-    const levelAdj = { perLevel: 1.5, min: -20, max: +20 };
-
-    // 드랍 등급표(α/ω는 hidden 전용)
-    const dropRates = {
-      common: { normal:60, rare:28, epic:9,  legend:3,  aether:0, alpha:0, omega:0 },   // trash
-      tough:  { normal:50, rare:30, epic:14, legend:6,  aether:0, alpha:0, omega:0 },   // normal
-      elite:  { normal:35, rare:34, epic:20, legend:10, aether:1, alpha:0, omega:0 },   // elite
-      boss:   { normal:20, rare:34, epic:26, legend:18, aether:2, alpha:0, omega:0 },   // boss
-      hidden: { normal:10, rare:22, epic:28, legend:26, aether:12, alpha:1, omega:1 },  // hidden
-    };
-    const dropKeyByGrade = { trash:'common', normal:'tough', elite:'elite', boss:'boss', hidden:'hidden' };
-
-    // 이동 중 이벤트
-    const travel = { ambushChance: 18 }; // %
-
-    // 아이템/화폐/레벨 정책(표기용; 실제 계산은 배틀 엔진 단계)
-    const idScheme = "{charId}_{runId}_{serial}";
-    const currencies = { story_coins: true };
-    const leveling = { hpBase:100, hpPerLevel:5, expField:'story_exp', maxLevel:100 };
-
-    return { ENEMY_GRADES, DROP_RARITIES, gradeProb, hpRanges, dmgRanges, blockBase, levelAdj, dropRates, dropKeyByGrade, travel, idScheme, currencies, leveling };
-  }
 
   // V2-4) 룰 생성(저장)
   const createStoryRulesV2 = onCall({ region:'us-central1' }, async (req)=>{
@@ -292,7 +351,7 @@ module.exports = (admin) => {
     const runRef = db.doc(`storyRuns/${charId}`);
     const run = (await runRef.get()).data();
     if (!run?.graph?.nodes) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
-    const rules = run.rules || buildStoryRulesV2(); // 없으면 즉석 생성
+    const rules = run.rules || buildStoryRulesV2();
 
     const fields = run.graph.nodes.filter(n=>n.kind==='field');
     const batch = db.batch();
