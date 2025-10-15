@@ -62,10 +62,12 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     }
 
     // V4-1) 스토리 런 시작/상태 초기화
+        console.log("[V4] startOrGetStoryRunV4 시작");
     const startOrGetStoryRunV4 = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied', '권한 없음');
         const { charId } = req.data || {};
+        console.log("[V4] charId:", charId);
         if (!charId) throw new HttpsError('invalid-argument', 'charId 필요');
 
         const runRef = db.doc(`storyRuns/${charId}`);
@@ -76,6 +78,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         if (!runSnap.exists || !runSnap.data().rules) throw new HttpsError('failed-precondition', 'V2 뼈대와 규칙이 먼저 필요합니다.');
         if (!charSnap.exists) throw new HttpsError('not-found', '캐릭터를 찾을 수 없습니다.');
 
+            console.log("[V4] 기존 플레이어 상태 반환");
         if (playerSnap.exists) {
             return { ok: true, playerState: playerSnap.data() };
         }
@@ -85,6 +88,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const startNode = runData.graph.nodes.find(n => n.id === 'N1');
         
         const initialLevel = calculateLevel(charSnap.data()[rules.leveling.expField] || 0);
+        console.log("[V4] 플레이어 초기화 - 레벨:", initialLevel, "| HP:", initialHp, "| 시작 노드:", startNode.id);
         const initialHp = rules.leveling.hpBase + (rules.leveling.hpPerLevel * (initialLevel - 1));
 
         const playerState = {
@@ -101,16 +105,19 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
             createdAt: Timestamp.now(),
             updatedAt: Timestamp.now(),
         };
+        console.log("[V4] 플레이어 상태 저장 완료");
 
         await playerRef.set(playerState);
         return { ok: true, playerState };
     });
 
     // V4-2) 월드맵 이동 및 매복 전투 발생
+        console.log("[V4] moveOnMapV4 시작");
     const moveOnMapV4 = onCall({ region: 'us-central1' }, async (req) => {
         const uid = req.auth?.uid;
         if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied', '권한 없음');
         const { charId, targetNodeId } = req.data || {};
+        console.log("[V4] charId:", charId, "| 목표 노드:", targetNodeId);
         if (!charId || !targetNodeId) throw new HttpsError('invalid-argument', 'charId/targetNodeId 필요');
 
         const runRef = db.doc(`storyRuns/${charId}`);
@@ -135,8 +142,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
 
             // 필드 -> 필드 이동 시 매복 판정
             if (currentNode.kind === 'field' && targetNode.kind === 'field') {
+                console.log("[V4] 매복 판정:", roll, "/", run.rules.travel.ambushChance);
                 const roll = await takeRollTx(tx, runRef);
                 if (roll <= run.rules.travel.ambushChance) {
+                    console.log("[V4] 매복 발생!");
                     // 매복 성공! 전투 생성
                     const gradeRoll = await takeRollTx(tx, runRef);
                     let grade = '';
@@ -181,10 +190,12 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     });
 
     // V4-3) AI 기반 전투 턴 진행
+        console.log("[V4] progressBattleTurnV4 시작");
     const progressBattleTurnV4 = onCall({ region: 'us-central1', secrets: [GEMINI_API_KEY] }, async (req) => {
         const uid = req.auth?.uid;
         if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied', '권한 없음');
         const { charId, action } = req.data || {}; // action: { type: 'skill', skill: '스킬 설명 텍스트' }
+        console.log("[V4] charId:", charId, "| 액션:", action?.skill);
         if (!charId || !action) throw new HttpsError('invalid-argument', 'charId/action 필요');
 
         const runRef = db.doc(`storyRuns/${charId}`);
@@ -211,9 +222,11 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
         const levelAdj = clamp(levelDiff * rules.levelAdj.perLevel, rules.levelAdj.min, rules.levelAdj.max);
         const finalBlockChance = clamp(blockBase + levelAdj, 5, 95);
         
+        console.log("[V4] 막기 판정:", blockRoll, "/", finalBlockChance, "→", isPlayerBlocked ? "성공" : "실패");
         const blockRoll = await db.runTransaction(tx => takeRollTx(tx, runRef));
         const isPlayerBlocked = blockRoll <= finalBlockChance;
 
+        console.log("[V4] AI 전투 서사 생성 시작");
         // --- 3. Gemini AI 호출 (서사 생성) ---
         const system = `역할: 게임 전투 진행 AI
 규칙:
@@ -248,10 +261,12 @@ JSON 출력 예시:
   "damageToPlayer": 0
 }`;
 
+        console.log("[V4] AI 응답 수신 완료");
         const aiResult = await callGemini(GEMINI_API_KEY.value(), 'gemini-2.5-flash-lite', system, user);
 
         // --- 4. 서버사이드 데미지 보정 (신규 로직) ---
         const aiDamageToMonster = aiResult.damageToMonster || 0;
+        console.log("[V4] AI 제안 데미지 - 몬스터:", aiDamageToMonster, "| 플레이어:", aiDamageToPlayer);
         const aiDamageToPlayer = aiResult.damageToPlayer || 0;
 
         // 플레이어의 레벨에 따른 데미지 범위 설정
@@ -300,12 +315,14 @@ JSON 출력 예시:
                 battleLog.push('전투에서 패배했습니다...');
             }
 
+                console.log("[V4] 전투 종료:", outcome);
             if (outcome) {
                 // 전투 종료
                 pState.battle = null;
                 pState.runStatus = (outcome === 'loss' ? 'failed' : pState.runStatus);
                 
                 let rewards = null;
+                    console.log("[V4] 승리 보상 계산 시작");
                 if (outcome === 'win') {
                     // 보상 계산
                     const dropKey = rules.dropKeyByGrade[mState.grade];
@@ -324,6 +341,7 @@ JSON 출력 예시:
                     }
 
                     const expGain = (Object.keys(rules.gradeProb['easy']).indexOf(mState.grade) + 1) * 10 * (Object.keys(rules.gradeProb).indexOf(mState.difficulty) + 1);
+                    console.log("[V4] 보상 - 경험치:", expGain, "| 코인:", coinGain, "| 아이템 드랍 등급:", rarityDropped || "없음");
                     const coinGain = rangeMap(await takeRollTx(tx, runRef), 10, 50);
                     
                     rewards = { expGain, coinGain, items: [] };

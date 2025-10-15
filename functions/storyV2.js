@@ -159,10 +159,12 @@ module.exports = (admin) => {
 
   // V2-1) 스토리 런 뼈대 생성: 그래프 + 키이벤트 + 프리롤만 (모든 수치 프리롤)
   const createStoryPlanV2 = onCall({ region:'us-central1' }, async (req)=>{
+    console.log('[V2] createStoryPlanV2 시작');
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
 
     const { charId, world } = req.data||{};
+    console.log('[V2] charId:', charId, '| world:', world?.name || world?.id);
     if (!charId || !world) throw new HttpsError('invalid-argument','charId/world 필요');
 
     const ch = await db.doc(`chars/${charId}`).get();
@@ -170,10 +172,12 @@ module.exports = (admin) => {
     if (ch.data()?.owner_uid && ch.data().owner_uid !== uid) throw new HttpsError('permission-denied','본인 캐릭터 아님');
 
     const worldNorm = normalizeWorld(world);
+    console.log('[V2] 정규화된 월드 정보:', worldNorm);
 
     // 프리롤 준비 + 로컬 소비 도우미
     const runRef = db.doc(`storyRuns/${charId}`);
     let pre = await ensurePreroll(runRef);
+    console.log('[V2] 프리롤 초기화 완료. cursor:', pre.cursor);
     const nextRoll = ()=>{ // 로컬로 소비(마지막에 저장)
       const i = (pre.cursor||0) % PREROLL_SIZE;
       const roll = pre.prerolls[i];
@@ -186,6 +190,7 @@ module.exports = (admin) => {
     // 비-필드 골격 개수(4~6) ← 프리롤
     const spineCount = rangeMap(nextRoll(), 4, 6);
     const diffs = ladder(spineCount);
+    console.log('[V2] 비-필드 노드 수:', spineCount, '| 난이도 구배:', diffs);
     const nonField = [];
     for (let i=0;i<spineCount;i++){
       const kind =
@@ -199,6 +204,7 @@ module.exports = (admin) => {
       const ga = (i===0 ? 'friendly' : groupAttitudeFromRoll(gaRoll, diffs[i]));
       const bias = attitudeBiasFromAttitude(ga);
       const relationsSeed = nextRoll();
+      console.log(`[V2] 노드 N${i+1}: NPC ${npcCount}명 | 우호도=${ga} | 바이어스=${bias}`);
 
       // NPC 스켈레톤(역할까지 프리롤)
       const npcSkeleton = makeNPCsSkeleton(npcCount, nextRoll);
@@ -219,6 +225,7 @@ module.exports = (admin) => {
         }
       }
       npcSkeleton.relations = relations;
+      console.log(`[V2] 노드 N${i+1}: NPC 관계도 생성 완료 (${Object.keys(relations).length}개 NPC 간 관계)`);
 
       nonField.push({
         id: `N${i+1}`,
@@ -238,9 +245,11 @@ module.exports = (admin) => {
     const nodes=[...nonField];
     const edges=[];
     let fieldSerial=0;
+    console.log('[V2] 필드 노드 생성 시작');
     for (let i=0;i<nonField.length-1;i++){
       const a = nonField[i], b = nonField[i+1];
       const k = rangeMap(nextRoll(), 1, 5); // 1~5
+      console.log(`[V2] ${a.id} → ${b.id} 사이에 필드 ${k}개 생성`);
       let prev = a.id;
       for (let f=0; f<k; f++){
         const id = `F${++fieldSerial}`;
@@ -273,8 +282,10 @@ module.exports = (admin) => {
       { id:'EV4', title:'각성의 조짐',   loc: nodes.slice(-2)[0]?.id || 'N3', status:'pending' },
       { id:'EV5', title:'최종 결전',     loc: nonField[nonField.length-1]?.id || 'N4', status:'pending' },
     ];
+    console.log('[V2] 키 이벤트 생성 완료:', keyEvents.map(e => `${e.id}@${e.loc}`).join(', '));
 
     const runId = 'r'+Date.now();
+    console.log('[V2] runId 생성:', runId);
 
     // 저장(프리롤 커서/버퍼 업데이트 포함)
     await runRef.set({
@@ -288,6 +299,7 @@ module.exports = (admin) => {
       }
     }, { merge:true });
 
+    console.log('[V2] 스토리 런 뼈대 저장 완료. 총 노드:', nodes.length, '| 비-필드:', nonField.length, '| 필드:', nodes.length - nonField.length);
     return { ok:true, runId, nodes, keyEvents };
   });
 
@@ -311,11 +323,13 @@ module.exports = (admin) => {
     if (!charId) throw new HttpsError('invalid-argument','charId 필요');
     const ref = db.doc(`storyRuns/${charId}`);
     const roll = await db.runTransaction(tx => takeRollTx(tx, ref));
+    console.log('[V2] devTakeRollV2 - 프리롤 결과:', roll);
     return { ok:true, roll };
   });
 
   // V2-4) 룰 생성(저장)
   const createStoryRulesV2 = onCall({ region:'us-central1' }, async (req)=>{
+    console.log('[V2] createStoryRulesV2 시작');
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId } = req.data||{};
@@ -326,6 +340,12 @@ module.exports = (admin) => {
     if (!snap.exists) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
 
     const rules = buildStoryRulesV2();
+    console.log('[V2] 룰 생성 완료:', {
+      적등급: rules.ENEMY_GRADES,
+      드랍등급: rules.DROP_RARITIES,
+      화폐: rules.currencies,
+      레벨링: rules.leveling
+    });
     await ref.set({ rules, rulesUpdatedAt: Timestamp.now() }, { merge:true });
     return { ok:true, rules };
   });
@@ -343,6 +363,7 @@ module.exports = (admin) => {
 
   // V2-6) 필드 통계 물리화(필드 하위 컬렉션에 hp/dmg 범위 저장)
   const materializeFieldStatsV2 = onCall({ region:'us-central1' }, async (req)=>{
+    console.log('[V2] materializeFieldStatsV2 시작');
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId } = req.data||{};
@@ -354,6 +375,7 @@ module.exports = (admin) => {
     const rules = run.rules || buildStoryRulesV2();
 
     const fields = run.graph.nodes.filter(n=>n.kind==='field');
+    console.log('[V2] 필드 통계 물리화 대상:', fields.length, '개 필드');
     const batch = db.batch();
     for (const f of fields){
       const diff = f.difficulty;
@@ -372,6 +394,7 @@ module.exports = (admin) => {
       }
     }
     await batch.commit();
+    console.log('[V2] 필드 통계 물리화 완료:', fields.length * rules.ENEMY_GRADES.length, '개 문서');
     return { ok:true, count: fields.length * rules.ENEMY_GRADES.length };
   });
 
