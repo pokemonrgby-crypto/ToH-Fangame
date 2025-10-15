@@ -440,50 +440,71 @@ ${decisionDirective}
     const sA = (winner_index === 0 ? 1 : 0), sB = (winner_index === 1 ? 1 : 0);
     const [Ra2, Rb2] = nextElo(Ra, Rb, sA, sB, 24, 24);
 
-    // 로그/경험치/코인
-    const logRef = db.collection('battle_logs').doc();
-    if (!simulate) {
-      await db.runTransaction(async (tx) => {
-        const A = (await tx.get(Aref)).data() || {};
-        const B = (await tx.get(Bref)).data() || {};
-        const totalExpA = Number(A.exp_total || 0) + expA;
-        const totalExpB = Number(B.exp_total || 0) + expB;
-        const mintedA = Math.floor(totalExpA / 100) - Math.floor((Number(A.exp_total || 0)) / 100);
-        const mintedB = Math.floor(totalExpB / 100) - Math.floor((Number(B.exp_total || 0)) / 100);
-        const finalExpA = totalExpA % 100;
-        const finalExpB = totalExpB % 100;
+    // 로그/경험치/코인 + 항상 로그 생성
+const logRef = db.collection('battle_logs').doc();
 
-        tx.update(Aref, {
-          elo: Ra2, battle_count: FieldValue.increment(1),
-          wins: FieldValue.increment(sA), losses: FieldValue.increment(sB),
-          exp_total: FieldValue.increment(expA), exp: finalExpA, updatedAt: Timestamp.now(),
-        });
-        tx.update(Bref, {
-          elo: Rb2, battle_count: FieldValue.increment(1),
-          wins: FieldValue.increment(sB), losses: FieldValue.increment(sA),
-          exp_total: FieldValue.increment(expB), exp: finalExpB, updatedAt: Timestamp.now(),
-        });
+if (!simulate) {
+  await db.runTransaction(async (tx) => {
+    const A = (await tx.get(Aref)).data() || {};
+    const B = (await tx.get(Bref)).data() || {};
 
-        if (mintedA > 0) tx.set(db.doc(`users/${A0.owner_uid}`), { coins: FieldValue.increment(mintedA) }, { merge: true });
-        if (mintedB > 0) tx.set(db.doc(`users/${B0.owner_uid}`), { coins: FieldValue.increment(mintedB) }, { merge: true });
+    const totalExpA = Number(A.exp_total || 0) + expA;
+    const totalExpB = Number(B.exp_total || 0) + expB;
+    const mintedA = Math.floor(totalExpA / 100) - Math.floor((Number(A.exp_total || 0)) / 100);
+    const mintedB = Math.floor(totalExpB / 100) - Math.floor((Number(B.exp_total || 0)) / 100);
+    const finalExpA = totalExpA % 100;
+    const finalExpB = totalExpB % 100;
 
-        tx.set(logRef, {
-          attacker_char: `chars/${attackerId}`,
-          defender_char: `chars/${defenderId}`,
-          attacker_snapshot: { name: A0.name, thumb_url: A0.thumb_url || null },
-          defender_snapshot: { name: B0.name, thumb_url: B0.thumb_url || null },
-          winner: winner_index,
-          title: battleTitle,
-          content: battleContent,
-          exp_char0: expA,
-          exp_char1: expB,
-          endedAt: Timestamp.now(),
-          forced_reason: forced?.reason || null
-        });
-      });
-    }
+    // ★ 실전: Elo/승패/경험치/코인 모두 반영
+    tx.update(Aref, {
+      elo: Ra2, battle_count: FieldValue.increment(1),
+      wins: FieldValue.increment(sA), losses: FieldValue.increment(sB),
+      exp_total: FieldValue.increment(expA), exp: finalExpA, updatedAt: Timestamp.now(),
+    });
+    tx.update(Bref, {
+      elo: Rb2, battle_count: FieldValue.increment(1),
+      wins: FieldValue.increment(sB), losses: FieldValue.increment(sA),
+      exp_total: FieldValue.increment(expB), exp: finalExpB, updatedAt: Timestamp.now(),
+    });
 
-    return { ok: true, logId: logRef.id, simulate };
+    if (mintedA > 0) tx.set(db.doc(`users/${A0.owner_uid}`), { coins: FieldValue.increment(mintedA) }, { merge: true });
+    if (mintedB > 0) tx.set(db.doc(`users/${B0.owner_uid}`), { coins: FieldValue.increment(mintedB) }, { merge: true });
+
+    // ★ 실전 로그 생성
+    tx.set(logRef, {
+      attacker_char: `chars/${attackerId}`,
+      defender_char: `chars/${defenderId}`,
+      attacker_snapshot: { name: A0.name, thumb_url: A0.thumb_url || null },
+      defender_snapshot: { name: B0.name, thumb_url: B0.thumb_url || null },
+      winner: winner_index,
+      title: battleTitle,
+      content: battleContent,
+      exp_char0: expA,
+      exp_char1: expB,
+      endedAt: Timestamp.now(),
+      forced_reason: forced?.reason || null,
+      simulate: false
+    });
+  });
+} else {
+  // ★ 모의전: Elo/승패/경험치/코인 "절대 반영 금지", 대신 로그만 남김
+  await logRef.set({
+    attacker_char: `chars/${attackerId}`,
+    defender_char: `chars/${defenderId}`,
+    attacker_snapshot: { name: A0.name, thumb_url: A0.thumb_url || null },
+    defender_snapshot: { name: B0.name, thumb_url: B0.thumb_url || null },
+    winner: winner_index,
+    title: battleTitle,
+    content: battleContent,
+    exp_char0: 0,            // 모의전: 경험치 지급 금지
+    exp_char1: 0,            // 모의전: 경험치 지급 금지
+    endedAt: Timestamp.now(),
+    forced_reason: forced?.reason || null,
+    simulate: true           // 구분 플래그
+  });
+}
+
+return { ok: true, logId: logRef.id, simulate };
   } catch (error) {
     // 실패 시 쿨타임 해제 시도
     try {
