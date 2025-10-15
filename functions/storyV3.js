@@ -172,8 +172,10 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
   ]
 }`;
 
+      console.log(`[V3] 난이도 ${diff}: AI 호출 시작 (몬스터 제약사항 크기: ${JSON.stringify(monsterConstraints).length} bytes`);
       const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-pro-latest', system, user);
       byDiff[diff] = data;
+      console.log(`[V3] 난이도 ${diff}: AI 응답 수신 완료 (몬스터 ${data?.monsters?.length || 0}개)`);
     }
 
     // 프리롤 커서 업데이트 + 결과 저장
@@ -181,10 +183,12 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
       enrichment: { ...(run.enrichment||{}), monstersByDifficulty: byDiff, monstersUpdatedAt: Timestamp.now() }
     }, { merge:true });
+    console.log(`[V3] 몬스터 데이터 저장 완료. 총 난이도:`, Object.keys(byDiff).length);
 
     return { ok:true, monstersByDifficulty: byDiff };
   });
 
+    console.log(`[V3] enrichShopsAndDropsV3 시작`);
   // V3-3) 상점/드랍 서술 팩 — 아이템 효과 구조화 추가
   const enrichShopsAndDropsV3 = onCall({ region:'us-central1', secrets:[GEMINI_API_KEY], memory: '1GiB' }, async (req)=>{
     const uid = req.auth?.uid;
@@ -197,6 +201,7 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     const run = runSnap.data();
     if (!run) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
 
+    console.log(`[V3] 비-필드 노드 수:`, nonFieldNodes.length);
     const world = run.world;
     const nonFieldNodes = (run.graph?.nodes||[]).filter(n=>n.kind!=='field');
 
@@ -247,6 +252,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       }
       plan[n.id] = { itemConstraints };
     }
+    console.log(`[V3] 드랍 아이템 템플릿 개수:`, dropLoreCount);
+    console.log(`[V3] 상점 계획 크기:`, JSON.stringify(plan).length, `bytes`);
 
     const dropLoreCount = rangeMap(nextRoll(), 12, 16);
 
@@ -284,12 +291,15 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       ]
     }
   },
+    console.log(`[V3] AI 호출 시작 (상점/드랍 아이템)`);
   "dropLore": [ { "name":"...", "description":"..." } ]
+    console.log(`[V3] AI 응답 수신 완료 - 상점:`, Object.keys(data.shopInventories||{}).length, `개 노드 | 드랍 템플릿:`, (data.dropLore||[]).length, `개`);
 }`;
 
     const data = await callGemini(GEMINI_API_KEY.value(), 'gemini-1.5-pro-latest', system, user);
 
     await runRef.set({
+    console.log(`[V3] 상점/드랍 데이터 저장 완료`);
       prerolls: pre.prerolls, cursor: pre.cursor, updatedAt: pre.updatedAt,
       enrichment: { ...(run.enrichment||{}), shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[], shopsUpdatedAt: Timestamp.now() }
     }, { merge:true });
