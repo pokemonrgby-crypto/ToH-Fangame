@@ -1,7 +1,28 @@
 // functions/storyV2.js
+/**
+ * Story V2 - 스토리 모드 골격(Skeleton) 시스템
+ * 
+ * 이 모듈은 포켓몬 스타일 RPG의 스토리 월드 구조를 생성합니다.
+ * V2는 "뼈대"만 만들며, AI 생성 콘텐츠는 V3에서 처리합니다.
+ * 
+ * 주요 기능:
+ * 1. 월드맵 생성: 필드(몬스터 등장)와 비-필드(마을/거점) 노드
+ * 2. NPC 시스템: 각 비-필드마다 5-10명의 NPC와 관계도 생성
+ * 3. 난이도 시스템: 6단계 (easy → normal → hard → vhard → legend → impossible)
+ * 4. 적 등급: trash, normal, elite, boss, hidden (각 확률 테이블 있음)
+ * 5. 전투 규칙: HP/데미지 범위, 블록 확률, 레벨링 시스템
+ * 6. 아이템 드랍: 7등급 (normal → rare → epic → legend → aether → alpha → omega)
+ * 7. 프리롤 시스템: d100 링버퍼로 모든 랜덤 요소 결정
+ * 
+ * 설계 철학:
+ * - 모든 수치는 프리롤로 사전 결정 (재현 가능)
+ * - V2는 구조와 숫자만, V3는 이름과 설명 생성
+ * - 개발자 콘솔 출력을 통한 디버깅 지원
+ */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { Timestamp } = require('firebase-admin/firestore');
 const { logger } = require('firebase-functions');
+const { StoryLogger } = require('./storyLogger');
 
 // --- 프리롤 링버퍼 ---
 const PREROLL_SIZE = 50;
@@ -142,6 +163,7 @@ function buildStoryRulesV2(){
 
 module.exports = (admin) => {
   const db = admin.firestore();
+  const log = new StoryLogger('[StoryV2]');
 
   async function hasStoryAccess(uid){
     if(!uid) return false;
@@ -157,13 +179,29 @@ module.exports = (admin) => {
     }catch(e){ logger.error(e); return false; }
   }
 
-  // V2-1) 스토리 런 뼈대 생성: 그래프 + 키이벤트 + 프리롤만 (모든 수치 프리롤)
+  /**
+   * V2-1) 스토리 런 뼈대 생성
+   * 
+   * 월드맵의 전체 구조를 생성합니다:
+   * - 비-필드 노드 4~6개 (마을, 거점, 랜드마크)
+   * - 각 비-필드 사이에 1~5개의 필드 노드
+   * - 각 비-필드마다 5~10명의 NPC와 그들 간의 관계도
+   * - 5개의 주요 이벤트 (조력자 만남, 시련, 절망, 각성, 최종 결전)
+   * 
+   * 모든 수치는 프리롤로 결정되어 재현 가능합니다.
+   * 
+   * @param {string} charId - 캐릭터 ID
+   * @param {object} world - 월드 정보 (name, intro, detail)
+   * @returns {object} { ok, runId, nodes, keyEvents }
+   */
   const createStoryPlanV2 = onCall({ region:'us-central1' }, async (req)=>{
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
 
     const { charId, world } = req.data||{};
     if (!charId || !world) throw new HttpsError('invalid-argument','charId/world 필요');
+    
+    logger.info('[createStoryPlanV2] Starting story plan creation', { charId, worldName: world.name });
 
     const ch = await db.doc(`chars/${charId}`).get();
     if (!ch.exists) throw new HttpsError('not-found','캐릭터 없음');
@@ -186,6 +224,7 @@ module.exports = (admin) => {
     // 비-필드 골격 개수(4~6) ← 프리롤
     const spineCount = rangeMap(nextRoll(), 4, 6);
     const diffs = ladder(spineCount);
+    logger.info('[createStoryPlanV2] Generated spine structure', { spineCount, difficulties: diffs });
     const nonField = [];
     for (let i=0;i<spineCount;i++){
       const kind =
@@ -199,6 +238,8 @@ module.exports = (admin) => {
       const ga = (i===0 ? 'friendly' : groupAttitudeFromRoll(gaRoll, diffs[i]));
       const bias = attitudeBiasFromAttitude(ga);
       const relationsSeed = nextRoll();
+      
+      logger.info(`[createStoryPlanV2] Non-field node ${i+1}`, { npcCount, groupAttitude: ga, bias });
 
       // NPC 스켈레톤(역할까지 프리롤)
       const npcSkeleton = makeNPCsSkeleton(npcCount, nextRoll);
@@ -238,9 +279,11 @@ module.exports = (admin) => {
     const nodes=[...nonField];
     const edges=[];
     let fieldSerial=0;
+    logger.info('[createStoryPlanV2] Creating field connections between non-field nodes', { nonFieldCount: nonField.length });
     for (let i=0;i<nonField.length-1;i++){
       const a = nonField[i], b = nonField[i+1];
       const k = rangeMap(nextRoll(), 1, 5); // 1~5
+      logger.info(`[createStoryPlanV2] Connecting ${a.id} to ${b.id} with ${k} field(s)`);
       let prev = a.id;
       for (let f=0; f<k; f++){
         const id = `F${++fieldSerial}`;
@@ -275,6 +318,16 @@ module.exports = (admin) => {
     ];
 
     const runId = 'r'+Date.now();
+    
+    const planInfo = {
+      runId,
+      totalNodes: nodes.length,
+      fieldNodes: nodes.filter(n=>n.kind==='field').length,
+      nonFieldNodes: nonField.length,
+      keyEvents: keyEvents.length
+    };
+    
+    log.planCreated(planInfo);
 
     // 저장(프리롤 커서/버퍼 업데이트 포함)
     await runRef.set({
@@ -314,18 +367,40 @@ module.exports = (admin) => {
     return { ok:true, roll };
   });
 
-  // V2-4) 룰 생성(저장)
+  /**
+   * V2-4) 스토리 규칙 생성
+   * 
+   * 전투 및 드랍 시스템의 규칙을 생성하고 저장합니다:
+   * - 적 등급별 출현 확률 (난이도별 차등)
+   * - HP/데미지 범위 (난이도별, 등급별)
+   * - 블록 기본 확률 (레벨에 따라 조정됨)
+   * - 아이템 드랍 확률 (등급별)
+   * - 이동 중 조우 확률
+   * - 레벨링 시스템 (HP 100 기본, 레벨당 +5)
+   * 
+   * @param {string} charId - 캐릭터 ID
+   * @returns {object} { ok, rules }
+   */
   const createStoryRulesV2 = onCall({ region:'us-central1' }, async (req)=>{
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId } = req.data||{};
     if (!charId) throw new HttpsError('invalid-argument','charId 필요');
 
+    logger.info('[createStoryRulesV2] Creating story rules', { charId });
+
     const ref = db.doc(`storyRuns/${charId}`);
     const snap = await ref.get();
     if (!snap.exists) throw new HttpsError('failed-precondition','V2 뼈대가 먼저 필요합니다.');
 
     const rules = buildStoryRulesV2();
+    
+    log.rulesCreated({ 
+      enemyGrades: rules.ENEMY_GRADES.length,
+      dropRarities: rules.DROP_RARITIES.length,
+      difficulties: Object.keys(rules.gradeProb).length
+    });
+    
     await ref.set({ rules, rulesUpdatedAt: Timestamp.now() }, { merge:true });
     return { ok:true, rules };
   });
@@ -341,12 +416,25 @@ module.exports = (admin) => {
     return { ok: !!d?.rules, rules: d?.rules||null };
   });
 
-  // V2-6) 필드 통계 물리화(필드 하위 컬렉션에 hp/dmg 범위 저장)
+  /**
+   * V2-6) 필드 통계 물리화
+   * 
+   * 각 필드(전투 지역)의 적 등급별 HP/데미지 범위를 
+   * 하위 컬렉션에 저장합니다. 이는 실시간 전투에서 참조됩니다.
+   * 
+   * 예: storyRuns/{charId}/fields/F1_elite
+   *     { hpRange: {min: 90, max: 130}, dmgRange: {min: 14, max: 24} }
+   * 
+   * @param {string} charId - 캐릭터 ID
+   * @returns {object} { ok, count } - 생성된 통계 문서 수
+   */
   const materializeFieldStatsV2 = onCall({ region:'us-central1' }, async (req)=>{
     const uid = req.auth?.uid;
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId } = req.data||{};
     if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+
+    logger.info('[materializeFieldStatsV2] Starting field stats materialization', { charId });
 
     const runRef = db.doc(`storyRuns/${charId}`);
     const run = (await runRef.get()).data();
@@ -372,7 +460,15 @@ module.exports = (admin) => {
       }
     }
     await batch.commit();
-    return { ok:true, count: fields.length * rules.ENEMY_GRADES.length };
+    
+    const totalCount = fields.length * rules.ENEMY_GRADES.length;
+    log.fieldStatsCreated({ 
+      count: totalCount, 
+      fieldCount: fields.length, 
+      gradesPerField: rules.ENEMY_GRADES.length 
+    });
+    
+    return { ok:true, count: totalCount };
   });
 
   // V2-7) 특정 필드/등급 범위 조회(디버그)
