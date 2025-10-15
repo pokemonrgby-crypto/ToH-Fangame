@@ -408,8 +408,8 @@ ${JSON.stringify(defenderData, null, 2)}
     const forcedDirective = forced ? `
 [강제 서사 — 절대 강제]
 - 본 전투는 시스템 강제판정. 승자 index = ${forced.winner}.
-- 패자의 패배 과정을 중심으로만 서술하라(물리적 상호작용/행동 결과 중심).
-- 무결성/점수/규칙 같은 단어 금지. 이야기적/물리적 묘사만 허용.
+- 강제판정시 패자의 캐릭터 정보, 서사, 능력, 아이템, 세계관 배경, 환경을 모두 고려하지 않고 패자 캐릭터가 패배하는 과정만을 중심으로만 서술하라.
+- 무결성/점수/규칙 같은 단어 금지. 이야기적 묘사만 허용.
 `.trim() : '';
 
     const decisionDirective = !forced ? `
