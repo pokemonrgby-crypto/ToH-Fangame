@@ -259,10 +259,10 @@ const evalSystem = `
     const userText = content.trim(); // 이미 형식을 갖춰서 전달되므로 그대로 사용
     let raw = '';
     try {
-        raw = await callGeminiServer(primary, evalSystem, userText, 0.2, 4096);
+        raw = await callGeminiServer(primary, evalSystem, userText, 0.2, 8192);
     } catch (e) {
         logger.warn(`[eval ${characterName}] primary fail -> fallback`, { error: e.message });
-        raw = await callGeminiServer(fallback, evalSystem, userText, 0.2, 1024);
+        raw = await callGeminiServer(fallback, evalSystem, userText, 0.2, 8192);
     }
     const json = tryJsonSafe(raw);
     const out = new Map();
