@@ -1,5 +1,31 @@
+// functions/storyV3.js
+/**
+ * Story V3 - AI 콘텐츠 생성 시스템 (살 붙이기)
+ * 
+ * V2에서 만든 골격에 AI(Gemini)가 생성한 콘텐츠를 추가합니다.
+ * 
+ * 주요 기능:
+ * 1. NPC 이름/배경 생성: V2의 역할과 관계도를 바탕으로 생성
+ * 2. 몬스터 이름/설명/스킬 생성: 난이도별로 8-12개 몬스터 생성
+ *    - 스킬 효과: DAMAGE_MULTIPLIER, DAMAGE_REDUCTION_SELF, 
+ *                 MAX_HP_PERCENT_DAMAGE, HEAL_SELF
+ *    - 효과 트리거: 즉시 또는 N턴 후 (최대 5턴)
+ * 3. 상점 아이템 생성: 각 비-필드의 상점 아이템 이름/설명
+ * 4. 드랍 아이템 템플릿: 몬스터 처치 시 드랍될 아이템 네이밍
+ * 
+ * AI 호출 최적화:
+ * - 난이도별로 한 번에 모든 몬스터 생성 (6회 호출)
+ * - 모든 상점을 한 번에 생성 (1회 호출)
+ * - 모든 NPC를 한 번에 생성 (1회 호출)
+ * 
+ * 설계 철학:
+ * - AI는 name, description, summary만 생성
+ * - 모든 수치/구조는 V2에서 결정된 것을 유지
+ * - AI가 수치를 변경하지 못하도록 프롬프트 엔지니어링
+ */
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { Timestamp } = require('firebase-admin/firestore');
+const { StoryLogger } = require('./storyLogger');
 
 // --- 프리롤(공유 링버퍼 재사용) ---
 const PREROLL_SIZE = 50;
@@ -40,6 +66,7 @@ const rotate = (arr, k)=>arr.slice(k).concat(arr.slice(0,k));
 
 module.exports = (admin, { GEMINI_API_KEY }) => {
   const db = admin.firestore();
+  const log = new StoryLogger('[StoryV3]');
 
   async function hasStoryAccess(uid){
     if (!uid) return false;
@@ -66,6 +93,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId, difficulties = ['easy','normal','hard','vhard','legend','impossible'] } = req.data||{};
     if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+    
+    log.info('Starting monster enrichment for difficulties', { charId, difficulties });
 
     const runRef = db.doc(`storyRuns/${charId}`);
     const runSnap = await runRef.get();
@@ -182,6 +211,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       enrichment: { ...(run.enrichment||{}), monstersByDifficulty: byDiff, monstersUpdatedAt: Timestamp.now() }
     }, { merge:true });
 
+    
+    log.monstersEnriched({ byDifficulty: Object.keys(byDiff), totalDifficulties: Object.keys(byDiff).length });
     return { ok:true, monstersByDifficulty: byDiff };
   });
 
@@ -191,6 +222,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
     if (!await hasStoryAccess(uid)) throw new HttpsError('permission-denied','권한 없음');
     const { charId } = req.data||{};
     if (!charId) throw new HttpsError('invalid-argument','charId 필요');
+    
+    log.info('Starting shops and drops enrichment', { charId, nonFieldNodeCount: (run.graph?.nodes||[]).filter(n=>n.kind!=='field').length });
 
     const runRef = db.doc(`storyRuns/${charId}`);
     const runSnap = await runRef.get();
@@ -294,6 +327,8 @@ module.exports = (admin, { GEMINI_API_KEY }) => {
       enrichment: { ...(run.enrichment||{}), shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[], shopsUpdatedAt: Timestamp.now() }
     }, { merge:true });
 
+    
+    log.shopsEnriched({ nodeCount: Object.keys(data.shopInventories||{}).length, dropLoreCount: (data.dropLore||[]).length });
     return { ok:true, shopInventories: data.shopInventories||{}, dropLore: data.dropLore||[] };
   });
 
