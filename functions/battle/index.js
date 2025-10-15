@@ -325,6 +325,36 @@ const [A_eval, B_eval] = await Promise.all([
     const A_fin = finalizeBattleScores(A_eval);
     const B_fin = finalizeBattleScores(B_eval);
 
+
+    logger.info("📊 Battle V2 Score Calculation Details", {
+        attacker: {
+            id: attackerId,
+            name: attackerData.name,
+            raw_evaluation: Object.fromEntries(A_eval),
+            final_scores: Object.fromEntries(A_fin.out),
+            modifiers: {
+                logic: A_fin.logic,
+                fun: A_fin.fun,
+                integrity: A_fin.integ,
+                completeness: A_fin.comp,
+            }
+        },
+        defender: {
+            id: defenderId,
+            name: defenderData.name,
+            raw_evaluation: Object.fromEntries(B_eval),
+            final_scores: Object.fromEntries(B_fin.out),
+            modifiers: {
+                logic: B_fin.logic,
+                fun: B_fin.fun,
+                integrity: B_fin.integ,
+                completeness: B_fin.comp,
+            }
+        }
+    });
+
+    
+
     // ---------- 서버 강제판정(오직 2가지) ----------
     function coin() { return (require('crypto').randomInt(0, 2) === 1) ? 1 : 0; }
 
