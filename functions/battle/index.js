@@ -237,8 +237,7 @@ const evalSystem = `
 
 응답은 반드시 다음의 JSON 형식만을 포함해야 하며, 다른 어떤 텍스트도 추가해서는 안 됩니다:
 {
-반드시 아래 JSON만 출력:
-{"evaluations":[
+"evaluations":[
 {"criterion":"논리성","score":0,"comment":"심사평 3문장"},
 {"criterion":"무결성","score":0,"comment":"심사평 3문장"},
 {"criterion":"재미성","score":0,"comment":"심사평 3문장"},
