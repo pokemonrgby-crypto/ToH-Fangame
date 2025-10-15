@@ -543,7 +543,7 @@ if (!simulate) {
       exp_char1: expB,
       endedAt: Timestamp.now(),
       forced_reason: forced?.reason || null,
-      simulate: false
+      simulated: false
     });
   });
 } else {
@@ -560,7 +560,7 @@ if (!simulate) {
     exp_char1: 0,            // 모의전: 경험치 지급 금지
     endedAt: Timestamp.now(),
     forced_reason: forced?.reason || null,
-    simulate: true           // 구분 플래그
+    simulated: true           // 구분 플래그
   });
 }
 
