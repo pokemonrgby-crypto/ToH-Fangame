@@ -493,8 +493,27 @@ ${decisionDirective}
     const expA = simulate ? 0 : Math.max(5, Math.min(50, parseInt(finalJson.exp_char0 || 0, 10) || 10));
     const expB = simulate ? 0 : Math.max(5, Math.min(50, parseInt(finalJson.exp_char1 || 0, 10) || 10));
     const battleTitle = String(finalJson.title || '충돌');
-    const battleContent = String(finalJson.content || '');
+    let battleContent = String(finalJson.content || '');
 
+if (forced) {
+        let reasonText = '';
+        switch (forced.reason) {
+            case 'INTEGRITY_FORCED':
+                reasonText = `(강제 판정, 사유: 무결성이 ${INTEGRITY_DQ} 이하임)`;
+                break;
+            case 'KO':
+                reasonText = `(강제 판정, 사유: 압도적인 능력치 차이로 KO 처리됨)`;
+                break;
+            default:
+                // 향후 추가될 수 있는 다른 강제 판정 사유를 위한 기본 메시지
+                reasonText = `(강제 판정, 사유: 시스템 규칙에 따름)`;
+                break;
+        }
+        if (reasonText) {
+            battleContent += `\n\n*${reasonText}*`;
+        }
+}
+    
     // ELO 업데이트(무승부 없음)
     const Ra = Number(A0.elo || 1000), Rb = Number(B0.elo || 1000);
     const sA = (winner_index === 0 ? 1 : 0), sB = (winner_index === 1 ? 1 : 0);
