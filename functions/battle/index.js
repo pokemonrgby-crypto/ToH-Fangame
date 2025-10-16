@@ -66,7 +66,7 @@ function tryJsonSafe(t) {
 // (이하 기존 코드...)
 
 // Gemini 호출 (서버 직통)
-async function callGeminiServer(model, systemText, userText, temperature = 0.60, maxOutputTokens = 8192) {
+async function callGeminiServer(model, systemText, userText, temperature = 0.85, maxOutputTokens = 8192) {
     const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${GEMINI_API_KEY.value()}`;
     const body = {
         systemInstruction: { role: 'system', parts: [{ text: String(systemText || '') }] },
@@ -456,10 +456,10 @@ ${decisionDirective}
     const { primary, fallback } = pickModels();
     let finalRaw = '';
     try {
-      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.85, 8192);
+      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.60, 8192);
     } catch (e) {
       logger.warn(`[runBattleV2] primary fail -> fallback`, { error: e.message });
-      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.85, 8192);
+      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.60, 8192);
     }
     const finalJson = tryJsonSafe(finalRaw);
     if (!finalJson) throw new HttpsError('internal', 'AI 응답 파싱 실패');
