@@ -456,10 +456,10 @@ ${decisionDirective}
     const { primary, fallback } = pickModels();
     let finalRaw = '';
     try {
-      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.60, 8192);
+      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.4, 8192);
     } catch (e) {
       logger.warn(`[runBattleV2] primary fail -> fallback`, { error: e.message });
-      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.60, 8192);
+      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.4, 8192);
     }
     const finalJson = tryJsonSafe(finalRaw);
     if (!finalJson) throw new HttpsError('internal', 'AI 응답 파싱 실패');
