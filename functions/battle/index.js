@@ -259,10 +259,10 @@ async function evaluateBlock(characterName, content) {
     const userText = content.trim(); // 이미 형식을 갖춰서 전달되므로 그대로 사용
     let raw = '';
     try {
-        raw = await callGeminiServer(primary, evalSystem, userText, 0.2, 8192);
+        raw = await callGeminiServer(primary, evalSystem, userText, 0.1, 8192);
     } catch (e) {
         logger.warn(`[eval ${characterName}] primary fail -> fallback`, { error: e.message });
-        raw = await callGeminiServer(fallback, evalSystem, userText, 0.2, 8192);
+        raw = await callGeminiServer(fallback, evalSystem, userText, 0.1, 8192);
     }
     const json = tryJsonSafe(raw);
     const out = new Map();
@@ -456,10 +456,10 @@ ${decisionDirective}
     const { primary, fallback } = pickModels();
     let finalRaw = '';
     try {
-      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.4, 8192);
+      finalRaw = await callGeminiServer(primary, systemPrompt, userPrompt, 0.3, 8192);
     } catch (e) {
       logger.warn(`[runBattleV2] primary fail -> fallback`, { error: e.message });
-      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.4, 8192);
+      finalRaw = await callGeminiServer(fallback, systemPrompt, userPrompt, 0.3, 8192);
     }
     const finalJson = tryJsonSafe(finalRaw);
     if (!finalJson) throw new HttpsError('internal', 'AI 응답 파싱 실패');
