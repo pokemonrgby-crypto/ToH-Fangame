@@ -121,5 +121,78 @@ module.exports = (admin, { logger }) => {
     }
   });
 
-  return { setMaintenanceStatus, onMaintenanceChange };
+/**
+   * [Callable] 관리자가 캐릭터 통계를 계산하는 함수 (신규 추가)
+   */
+  const getCharacterStats = onCall({ region: 'us-central1', memory: '1GiB' }, async (req) => {
+    const uid = req.auth?.uid;
+    if (!await _isAdmin(uid)) {
+      throw new HttpsError('permission-denied', '관리자만 실행할 수 있습니다.');
+    }
+
+    logger.info(`Character stats calculation started by admin: ${uid}`);
+
+    try {
+      const charactersRef = db.collection('characters');
+      // "deletedAt" 필드가 존재하지 않는 문서만 쿼리하여 삭제된 캐릭터를 제외합니다.
+      const snapshot = await charactersRef.where('deletedAt', '==', null).get();
+
+      if (snapshot.empty) {
+        return {
+          totalCharacters: 0,
+          totalAccounts: 0,
+          averageCharactersPerAccount: 0,
+          top5Accounts: [],
+        };
+      }
+
+      const userCharCounts = {};
+      snapshot.forEach(doc => {
+        const char = doc.data();
+        const ownerUid = char.uid;
+        if (ownerUid) {
+          userCharCounts[ownerUid] = (userCharCounts[ownerUid] || 0) + 1;
+        }
+      });
+
+      const totalCharacters = snapshot.size;
+      const totalAccounts = Object.keys(userCharCounts).length;
+      const averageCharactersPerAccount = totalAccounts > 0 ? (totalCharacters / totalAccounts).toFixed(2) : 0;
+
+      const sortedAccounts = Object.entries(userCharCounts)
+        .sort(([, countA], [, countB]) => countB - countA);
+
+      const top5Accounts = sortedAccounts.slice(0, 5).map(([uid, count]) => ({ uid, count }));
+
+      // 유저 정보를 함께 조회하여 닉네임을 포함시킵니다.
+      const top5WithDetails = await Promise.all(top5Accounts.map(async (acc) => {
+        try {
+          const userSnap = await db.doc(`users/${acc.uid}`).get();
+          const nickname = userSnap.exists ? userSnap.data().nickname : 'Unknown';
+          return { ...acc, nickname };
+        } catch (e) {
+          logger.warn(`Could not fetch user nickname for ${acc.uid}`, e);
+          return { ...acc, nickname: 'Unknown' };
+        }
+      }));
+
+
+      logger.info(`Character stats calculation finished. Total Chars: ${totalCharacters}, Accounts: ${totalAccounts}`);
+
+      return {
+        ok: true,
+        totalCharacters,
+        totalAccounts,
+        averageCharactersPerAccount,
+        top5Accounts: top5WithDetails,
+      };
+
+    } catch (error) {
+      logger.error('Failed to calculate character stats.', error);
+      throw new HttpsError('internal', '캐릭터 통계 계산 중 오류가 발생했습니다.', error);
+    }
+  });
+
+  // 새로 추가한 함수를 exports에 등록합니다.
+  return { setMaintenanceStatus, onMaintenanceChange, getCharacterStats };
 };
