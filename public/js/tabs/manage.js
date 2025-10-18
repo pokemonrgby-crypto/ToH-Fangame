@@ -75,6 +75,7 @@ function mainTpl(){
         <button class="manage-tab" data-tab="supporter-list">후원자 목록</button>
         <button class="manage-tab" data-tab="maintenance">서비스 점검</button>
         <button class="manage-tab" data-tab="economy">경제 관리</button>
+        <button class="manage-tab" data-tab="stats">캐릭터 통계</button>
       </div>
       <div id="manage-tab-content"></div>
     </div>
@@ -259,6 +260,66 @@ function economyTpl() {
     </div>
     <div id="economy-sub-content" class="manage-card" style="border-top-left-radius:0;"></div>
   </div>
+  `;
+}
+
+function statsTpl() {
+  return `
+  <div class="manage-col">
+    <div class="manage-row" style="justify-content: space-between; align-items: center;">
+      <h4 style="margin-top:0">캐릭터 통계</h4>
+      <button id="btn-refresh-stats" class="btn">새로고침</button>
+    </div>
+    <div id="stats-content" class="manage-col" style="min-height: 200px;">
+      <div class="manage-card text-dim">통계 데이터를 불러오는 중...</div>
+    </div>
+  </div>
+  `;
+}
+
+function statsResultTpl(stats) {
+  const { totalCharacters, averageCharactersPerAccount, top5Accounts = [] } = stats;
+  
+  const top5Html = top5Accounts.length > 0 ? top5Accounts.map(acc => `
+    <tr>
+      <td>${esc(acc.nickname)} <span class="text-dim" style="font-size:12px;">(${esc(acc.uid)})</span></td>
+      <td style="text-align:right;">${acc.count.toLocaleString()}</td>
+    </tr>
+  `).join('') : `<tr><td colspan="2" class="text-dim" style="text-align:center;">데이터 없음</td></tr>`;
+
+  return `
+    <div class="manage-grid2">
+      <div class="manage-card manage-col" style="justify-content: center;">
+        <div class="manage-label">총 캐릭터 수 (삭제 제외)</div>
+        <div style="font-size: 24px; font-weight: 700;">${totalCharacters.toLocaleString()}</div>
+      </div>
+      <div class="manage-card manage-col" style="justify-content: center;">
+        <div class="manage-label">계정 당 평균 캐릭터</div>
+        <div style="font-size: 24px; font-weight: 700;">${averageCharactersPerAccount}</div>
+      </div>
+    </div>
+    
+    <div class="manage-card manage-col" style="margin-top: 12px;">
+      <h5 style="margin: 0 0 12px 0;">캐릭터 보유량 TOP 5</h5>
+      <table class="table" style="width: 100%;">
+        <thead>
+          <tr>
+            <th>유저</th>
+            <th style="text-align:right;">캐릭터 수</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${top5Html}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="manage-card manage-col" style="margin-top: 12px;">
+       <h5 style="margin: 0 0 12px 0;">TOP 5 분포 그래프</h5>
+       <div style="position: relative; height: 300px;">
+         <canvas id="stats-chart"></canvas>
+       </div>
+    </div>
   `;
 }
 
@@ -474,6 +535,89 @@ async function bindAuctionSettleEvents() {
   });
 }
 
+async function bindStatsEvents() {
+  const contentEl = document.getElementById('stats-content');
+  const refreshBtn = document.getElementById('btn-refresh-stats');
+  let chartInstance = null; // 차트 인스턴스를 저장하여 중복 생성을 방지합니다.
+
+  const loadStats = async () => {
+    if (chartInstance) {
+      chartInstance.destroy(); // 새로고침 시 기존 차트 제거
+      chartInstance = null;
+    }
+    contentEl.innerHTML = `<div class="manage-card text-dim">통계 데이터를 불러오는 중...</div>`;
+    refreshBtn.disabled = true;
+
+    try {
+      // Chart.js가 로드되지 않았다면 동적으로 로드합니다.
+      if (typeof Chart === 'undefined') {
+        const script = document.createElement('script');
+        script.src = 'https://cdn.jsdelivr.net/npm/chart.js@3.7.1/dist/chart.min.js';
+        document.head.appendChild(script);
+        await new Promise((resolve, reject) => {
+          script.onload = resolve;
+          script.onerror = reject;
+        });
+      }
+      
+      const getStatsFn = httpsCallable(func, 'getCharacterStats');
+      const result = await getStatsFn();
+      
+      if (!result.data?.ok) {
+        throw new Error(result.data.message || '서버에서 통계를 가져오는 데 실패했습니다.');
+      }
+
+      const stats = result.data;
+      contentEl.innerHTML = statsResultTpl(stats);
+
+      // 차트를 렌더링합니다.
+      const ctx = document.getElementById('stats-chart')?.getContext('2d');
+      if (ctx && stats.top5Accounts.length > 0) {
+        chartInstance = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: stats.top5Accounts.map(u => u.nickname),
+            datasets: [{
+              label: '캐릭터 수',
+              data: stats.top5Accounts.map(u => u.count),
+              backgroundColor: 'rgba(54, 162, 235, 0.6)',
+              borderColor: 'rgba(54, 162, 235, 1)',
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            scales: {
+              y: {
+                beginAtZero: true,
+                ticks: { color: 'var(--muted)' }
+              },
+              x: {
+                ticks: { color: 'var(--text)' }
+              }
+            },
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                display: false
+              }
+            }
+          }
+        });
+      }
+
+    } catch (e) {
+      contentEl.innerHTML = `<div class="manage-card error" style="color: #ef4444;">통계 로딩 실패: ${esc(e.message)}</div>`;
+    } finally {
+        refreshBtn.disabled = false;
+    }
+  };
+
+  refreshBtn.addEventListener('click', loadStats);
+  loadStats(); // 탭에 들어왔을 때 자동으로 통계를 불러옵니다.
+}
+
 
 async function bindEmergencyEvents() {
   const modeEl = document.getElementById('refund-mode');
@@ -518,6 +662,7 @@ export async function showManage(){
   const tabsWrap = root.querySelector('.manage-tabs');
   const contentWrap = root.querySelector('#manage-tab-content');
 
+  // [수정] 'stats' 탭 렌더링 로직 추가
   const renderTabContent = (tabId) => {
     contentWrap.innerHTML = '';
     if (tabId === 'send') {
@@ -541,6 +686,9 @@ export async function showManage(){
     } else if (tabId === 'economy') {
         contentWrap.innerHTML = economyTpl();
         bindEconomyEvents();
+    } else if (tabId === 'stats') {
+        contentWrap.innerHTML = statsTpl();
+        bindStatsEvents();
     }
   };
 
@@ -553,6 +701,7 @@ export async function showManage(){
     renderTabContent(t.dataset.tab);
   });
   
+  // 기본 탭을 'send'에서 원하는 다른 탭으로 변경할 수 있습니다.
   renderTabContent('send');
 }
 
