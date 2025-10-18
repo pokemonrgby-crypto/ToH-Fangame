@@ -2,170 +2,228 @@
 import { db, auth, fx, func } from '../api/firebase.js';
 import { httpsCallable } from 'https://www.gstatic.com/firebasejs/10.12.3/firebase-functions.js';
 import { showToast } from '../ui/toast.js';
-import { ensureModalCss, confirmModal } from '../ui/modal.js';
+import { confirmModal } from '../ui/modal.js';
 
 const CREATE_COOLDOWN_SEC = 180; // 3분
+
+/**
+ * 모달이 최상단에 표시되도록 z-index가 높은 CSS 스타일을 head에 추가합니다.
+ * 한 번만 추가되도록 ID로 중복을 확인합니다.
+ */
+function injectModalStyles() {
+    const styleId = 'custom-modal-styles';
+    if (document.getElementById(styleId)) return;
+
+    const style = document.createElement('style');
+    style.id = styleId;
+    style.innerHTML = `
+        .modal-back {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: rgba(0, 0, 0, 0.65);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            /* * 다른 요소들 위에 확실히 표시되도록 높은 z-index 값을 설정합니다.
+             * 동일한 z-index를 가진 모달이 여러 개 겹칠 경우,
+             * 나중에 DOM에 추가된 모달이 위에 표시되는 CSS 규칙에 따라
+             * '최종 확인 모달'이 '생성 결과 모달' 위에 올바르게 나타납니다.
+             */
+            z-index: 1000;
+            -webkit-backdrop-filter: blur(4px);
+            backdrop-filter: blur(4px);
+        }
+        .modal-card {
+            background-color: var(--color-bg-card, #2a2a2a);
+            color: var(--color-text, #ffffff);
+            padding: 24px;
+            border-radius: 12px;
+            box-shadow: 0 10px 40px rgba(0,0,0,0.3);
+            width: 90%;
+            max-width: 450px;
+            border: 1px solid var(--color-border, #444);
+            animation: modal-appear 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            /* 모달 창이 배경보다 위에 오도록 설정합니다. */
+            z-index: 1001;
+        }
+        @keyframes modal-appear {
+            from {
+                opacity: 0;
+                transform: scale(0.9) translateY(-10px);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+    `;
+    document.head.appendChild(style);
+}
+
 
 function esc(s) { return String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function parseCharId() { return new URLSearchParams(location.hash.split('?')[1] || '').get('id'); }
 
 export default async function showCreateSkillPage() {
-  const root = document.getElementById('view');
-  const charId = parseCharId();
-  const uid = auth.currentUser?.uid;
+    const root = document.getElementById('view');
+    const charId = parseCharId();
+    const uid = auth.currentUser?.uid;
 
-  if (!uid || !charId) {
-    root.innerHTML = `<section class="container narrow"><div class="kv-card">잘못된 접근입니다.</div></section>`;
-    return;
-  }
-
-  root.innerHTML = `<section class="container narrow"><div class="spin-center"></div></section>`;
-
-  try {
-    const [charSnap, userSnap] = await Promise.all([
-      fx.getDoc(fx.doc(db, 'chars', charId)),
-      fx.getDoc(fx.doc(db, 'users', uid))
-    ]);
-
-    if (!charSnap.exists()) throw new Error('캐릭터를 찾을 수 없습니다.');
-
-    const charData = charSnap.data();
-    const userData = userSnap.exists() ? userSnap.data() : {};
-    const currentCoins = userData.coins || 0;
-    const skills = (Array.isArray(charData.abilities_all) ? charData.abilities_all : []).filter(s => s.name && s.desc_soft);
-    const canCreate = skills.length < 8;
-    const additionalSkills = Math.max(0, skills.length - 4);
-    const cost = 500 + (additionalSkills * 500);
-    
-    const lastCreatedAt = userData.lastSkillCreatedAt?.toMillis() || 0;
-    const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + (CREATE_COOLDOWN_SEC * 1000) - Date.now()) / 1000));
-
-    root.innerHTML = `
-      <section class="container narrow">
-        <div class="card p16">
-          <div class="row" style="justify-content:space-between">
-              <h3 style="margin-top:0">✨ 새로운 스킬 생성</h3>
-              <a href="#/char/${esc(charId)}" class="btn ghost">캐릭터로 돌아가기</a>
-          </div>
-
-          <div class="kv-card">
-            <p class="text-dim">AI를 이용해 캐릭터의 컨셉에 맞는 새로운 스킬을 생성합니다. 스킬은 최대 8개까지 보유할 수 있습니다.</p>
-            <div class="row" style="justify-content:space-between; margin-top: 8px;">
-              <span>현재 스킬 수: <b>${skills.length} / 8</b></span>
-              <span>보유 코인: 🪙 <b>${currentCoins.toLocaleString()}</b></span>
-            </div>
-          </div>
-
-          <div class="col" style="gap: 16px; margin-top: 16px;">
-            <div>
-                <label class="kv-label">1. 생성 방식</label>
-                <select id="generation-mode" class="input">
-                    <option value="auto">AI 자동 생성</option>
-                    <option value="manual">이름 수동 입력</option>
-                </select>
-            </div>
-            <div id="manual-name-wrapper" style="display:none;">
-                <label class="kv-label">2. 스킬 이름 (직접 입력)</label>
-                <input id="skill-name" class="input" placeholder="스킬 이름 (최대 20자)" maxlength="20">
-            </div>
-            <div>
-                <label class="kv-label">3. 스킬 컨셉 (AI에게 전달할 내용)</label>
-                <textarea id="skill-prompt" class="input" rows="4" placeholder="원하는 스킬의 컨셉이나 키워드를 자유롭게 적어주세요. (최대 200자)" maxlength="200"></textarea>
-            </div>
-          </div>
-          
-          <div class="row" style="justify-content:flex-end; align-items:center; margin-top: 16px;">
-            <div class="text-dim" style="font-size: 14px; margin-right: 12px;">비용: 🪙 <b>${cost.toLocaleString()}</b></div>
-            <button id="btn-create-skill" class="btn primary large"></button>
-          </div>
-        </div>
-      </section>
-    `;
-
-    const btnCreate = root.querySelector('#btn-create-skill');
-    const modeSelect = root.querySelector('#generation-mode');
-    const manualNameWrapper = root.querySelector('#manual-name-wrapper');
-
-    modeSelect.addEventListener('change', () => {
-        manualNameWrapper.style.display = modeSelect.value === 'manual' ? 'block' : 'none';
-    });
-
-    const updateButtonState = (remaining) => {
-        if (remaining > 0) {
-            btnCreate.disabled = true;
-            btnCreate.textContent = `쿨타임 (${remaining}초)`;
-        } else if (!canCreate) {
-            btnCreate.disabled = true;
-            btnCreate.textContent = '더 이상 생성 불가';
-        } else if (currentCoins < cost) {
-            btnCreate.disabled = true;
-            btnCreate.textContent = '코인 부족';
-        } else {
-            btnCreate.disabled = false;
-            btnCreate.textContent = 'AI로 생성하기';
-        }
-    };
-
-    if (cooldownLeft > 0) {
-        let remaining = cooldownLeft;
-        updateButtonState(remaining);
-        const interval = setInterval(() => {
-            remaining--;
-            if (remaining <= 0) {
-                clearInterval(interval);
-            }
-            updateButtonState(remaining);
-        }, 1000);
-    } else {
-        updateButtonState(0);
+    if (!uid || !charId) {
+        root.innerHTML = `<section class="container narrow"><div class="kv-card">잘못된 접근입니다.</div></section>`;
+        return;
     }
 
-    btnCreate.addEventListener('click', async () => {
-        const generationMode = modeSelect.value;
-        const customName = document.getElementById('skill-name').value.trim();
-        const userPrompt = document.getElementById('skill-prompt').value.trim();
+    root.innerHTML = `<section class="container narrow"><div class="spin-center"></div></section>`;
 
-        if (generationMode === 'manual' && !customName) {
-            showToast('스킬 이름을 입력해주세요.');
-            return;
-        }
-        if (!userPrompt) {
-            showToast('스킬 컨셉을 입력해주세요.');
-            return;
-        }
+    try {
+        const [charSnap, userSnap] = await Promise.all([
+            fx.getDoc(fx.doc(db, 'chars', charId)),
+            fx.getDoc(fx.doc(db, 'users', uid))
+        ]);
 
-        btnCreate.disabled = true;
-        btnCreate.textContent = 'AI 생성 중...';
+        if (!charSnap.exists()) throw new Error('캐릭터를 찾을 수 없습니다.');
 
-        try {
-            const generateNewSkill = httpsCallable(func, 'generateNewSkill');
-            const result = await generateNewSkill({ charId, generationMode, customName, userPrompt });
+        const charData = charSnap.data();
+        const userData = userSnap.exists() ? userSnap.data() : {};
+        const currentCoins = userData.coins || 0;
+        const skills = (Array.isArray(charData.abilities_all) ? charData.abilities_all : []).filter(s => s.name && s.desc_soft);
+        const canCreate = skills.length < 8;
+        const additionalSkills = Math.max(0, skills.length - 4);
+        const cost = 500 + (additionalSkills * 500);
+        
+        const lastCreatedAt = userData.lastSkillCreatedAt?.toMillis() || 0;
+        const cooldownLeft = Math.ceil(Math.max(0, (lastCreatedAt + (CREATE_COOLDOWN_SEC * 1000) - Date.now()) / 1000));
 
-            if (result.data.ok) {
-                const { generatedSkill, cost } = result.data;
-                const confirmed = await showConfirmationModal(generatedSkill, cost);
-                if (confirmed) {
-                    await applySkill(charId, generatedSkill);
-                } else {
-                    // 사용자가 취소했으므로 쿨타임을 다시 설정하지 않도록 페이지를 새로고침합니다.
-                    showCreateSkillPage();
-                }
+        root.innerHTML = `
+            <section class="container narrow">
+                <div class="card p16">
+                    <div class="row" style="justify-content:space-between">
+                        <h3 style="margin-top:0">✨ 새로운 스킬 생성</h3>
+                        <a href="#/char/${esc(charId)}" class="btn ghost">캐릭터로 돌아가기</a>
+                    </div>
+
+                    <div class="kv-card">
+                        <p class="text-dim">AI를 이용해 캐릭터의 컨셉에 맞는 새로운 스킬을 생성합니다. 스킬은 최대 8개까지 보유할 수 있습니다.</p>
+                        <div class="row" style="justify-content:space-between; margin-top: 8px;">
+                            <span>현재 스킬 수: <b>${skills.length} / 8</b></span>
+                            <span>보유 코인: 🪙 <b>${currentCoins.toLocaleString()}</b></span>
+                        </div>
+                    </div>
+
+                    <div class="col" style="gap: 16px; margin-top: 16px;">
+                        <div>
+                            <label class="kv-label">1. 생성 방식</label>
+                            <select id="generation-mode" class="input">
+                                <option value="auto">AI 자동 생성</option>
+                                <option value="manual">이름 수동 입력</option>
+                            </select>
+                        </div>
+                        <div id="manual-name-wrapper" style="display:none;">
+                            <label class="kv-label">2. 스킬 이름 (직접 입력)</label>
+                            <input id="skill-name" class="input" placeholder="스킬 이름 (최대 20자)" maxlength="20">
+                        </div>
+                        <div>
+                            <label class="kv-label">3. 스킬 컨셉 (AI에게 전달할 내용)</label>
+                            <textarea id="skill-prompt" class="input" rows="4" placeholder="원하는 스킬의 컨셉이나 키워드를 자유롭게 적어주세요. (최대 200자)" maxlength="200"></textarea>
+                        </div>
+                    </div>
+                    
+                    <div class="row" style="justify-content:flex-end; align-items:center; margin-top: 16px;">
+                        <div class="text-dim" style="font-size: 14px; margin-right: 12px;">비용: 🪙 <b>${cost.toLocaleString()}</b></div>
+                        <button id="btn-create-skill" class="btn primary large"></button>
+                    </div>
+                </div>
+            </section>
+        `;
+
+        const btnCreate = root.querySelector('#btn-create-skill');
+        const modeSelect = root.querySelector('#generation-mode');
+        const manualNameWrapper = root.querySelector('#manual-name-wrapper');
+
+        modeSelect.addEventListener('change', () => {
+            manualNameWrapper.style.display = modeSelect.value === 'manual' ? 'block' : 'none';
+        });
+
+        const updateButtonState = (remaining) => {
+            if (remaining > 0) {
+                btnCreate.disabled = true;
+                btnCreate.textContent = `쿨타임 (${remaining}초)`;
+            } else if (!canCreate) {
+                btnCreate.disabled = true;
+                btnCreate.textContent = '더 이상 생성 불가';
+            } else if (currentCoins < cost) {
+                btnCreate.disabled = true;
+                btnCreate.textContent = '코인 부족';
+            } else {
+                btnCreate.disabled = false;
+                btnCreate.textContent = 'AI로 생성하기';
             }
-        } catch (error) {
-            showToast(`생성 실패: ${error.message}`);
-            // 실패 시에는 쿨타임이 돌지 않으므로 즉시 버튼 상태를 갱신합니다.
+        };
+
+        if (cooldownLeft > 0) {
+            let remaining = cooldownLeft;
+            updateButtonState(remaining);
+            const interval = setInterval(() => {
+                remaining--;
+                if (remaining <= 0) {
+                    clearInterval(interval);
+                }
+                updateButtonState(remaining);
+            }, 1000);
+        } else {
             updateButtonState(0);
         }
-    });
 
-  } catch (error) {
-    console.error("스킬 생성 페이지 로딩 실패:", error);
-    root.innerHTML = `<section class="container narrow"><div class="kv-card error">${esc(error.message)}</div></section>`;
-  }
+        btnCreate.addEventListener('click', async () => {
+            const generationMode = modeSelect.value;
+            const customName = document.getElementById('skill-name').value.trim();
+            const userPrompt = document.getElementById('skill-prompt').value.trim();
+
+            if (generationMode === 'manual' && !customName) {
+                showToast('스킬 이름을 입력해주세요.');
+                return;
+            }
+            if (!userPrompt) {
+                showToast('스킬 컨셉을 입력해주세요.');
+                return;
+            }
+
+            btnCreate.disabled = true;
+            btnCreate.textContent = 'AI 생성 중...';
+
+            try {
+                const generateNewSkill = httpsCallable(func, 'generateNewSkill');
+                const result = await generateNewSkill({ charId, generationMode, customName, userPrompt });
+
+                if (result.data.ok) {
+                    const { generatedSkill, cost } = result.data;
+                    const confirmed = await showConfirmationModal(generatedSkill, cost);
+                    if (confirmed) {
+                        await applySkill(charId, generatedSkill);
+                    } else {
+                        // 사용자가 취소했으므로 쿨타임을 다시 설정하지 않도록 페이지를 새로고침합니다.
+                        showCreateSkillPage();
+                    }
+                }
+            } catch (error) {
+                showToast(`생성 실패: ${error.message}`);
+                // 실패 시에는 쿨타임이 돌지 않으므로 즉시 버튼 상태를 갱신합니다.
+                updateButtonState(0);
+            }
+        });
+
+    } catch (error) {
+        console.error("스킬 생성 페이지 로딩 실패:", error);
+        root.innerHTML = `<section class="container narrow"><div class="kv-card error">${esc(error.message)}</div></section>`;
+    }
 }
 
 async function showConfirmationModal(skill, cost) {
-    ensureModalCss();
+    injectModalStyles();
     return new Promise(resolve => {
         const back = document.createElement('div');
         back.className = 'modal-back';
@@ -189,6 +247,10 @@ async function showConfirmationModal(skill, cost) {
         const close = (val) => { back.remove(); resolve(val); };
         back.querySelector('#modal-cancel').onclick = () => close(false);
         back.querySelector('#modal-confirm').onclick = async () => {
+            // 이 시점에서 첫 번째 모달(생성 결과)이 화면에 떠 있습니다.
+            // confirmModal을 호출하면 두 번째 모달(최종 확인)이 DOM에 추가됩니다.
+            // injectModalStyles에 의해 두 모달 모두 z-index: 1000을 가지게 되며,
+            // 나중에 추가된 '최종 확인 모달'이 위에 표시됩니다.
             const finalConfirm = await confirmModal({
                 title: '최종 확인',
                 lines: ['한 번 적용된 스킬은 삭제할 수 없습니다. 정말로 적용하시겠습니까?'],
