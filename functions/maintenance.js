@@ -134,10 +134,8 @@ module.exports = (admin, { logger }) => {
 
     try {
       const charactersRef = db.collection('characters');
-      // ▼▼▼ [수정된 부분] ▼▼▼
-      // 'deletedAt' 필드가 null인 조건 대신, 'name' 필드가 존재하는 문서만 조회합니다.
+      // 'name' 필드가 존재하는 모든 문서를 조회합니다.
       const snapshot = await charactersRef.where('name', '!=', null).get();
-      // ▲▲▲ [수정된 부분] ▲▲▲
 
       if (snapshot.empty) {
         return {
@@ -150,23 +148,16 @@ module.exports = (admin, { logger }) => {
       }
 
       const userCharCounts = {};
-      let totalCharacters = 0; // deletedAt이 있는 문서를 제외하기 위해 카운트 방식을 변경합니다.
-
       snapshot.forEach(doc => {
         const char = doc.data();
-
-        // soft-delete된 캐릭터는 통계에서 제외합니다.
-        if (char.deletedAt) {
-            return; 
-        }
-
-        totalCharacters++; // 유효한 캐릭터 수만 카운트합니다.
         const ownerUid = char.uid;
         if (ownerUid) {
           userCharCounts[ownerUid] = (userCharCounts[ownerUid] || 0) + 1;
         }
       });
 
+      // 별도의 필터링 없이 조회된 문서의 총 개수를 사용합니다.
+      const totalCharacters = snapshot.size;
       const totalAccounts = Object.keys(userCharCounts).length;
       const averageCharactersPerAccount = totalAccounts > 0 ? (totalCharacters / totalAccounts).toFixed(2) : 0;
 
