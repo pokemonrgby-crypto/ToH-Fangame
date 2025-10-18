@@ -133,7 +133,7 @@ module.exports = (admin, { logger }) => {
     logger.info(`Character stats calculation started by admin: ${uid}`);
 
     try {
-      const charactersRef = db.collection('characters');
+      const charactersRef = db.collection('chars');
       // 'name' 필드가 존재하는 모든 문서를 조회합니다.
       const snapshot = await charactersRef.where('name', '!=', null).get();
 
