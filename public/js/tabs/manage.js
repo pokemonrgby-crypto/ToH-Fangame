@@ -8,7 +8,6 @@ import { showToast } from '../ui/toast.js';
 
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
 
-// 스타일을 한 번만 주입하여 중복을 방지합니다.
 function stylesOnce(){
   if (document.getElementById('manage-style')) return;
   const css = `
@@ -55,6 +54,11 @@ function stylesOnce(){
     .manage-switch[data-on="1"]{ background:var(--pri1); border-color:var(--pri1); }
     .manage-switch i{position:absolute; top:2px; left:2px; width:18px; height:18px; border-radius:50%; background:#fff; transition:left .15s}
     .manage-switch[data-on="1"] i{left:22px}
+
+    .table { border-collapse: collapse; width: 100%; }
+    .table th, .table td { padding: 12px 8px; text-align: left; border-bottom: 1px solid var(--bd); }
+    .table th { color: var(--muted); font-size: 13px; font-weight: 600; }
+    .table td { font-size: 14px; }
   `;
   const el = document.createElement('style');
   el.id = 'manage-style';
