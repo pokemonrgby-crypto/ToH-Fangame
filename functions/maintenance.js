@@ -122,7 +122,7 @@ module.exports = (admin, { logger }) => {
   });
 
 /**
-   * [Callable] 관리자가 캐릭터 통계를 계산하는 함수 (신규 추가)
+   * [Callable] 관리자가 캐릭터 통계를 계산하는 함수
    */
   const getCharacterStats = onCall({ region: 'us-central1', memory: '1GiB' }, async (req) => {
     const uid = req.auth?.uid;
@@ -134,31 +134,39 @@ module.exports = (admin, { logger }) => {
 
     try {
       const charactersRef = db.collection('characters');
-      // "deletedAt" 필드가 존재하지 않는 문서만 쿼리하여 삭제된 캐릭터를 제외합니다.
-      const snapshot = await charactersRef.where('deletedAt', '==', null).get();
+      // ▼▼▼ [수정된 부분] ▼▼▼
+      // 'deletedAt' 필드가 null인 조건 대신, 'name' 필드가 존재하는 문서만 조회합니다.
+      const snapshot = await charactersRef.where('name', '!=', null).get();
+      // ▲▲▲ [수정된 부분] ▲▲▲
 
       if (snapshot.empty) {
-        // ▼▼▼ [수정된 부분] ▼▼▼
         return {
-          ok: true, // 'ok: true'를 추가합니다.
+          ok: true,
           totalCharacters: 0,
           totalAccounts: 0,
           averageCharactersPerAccount: 0,
           top5Accounts: [],
         };
-        // ▲▲▲ [수정된 부분] ▲▲▲
       }
 
       const userCharCounts = {};
+      let totalCharacters = 0; // deletedAt이 있는 문서를 제외하기 위해 카운트 방식을 변경합니다.
+
       snapshot.forEach(doc => {
         const char = doc.data();
+
+        // soft-delete된 캐릭터는 통계에서 제외합니다.
+        if (char.deletedAt) {
+            return; 
+        }
+
+        totalCharacters++; // 유효한 캐릭터 수만 카운트합니다.
         const ownerUid = char.uid;
         if (ownerUid) {
           userCharCounts[ownerUid] = (userCharCounts[ownerUid] || 0) + 1;
         }
       });
 
-      const totalCharacters = snapshot.size;
       const totalAccounts = Object.keys(userCharCounts).length;
       const averageCharactersPerAccount = totalAccounts > 0 ? (totalCharacters / totalAccounts).toFixed(2) : 0;
 
@@ -167,7 +175,6 @@ module.exports = (admin, { logger }) => {
 
       const top5Accounts = sortedAccounts.slice(0, 5).map(([uid, count]) => ({ uid, count }));
 
-      // 유저 정보를 함께 조회하여 닉네임을 포함시킵니다.
       const top5WithDetails = await Promise.all(top5Accounts.map(async (acc) => {
         try {
           const userSnap = await db.doc(`users/${acc.uid}`).get();
@@ -178,7 +185,6 @@ module.exports = (admin, { logger }) => {
           return { ...acc, nickname: 'Unknown' };
         }
       }));
-
 
       logger.info(`Character stats calculation finished. Total Chars: ${totalCharacters}, Accounts: ${totalAccounts}`);
 
