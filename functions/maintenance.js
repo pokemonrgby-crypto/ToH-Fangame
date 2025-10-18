@@ -138,12 +138,15 @@ module.exports = (admin, { logger }) => {
       const snapshot = await charactersRef.where('deletedAt', '==', null).get();
 
       if (snapshot.empty) {
+        // ▼▼▼ [수정된 부분] ▼▼▼
         return {
+          ok: true, // 'ok: true'를 추가합니다.
           totalCharacters: 0,
           totalAccounts: 0,
           averageCharactersPerAccount: 0,
           top5Accounts: [],
         };
+        // ▲▲▲ [수정된 부분] ▲▲▲
       }
 
       const userCharCounts = {};
